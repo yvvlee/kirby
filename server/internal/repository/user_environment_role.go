@@ -142,6 +142,9 @@ FOR UPDATE`, []any{userID}, &user); err != nil {
 				return base.Wrap("insert environment member role", err)
 			}
 		}
+		if err := bumpEnvironmentPermissionGenerations(ctx, tx, []int64{environmentID}, actorID); err != nil {
+			return err
+		}
 		audit.ResourceID = strconv.FormatInt(userID, 10)
 		return r.audits.RecordForEnvironmentTx(ctx, tx, environmentID, audit)
 	})

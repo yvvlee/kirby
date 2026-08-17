@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -39,7 +38,6 @@ const (
 	SystemEnvironmentManage = "system:environment:manage"
 
 	cacheTTL        = time.Minute
-	versionTTL      = 24 * time.Hour
 	maxResolveRetry = 3
 )
 
@@ -99,50 +97,38 @@ func newResolver(source source, cacheStore cache.Store) (*Resolver, error) {
 
 // Resolve returns current permissions for one user and one environment.
 func (r *Resolver) Resolve(ctx context.Context, userID, environmentID int64) ([]string, bool, error) {
-	identity, err := r.source.Identity(ctx, userID, environmentID)
-	if err != nil {
-		if errors.Is(err, base.ErrNotFound) {
-			return nil, false, ErrForbidden
-		}
-		return nil, false, err
-	}
-	if identity.EnvironmentID == 0 {
-		if identity.SystemAdmin {
-			return nil, true, ErrEnvironmentNotFound
-		}
-		return nil, false, ErrForbidden
-	}
-	if identity.SystemAdmin {
-		keys, err := r.allPermissionKeys(ctx)
-		return keys, true, err
-	}
-	if !identity.EnvironmentEnabled || !identity.EnvironmentMember {
-		return nil, false, ErrForbidden
-	}
-
 	for attempt := 0; attempt < maxResolveRetry; attempt++ {
-		version, err := r.version(ctx, userID, environmentID)
+		identity, err := r.identity(ctx, userID, environmentID)
 		if err != nil {
 			return nil, false, err
 		}
-		contentKey := permissionContentKey(userID, environmentID, version)
+		if identity.SystemAdmin {
+			keys, err := r.allPermissionKeys(ctx)
+			return keys, true, err
+		}
+		contentKey := permissionContentKey(userID, environmentID, identity.EnvironmentVersion)
 		encoded, err := r.cache.Get(ctx, contentKey)
 		if err == nil {
 			keys, err := decodePermissions(encoded)
-			if err != nil {
-				return nil, false, err
+			if err == nil {
+				confirmed, err := r.identity(ctx, userID, environmentID)
+				if err != nil {
+					return nil, false, err
+				}
+				if confirmed.SystemAdmin {
+					keys, err := r.allPermissionKeys(ctx)
+					return keys, true, err
+				}
+				if confirmed.EnvironmentVersion != identity.EnvironmentVersion {
+					continue
+				}
+				return keys, false, nil
 			}
-			confirmed, err := r.currentVersion(ctx, userID, environmentID)
-			if err != nil {
-				return nil, false, err
-			}
-			if confirmed != version {
-				continue
-			}
-			return keys, false, nil
-		}
-		if !errors.Is(err, cache.ErrNotFound) {
-			return nil, false, fmt.Errorf("read permission cache: %w", err)
+			// Corrupt cache entries are never authoritative. Read the permission
+			// set from MySQL and overwrite the versioned entry when possible.
+		} else if !errors.Is(err, cache.ErrNotFound) {
+			// Redis is an optimization. A cache outage must not replace the
+			// database as the authorization source of truth.
 		}
 
 		keys, err := r.source.KeysForUserEnvironment(ctx, userID, environmentID)
@@ -150,11 +136,15 @@ func (r *Resolver) Resolve(ctx context.Context, userID, environmentID int64) ([]
 			return nil, false, err
 		}
 		keys = normalize(keys)
-		confirmed, err := r.currentVersion(ctx, userID, environmentID)
+		confirmed, err := r.identity(ctx, userID, environmentID)
 		if err != nil {
 			return nil, false, err
 		}
-		if confirmed != version {
+		if confirmed.SystemAdmin {
+			keys, err := r.allPermissionKeys(ctx)
+			return keys, true, err
+		}
+		if confirmed.EnvironmentVersion != identity.EnvironmentVersion {
 			continue
 		}
 		encoded, err = json.Marshal(keys)
@@ -162,11 +152,36 @@ func (r *Resolver) Resolve(ctx context.Context, userID, environmentID int64) ([]
 			return nil, false, fmt.Errorf("encode permissions: %w", err)
 		}
 		if err := r.cache.Set(ctx, contentKey, encoded, cacheTTL); err != nil {
-			return nil, false, fmt.Errorf("write permission cache: %w", err)
+			// The second database identity read above makes this result safe to
+			// use even when Redis cannot accept the cache entry.
+			return keys, false, nil
 		}
 		return keys, false, nil
 	}
 	return nil, false, ErrConcurrentChange
+}
+
+func (r *Resolver) identity(ctx context.Context, userID, environmentID int64) (repository.PermissionIdentity, error) {
+	identity, err := r.source.Identity(ctx, userID, environmentID)
+	if err != nil {
+		if errors.Is(err, base.ErrNotFound) {
+			return repository.PermissionIdentity{}, ErrForbidden
+		}
+		return repository.PermissionIdentity{}, err
+	}
+	if identity.EnvironmentID == 0 {
+		if identity.SystemAdmin {
+			return repository.PermissionIdentity{}, ErrEnvironmentNotFound
+		}
+		return repository.PermissionIdentity{}, ErrForbidden
+	}
+	if !identity.SystemAdmin && (!identity.EnvironmentEnabled || !identity.EnvironmentMember) {
+		return repository.PermissionIdentity{}, ErrForbidden
+	}
+	if identity.EnvironmentVersion < 0 {
+		return repository.PermissionIdentity{}, fmt.Errorf("invalid environment permission version")
+	}
+	return identity, nil
 }
 
 func (r *Resolver) Require(ctx context.Context, userID, environmentID int64, required ...string) error {
@@ -206,21 +221,23 @@ func (r *Resolver) RequireSystem(ctx context.Context, userID int64, required str
 	return nil
 }
 
-// Invalidate increments a shared generation before deleting the old content
-// key. A concurrent stale writer can only populate an obsolete generation.
+// Invalidate only reclaims the immediately previous generation. MySQL's
+// environments.version selects the authoritative cache key, so failed or
+// delayed deletion cannot keep an obsolete permission set active.
 func (r *Resolver) Invalidate(ctx context.Context, userID, environmentID int64) error {
-	oldVersion, err := r.currentVersion(ctx, userID, environmentID)
-	if err != nil && !errors.Is(err, cache.ErrNotFound) {
-		return fmt.Errorf("read permission version for invalidation: %w", err)
-	}
-	newVersion, err := r.cache.Increment(ctx, permissionVersionKey(userID, environmentID), versionTTL)
+	identity, err := r.source.Identity(ctx, userID, environmentID)
 	if err != nil {
-		return fmt.Errorf("increment permission version: %w", err)
-	}
-	if oldVersion > 0 && newVersion != oldVersion {
-		if err := r.cache.Delete(ctx, permissionContentKey(userID, environmentID, oldVersion)); err != nil {
-			return fmt.Errorf("delete stale permission cache: %w", err)
+		if errors.Is(err, base.ErrNotFound) {
+			return nil
 		}
+		return fmt.Errorf("read permission identity for invalidation: %w", err)
+	}
+	previousVersion := identity.EnvironmentVersion - 1
+	if previousVersion < 0 {
+		return nil
+	}
+	if err := r.cache.Delete(ctx, permissionContentKey(userID, environmentID, previousVersion)); err != nil {
+		return fmt.Errorf("delete stale permission cache: %w", err)
 	}
 	return nil
 }
@@ -235,37 +252,6 @@ func (r *Resolver) allPermissionKeys(ctx context.Context) ([]string, error) {
 		keys = append(keys, item.Key)
 	}
 	return normalize(keys), nil
-}
-
-func (r *Resolver) version(ctx context.Context, userID, environmentID int64) (int64, error) {
-	version, err := r.currentVersion(ctx, userID, environmentID)
-	if err == nil {
-		return version, nil
-	}
-	if !errors.Is(err, cache.ErrNotFound) {
-		return 0, err
-	}
-	version, err = r.cache.Increment(ctx, permissionVersionKey(userID, environmentID), versionTTL)
-	if err != nil {
-		return 0, fmt.Errorf("initialize permission version: %w", err)
-	}
-	return version, nil
-}
-
-func (r *Resolver) currentVersion(ctx context.Context, userID, environmentID int64) (int64, error) {
-	value, err := r.cache.Get(ctx, permissionVersionKey(userID, environmentID))
-	if err != nil {
-		return 0, err
-	}
-	version, err := strconv.ParseInt(string(value), 10, 64)
-	if err != nil || version <= 0 {
-		return 0, fmt.Errorf("invalid permission cache version")
-	}
-	return version, nil
-}
-
-func permissionVersionKey(userID, environmentID int64) string {
-	return fmt.Sprintf("permission:user:%d:environment:%d:version", userID, environmentID)
 }
 
 func permissionContentKey(userID, environmentID, version int64) string {

@@ -228,6 +228,7 @@ FOR UPDATE`, []any{roleID}, &role); err != nil {
 		if err := tx.Context(ctx).SQL(`
 SELECT DISTINCT uer.user_id, uer.environment_id
 FROM user_environment_roles AS uer
+INNER JOIN environments AS e ON e.id = uer.environment_id AND e.deleted_at IS NULL
 WHERE uer.role_id = ?
 ORDER BY uer.user_id ASC, uer.environment_id ASC
 FOR UPDATE`, roleID).Find(&assignments); err != nil {
@@ -248,6 +249,13 @@ FOR UPDATE`, roleID).Find(&assignments); err != nil {
 UPDATE roles
 SET updated_by = ?, updated_at = UTC_TIMESTAMP(6), version = version + 1
 WHERE id = ? AND deleted_at IS NULL`, actorID, roleID); err != nil {
+			return err
+		}
+		environmentIDs := make([]int64, 0, len(assignments))
+		for _, assignment := range assignments {
+			environmentIDs = append(environmentIDs, assignment.EnvironmentID)
+		}
+		if err := bumpEnvironmentPermissionGenerations(ctx, tx, environmentIDs, actorID); err != nil {
 			return err
 		}
 		audit.ResourceID = strconv.FormatInt(roleID, 10)

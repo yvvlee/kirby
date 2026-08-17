@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"sort"
 
 	"xorm.io/xorm"
 
@@ -12,6 +13,7 @@ import (
 type PermissionIdentity struct {
 	SystemAdmin        bool  `xorm:"is_system_admin"`
 	EnvironmentID      int64 `xorm:"environment_id"`
+	EnvironmentVersion int64 `xorm:"environment_version"`
 	EnvironmentEnabled bool  `xorm:"environment_enabled"`
 	EnvironmentMember  bool  `xorm:"environment_member"`
 }
@@ -46,6 +48,7 @@ func (r *PermissionRepositoryImpl) Identity(ctx context.Context, userID, environ
 	err := base.FindOne(ctx, r.engine, "permission identity", `
 SELECT u.is_system_admin,
        COALESCE(e.id, 0) AS environment_id,
+       COALESCE(e.version, 0) AS environment_version,
        COALESCE(e.enabled, FALSE) AS environment_enabled,
        EXISTS(
            SELECT 1
@@ -123,6 +126,30 @@ FROM user_environment_roles AS uer
 WHERE uer.role_id = ?
 ORDER BY uer.user_id ASC, uer.environment_id ASC`, []any{roleID}, &assignments)
 	return assignments, err
+}
+
+func bumpEnvironmentPermissionGenerations(ctx context.Context, tx *xorm.Session, environmentIDs []int64, actorID int64) error {
+	unique := make(map[int64]struct{}, len(environmentIDs))
+	for _, environmentID := range environmentIDs {
+		if err := base.ValidateID("environment_id", environmentID); err != nil {
+			return err
+		}
+		unique[environmentID] = struct{}{}
+	}
+	ordered := make([]int64, 0, len(unique))
+	for environmentID := range unique {
+		ordered = append(ordered, environmentID)
+	}
+	sort.Slice(ordered, func(i, j int) bool { return ordered[i] < ordered[j] })
+	for _, environmentID := range ordered {
+		if _, err := base.ExecuteTx(ctx, tx, "environment permission generation", `
+UPDATE environments
+SET updated_by = ?, updated_at = UTC_TIMESTAMP(6), version = version + 1
+WHERE id = ? AND deleted_at IS NULL`, actorID, environmentID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 var _ PermissionRepository = (*PermissionRepositoryImpl)(nil)

@@ -55,15 +55,15 @@ func (f *fakeRoleAuthorizer) Invalidate(_ context.Context, userID, environmentID
 	return f.failures[assignment]
 }
 
-func TestUpdatePermissionsAttemptsAllInvalidationsAndJoinsFailures(t *testing.T) {
+func TestUpdatePermissionsSucceedsAndAttemptsAllCleanupWhenRedisFails(t *testing.T) {
 	first := errors.New("first cache unavailable")
 	second := errors.New("second cache unavailable")
 	roles := &fakeRoleRepository{assignments: []repository.PermissionAssignment{{UserID: 3, EnvironmentID: 10}, {UserID: 4, EnvironmentID: 20}}}
 	authorizer := &fakeRoleAuthorizer{allowed: true, failures: map[[2]int64]error{{3, 10}: first, {4, 20}: second}}
 	logic, _ := New(roles, new(fakePermissionRepository), authorizer)
 	err := logic.UpdatePermissions(context.Background(), permission.Actor{UserID: 9, RequestID: "request-3b"}, 5, []int64{1, 2})
-	if !errors.Is(err, first) || !errors.Is(err, second) {
-		t.Fatalf("joined invalidation error = %v", err)
+	if err != nil {
+		t.Fatalf("committed permission update reported failure: %v", err)
 	}
 	if len(authorizer.invalidated) != 2 {
 		t.Fatalf("not all invalidations attempted: %#v", authorizer.invalidated)

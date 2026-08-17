@@ -67,9 +67,10 @@ func (f *fakeMembers) ReplaceRoles(_ context.Context, environmentID, userID int6
 }
 
 type fakeEnvironmentAuthorizer struct {
-	system      bool
-	allowed     map[int64]bool
-	invalidated [][2]int64
+	system        bool
+	allowed       map[int64]bool
+	invalidated   [][2]int64
+	invalidateErr error
 }
 
 func (*fakeEnvironmentAuthorizer) Resolve(context.Context, int64, int64) ([]string, bool, error) {
@@ -89,7 +90,7 @@ func (f *fakeEnvironmentAuthorizer) RequireSystem(context.Context, int64, string
 }
 func (f *fakeEnvironmentAuthorizer) Invalidate(_ context.Context, userID, environmentID int64) error {
 	f.invalidated = append(f.invalidated, [2]int64{userID, environmentID})
-	return nil
+	return f.invalidateErr
 }
 
 func TestUpdateMemberRolesIsEnvironmentScopedAuditedAndInvalidated(t *testing.T) {
@@ -111,6 +112,24 @@ func TestUpdateMemberRolesIsEnvironmentScopedAuditedAndInvalidated(t *testing.T)
 	}
 	if len(authorizer.invalidated) != 1 || authorizer.invalidated[0] != [2]int64{22, 10} {
 		t.Fatalf("unexpected invalidation: %#v", authorizer.invalidated)
+	}
+}
+
+func TestUpdateMemberRolesSucceedsWhenCacheCleanupFails(t *testing.T) {
+	members := new(fakeMembers)
+	authorizer := &fakeEnvironmentAuthorizer{
+		allowed:       map[int64]bool{10: true},
+		invalidateErr: errors.New("Redis delete failed"),
+	}
+	logic, err := New(&fakeEnvironmentRepository{}, &fakeEnvironmentUsers{}, members, authorizer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := logic.UpdateMemberRoles(context.Background(), permission.Actor{UserID: 7}, 10, 22, nil); err != nil {
+		t.Fatalf("committed member role update reported failure: %v", err)
+	}
+	if members.replaceCalls != 1 || len(authorizer.invalidated) != 1 {
+		t.Fatalf("update or cleanup was skipped: members=%d invalidations=%#v", members.replaceCalls, authorizer.invalidated)
 	}
 }
 

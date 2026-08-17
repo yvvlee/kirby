@@ -108,7 +108,11 @@ func (l *Logic) UpdateMemberRoles(ctx context.Context, actor permission.Actor, e
 		audit(actor, "environment.member.roles.update", "user")); err != nil {
 		return err
 	}
-	return l.permissions.Invalidate(ctx, userID, environmentID)
+	// The transaction already advanced environments.version. Redis deletion is
+	// only stale-key cleanup and must not turn a committed change into an API
+	// failure.
+	_ = l.permissions.Invalidate(ctx, userID, environmentID)
+	return nil
 }
 
 func audit(actor permission.Actor, action, resourceType string) *model.AuditLog {

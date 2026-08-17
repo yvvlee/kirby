@@ -20,6 +20,40 @@ type blockingContentCache struct {
 	release chan struct{}
 }
 
+type faultCache struct {
+	cache.Store
+	getErr      error
+	setErr      error
+	deleteErr   error
+	getCalls    int
+	setCalls    int
+	deleteCalls int
+}
+
+func (c *faultCache) Get(ctx context.Context, key string) ([]byte, error) {
+	c.getCalls++
+	if c.getErr != nil {
+		return nil, c.getErr
+	}
+	return c.Store.Get(ctx, key)
+}
+
+func (c *faultCache) Set(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+	c.setCalls++
+	if c.setErr != nil {
+		return c.setErr
+	}
+	return c.Store.Set(ctx, key, value, ttl)
+}
+
+func (c *faultCache) Delete(ctx context.Context, key string) error {
+	c.deleteCalls++
+	if c.deleteErr != nil {
+		return c.deleteErr
+	}
+	return c.Store.Delete(ctx, key)
+}
+
 func (c *blockingContentCache) Get(ctx context.Context, key string) ([]byte, error) {
 	value, err := c.Store.Get(ctx, key)
 	c.mu.Lock()
@@ -96,11 +130,11 @@ func roleMatrixSource() *fakeSource {
 	admin := append(append([]string(nil), publisher...), ProjectAPIKeyManage, EnvironmentMemberManage)
 	return &fakeSource{
 		identities: map[[2]int64]repository.PermissionIdentity{
-			{1, 10}: {EnvironmentID: 10, EnvironmentEnabled: true, EnvironmentMember: true},
-			{2, 10}: {EnvironmentID: 10, EnvironmentEnabled: true, EnvironmentMember: true},
-			{3, 10}: {EnvironmentID: 10, EnvironmentEnabled: true, EnvironmentMember: true},
-			{4, 10}: {EnvironmentID: 10, EnvironmentEnabled: true, EnvironmentMember: true},
-			{9, 10}: {SystemAdmin: true, EnvironmentID: 10, EnvironmentEnabled: true},
+			{1, 10}: {EnvironmentID: 10, EnvironmentVersion: 1, EnvironmentEnabled: true, EnvironmentMember: true},
+			{2, 10}: {EnvironmentID: 10, EnvironmentVersion: 1, EnvironmentEnabled: true, EnvironmentMember: true},
+			{3, 10}: {EnvironmentID: 10, EnvironmentVersion: 1, EnvironmentEnabled: true, EnvironmentMember: true},
+			{4, 10}: {EnvironmentID: 10, EnvironmentVersion: 1, EnvironmentEnabled: true, EnvironmentMember: true},
+			{9, 10}: {SystemAdmin: true, EnvironmentID: 10, EnvironmentVersion: 1, EnvironmentEnabled: true},
 		},
 		keys:        map[[2]int64][]string{{1, 10}: viewer, {2, 10}: editor, {3, 10}: publisher, {4, 10}: admin},
 		admins:      map[int64]bool{1: false, 2: false, 3: false, 4: false, 9: true},
@@ -154,7 +188,7 @@ func TestSystemAdminBypassesEnvironmentRoleButEnvironmentMustExist(t *testing.T)
 
 func TestCrossEnvironmentAccessDoesNotReusePermissionCache(t *testing.T) {
 	source := roleMatrixSource()
-	source.identities[[2]int64{1, 20}] = repository.PermissionIdentity{EnvironmentID: 20, EnvironmentEnabled: true, EnvironmentMember: true}
+	source.identities[[2]int64{1, 20}] = repository.PermissionIdentity{EnvironmentID: 20, EnvironmentVersion: 1, EnvironmentEnabled: true, EnvironmentMember: true}
 	source.keys[[2]int64{1, 20}] = []string{}
 	resolver, _ := newResolver(source, cache.NewMemory())
 	if err := resolver.Require(context.Background(), 1, 10, ProjectRead); err != nil {
@@ -163,14 +197,17 @@ func TestCrossEnvironmentAccessDoesNotReusePermissionCache(t *testing.T) {
 	if err := resolver.Require(context.Background(), 1, 20, ProjectRead); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("cross-environment permission leaked: %v", err)
 	}
-	if permissionVersionKey(1, 10) == permissionVersionKey(1, 20) {
+	if permissionContentKey(1, 10, 1) == permissionContentKey(1, 20, 1) {
 		t.Fatal("permission cache key omits environment")
+	}
+	if permissionContentKey(1, 10, 1) == permissionContentKey(1, 10, 2) {
+		t.Fatal("permission cache key omits database generation")
 	}
 }
 
 func TestForeignAndMissingEnvironmentAreIndistinguishableToOrdinaryUser(t *testing.T) {
 	source := roleMatrixSource()
-	source.identities[[2]int64{1, 20}] = repository.PermissionIdentity{EnvironmentID: 20, EnvironmentEnabled: true}
+	source.identities[[2]int64{1, 20}] = repository.PermissionIdentity{EnvironmentID: 20, EnvironmentVersion: 1, EnvironmentEnabled: true}
 	source.identities[[2]int64{1, 30}] = repository.PermissionIdentity{}
 	resolver, _ := newResolver(source, cache.NewMemory())
 	for _, environmentID := range []int64{20, 30} {
@@ -181,7 +218,7 @@ func TestForeignAndMissingEnvironmentAreIndistinguishableToOrdinaryUser(t *testi
 	}
 }
 
-func TestInvalidationPreventsConcurrentStaleWriter(t *testing.T) {
+func TestDatabaseGenerationPreventsConcurrentStaleWriter(t *testing.T) {
 	source := roleMatrixSource()
 	source.keyStarted = make(chan struct{}, 1)
 	source.keyRelease = make(chan struct{})
@@ -198,19 +235,19 @@ func TestInvalidationPreventsConcurrentStaleWriter(t *testing.T) {
 	release := source.keyRelease
 	source.mu.Lock()
 	source.keys[[2]int64{1, 10}] = []string{ConfigWrite}
+	identity := source.identities[[2]int64{1, 10}]
+	identity.EnvironmentVersion++
+	source.identities[[2]int64{1, 10}] = identity
 	source.keyStarted = nil
 	source.keyRelease = nil
 	source.mu.Unlock()
-	if err := resolver.Invalidate(context.Background(), 1, 10); err != nil {
-		t.Fatal(err)
-	}
 	close(release)
 	if err := <-errorsChannel; err != nil {
 		t.Fatal(err)
 	}
 	keys := <-result
 	if len(keys) != 1 || keys[0] != ConfigWrite {
-		t.Fatalf("stale permissions survived concurrent invalidation: %v", keys)
+		t.Fatalf("stale permissions survived database generation change: %v", keys)
 	}
 
 	cached, _, err := resolver.Resolve(context.Background(), 1, 10)
@@ -219,7 +256,7 @@ func TestInvalidationPreventsConcurrentStaleWriter(t *testing.T) {
 	}
 }
 
-func TestInvalidationPreventsConcurrentCachedStaleReader(t *testing.T) {
+func TestDatabaseGenerationPreventsConcurrentCachedStaleReader(t *testing.T) {
 	source := roleMatrixSource()
 	store := &blockingContentCache{Store: cache.NewMemory()}
 	resolver, _ := newResolver(source, store)
@@ -246,16 +283,92 @@ func TestInvalidationPreventsConcurrentCachedStaleReader(t *testing.T) {
 	}
 	source.mu.Lock()
 	source.keys[[2]int64{1, 10}] = []string{ConfigWrite}
+	identity := source.identities[[2]int64{1, 10}]
+	identity.EnvironmentVersion++
+	source.identities[[2]int64{1, 10}] = identity
 	source.mu.Unlock()
-	if err := resolver.Invalidate(context.Background(), 1, 10); err != nil {
-		t.Fatal(err)
-	}
 	close(release)
 	if err := <-errorsChannel; err != nil {
 		t.Fatal(err)
 	}
 	keys := <-result
 	if len(keys) != 1 || keys[0] != ConfigWrite {
-		t.Fatalf("stale cached permissions survived invalidation: %v", keys)
+		t.Fatalf("stale cached permissions survived database generation change: %v", keys)
+	}
+}
+
+func TestMemberRevocationRejectsCachedPermissions(t *testing.T) {
+	source := roleMatrixSource()
+	resolver, _ := newResolver(source, cache.NewMemory())
+	if err := resolver.Require(context.Background(), 1, 10, ProjectRead); err != nil {
+		t.Fatal(err)
+	}
+
+	source.mu.Lock()
+	identity := source.identities[[2]int64{1, 10}]
+	identity.EnvironmentVersion++
+	identity.EnvironmentMember = false
+	source.identities[[2]int64{1, 10}] = identity
+	source.mu.Unlock()
+
+	if err := resolver.Require(context.Background(), 1, 10, ProjectRead); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("revoked member retained cached permission: %v", err)
+	}
+}
+
+func TestRolePermissionShrinkRejectsCachedPermission(t *testing.T) {
+	source := roleMatrixSource()
+	source.keys[[2]int64{1, 10}] = []string{ProjectRead, ConfigWrite}
+	resolver, _ := newResolver(source, cache.NewMemory())
+	if err := resolver.Require(context.Background(), 1, 10, ConfigWrite); err != nil {
+		t.Fatal(err)
+	}
+
+	source.mu.Lock()
+	source.keys[[2]int64{1, 10}] = []string{ProjectRead}
+	identity := source.identities[[2]int64{1, 10}]
+	identity.EnvironmentVersion++
+	source.identities[[2]int64{1, 10}] = identity
+	source.mu.Unlock()
+
+	if err := resolver.Require(context.Background(), 1, 10, ConfigWrite); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("removed role permission remained authorized: %v", err)
+	}
+	if err := resolver.Require(context.Background(), 1, 10, ProjectRead); err != nil {
+		t.Fatalf("retained role permission was rejected: %v", err)
+	}
+}
+
+func TestRedisFailuresCannotPreserveStaleAuthorization(t *testing.T) {
+	source := roleMatrixSource()
+	source.keys[[2]int64{1, 10}] = []string{ProjectRead, ConfigWrite}
+	redisErr := errors.New("Redis unavailable")
+	store := &faultCache{Store: cache.NewMemory()}
+	resolver, _ := newResolver(source, store)
+	if err := resolver.Require(context.Background(), 1, 10, ConfigWrite); err != nil {
+		t.Fatal(err)
+	}
+
+	source.mu.Lock()
+	source.keys[[2]int64{1, 10}] = []string{ProjectRead}
+	identity := source.identities[[2]int64{1, 10}]
+	identity.EnvironmentVersion++
+	source.identities[[2]int64{1, 10}] = identity
+	source.mu.Unlock()
+	store.deleteErr = redisErr
+	if err := resolver.Invalidate(context.Background(), 1, 10); !errors.Is(err, redisErr) {
+		t.Fatalf("cleanup error = %v", err)
+	}
+	store.getErr = redisErr
+	store.setErr = redisErr
+
+	if err := resolver.Require(context.Background(), 1, 10, ConfigWrite); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("Redis outage preserved removed permission: %v", err)
+	}
+	if err := resolver.Require(context.Background(), 1, 10, ProjectRead); err != nil {
+		t.Fatalf("Redis outage rejected current database permission: %v", err)
+	}
+	if store.getCalls == 0 || store.setCalls == 0 || store.deleteCalls == 0 {
+		t.Fatalf("Redis fault paths were not exercised: get=%d set=%d delete=%d", store.getCalls, store.setCalls, store.deleteCalls)
 	}
 }

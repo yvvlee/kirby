@@ -2,7 +2,6 @@ package role
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/yvvlee/kirby/server/internal/model"
@@ -95,16 +94,12 @@ func (l *Logic) UpdatePermissions(ctx context.Context, actor permission.Actor, r
 	if err != nil {
 		return err
 	}
-	var invalidationErrors []error
 	for _, assignment := range assignments {
-		if err := l.authorizer.Invalidate(ctx, assignment.UserID, assignment.EnvironmentID); err != nil {
-			invalidationErrors = append(invalidationErrors, fmt.Errorf(
-				"invalidate permissions for user %d in environment %d: %w",
-				assignment.UserID, assignment.EnvironmentID, err,
-			))
-		}
+		// The transaction already advanced environments.version. Redis deletion
+		// only reclaims stale keys and cannot affect the committed API result.
+		_ = l.authorizer.Invalidate(ctx, assignment.UserID, assignment.EnvironmentID)
 	}
-	return errors.Join(invalidationErrors...)
+	return nil
 }
 
 func audit(actor permission.Actor, action, resourceType string) *model.AuditLog {
