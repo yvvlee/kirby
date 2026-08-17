@@ -24,6 +24,8 @@ scripts/test-local-dev.sh
 `KIRBY_NPM_REGISTRY` can select a temporary npm registry when the default
 registry is unreachable. Package integrity remains enforced by
 `package-lock.json`; the repository `.npmrc` is not modified.
+`KIRBY_GO_PROXY` can select a temporary public Go module proxy for the
+container build; `go.sum` verification remains enabled.
 
 The local command expects running containers named `mysql` and `redis` by
 default. The names and published ports are configurable through the
@@ -35,9 +37,9 @@ default. The names and published ports are configurable through the
 |---|---|
 | Local MySQL | 9.7.0 |
 | Local Redis | 8.8.0 |
-| Go build image | `sha256:81dc45d05a7444ead8c92a389621fafabc8e40f8fd1a19d7e5df14e61e98bc1a` |
+| Go build image | `sha256:e401dae1bf814e29204a8cb7915682e1780951e609ca0dd8865ee1937f510c48` |
 | Node build image | `sha256:9e70124bd00f47dd023e349cd587132ae61892acc0e47ed641416c3e18f401c3` |
-| Web runtime image | `sha256:ce2bd4775ed6859d35f47d65401ee9f35f1dd00b32ed05f0ce38b68aa1830195` |
+| Web runtime image | `sha256:ddde39c6e51f02fde7410c2e9c234cf2d0a4c7bdbbe176aeb37d8ad7ab4eb58c` |
 
 ## Result
 

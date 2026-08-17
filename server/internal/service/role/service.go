@@ -14,6 +14,7 @@ import (
 	"github.com/yvvlee/kirby/server/internal/model"
 	"github.com/yvvlee/kirby/server/internal/permission"
 	"github.com/yvvlee/kirby/server/internal/repository"
+	"github.com/yvvlee/kirby/server/internal/safeint"
 )
 
 type Logic interface {
@@ -145,7 +146,11 @@ func (s *Service) UpdateRolePermissions(ctx context.Context, request *adminv1.Up
 }
 
 func roleToProto(item *repository.RoleWithPermissions) (*commonv1.Role, error) {
-	if item == nil || item.Role.ID <= 0 || item.Role.Version < 0 || uint64(item.Role.Version) > uint64(^uint32(0)) {
+	if item == nil || item.Role.ID <= 0 {
+		return nil, fmt.Errorf("invalid role record")
+	}
+	version, err := safeint.Uint32FromInt64(item.Role.Version)
+	if err != nil {
 		return nil, fmt.Errorf("invalid role record")
 	}
 	permissions := make([]*commonv1.Permission, 0, len(item.Permissions))
@@ -158,7 +163,7 @@ func roleToProto(item *repository.RoleWithPermissions) (*commonv1.Role, error) {
 	}
 	return &commonv1.Role{
 		Id: item.Role.ID, Key: item.Role.Key, Name: item.Role.Name, Description: item.Role.Description, Builtin: item.Role.Builtin,
-		Permissions: permissions, CreatedAt: formatTime(item.Role.CreatedAt), UpdatedAt: formatTime(item.Role.UpdatedAt), Version: uint32(item.Role.Version),
+		Permissions: permissions, CreatedAt: formatTime(item.Role.CreatedAt), UpdatedAt: formatTime(item.Role.UpdatedAt), Version: version,
 	}, nil
 }
 

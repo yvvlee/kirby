@@ -68,14 +68,14 @@ func (r *ProjectAPIKeyRepository) FindByID(ctx context.Context, environmentID, p
 		return nil, err
 	}
 	var key model.ProjectAPIKey
-	err := base.FindOne(ctx, r.engine, "project API key", projectAPIKeyByIDSQL, []any{environmentID, projectID, keyID}, &key)
+	err := base.FindOne(ctx, r.engine, "project API key", scopedProjectKeyLookupSQL, []any{environmentID, projectID, keyID}, &key)
 	if err != nil {
 		return nil, err
 	}
 	return &key, nil
 }
 
-const projectAPIKeyByIDSQL = `
+const scopedProjectKeyLookupSQL = `
 SELECT k.*
 FROM project_api_keys AS k
 INNER JOIN projects AS p ON p.id = k.project_id AND p.deleted_at IS NULL

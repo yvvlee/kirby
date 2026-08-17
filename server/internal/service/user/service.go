@@ -13,6 +13,7 @@ import (
 	logic "github.com/yvvlee/kirby/server/internal/logic/user"
 	"github.com/yvvlee/kirby/server/internal/model"
 	"github.com/yvvlee/kirby/server/internal/permission"
+	"github.com/yvvlee/kirby/server/internal/safeint"
 )
 
 type Logic interface {
@@ -126,12 +127,16 @@ func (s *Service) UpdateUserStatus(ctx context.Context, request *adminv1.UpdateU
 }
 
 func userToProto(item *model.User) (*commonv1.User, error) {
-	if item == nil || item.ID <= 0 || item.Version < 0 || uint64(item.Version) > uint64(^uint32(0)) {
+	if item == nil || item.ID <= 0 {
+		return nil, fmt.Errorf("invalid user record")
+	}
+	version, err := safeint.Uint32FromInt64(item.Version)
+	if err != nil {
 		return nil, fmt.Errorf("invalid user record")
 	}
 	return &commonv1.User{
 		Id: item.ID, Username: item.Username, DisplayName: item.DisplayName, Enabled: item.Enabled, IsSystemAdmin: item.IsSystemAdmin,
-		CreatedAt: formatTime(item.CreatedAt), UpdatedAt: formatTime(item.UpdatedAt), Version: uint32(item.Version),
+		CreatedAt: formatTime(item.CreatedAt), UpdatedAt: formatTime(item.UpdatedAt), Version: version,
 	}, nil
 }
 

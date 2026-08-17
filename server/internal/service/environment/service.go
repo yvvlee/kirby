@@ -14,6 +14,7 @@ import (
 	"github.com/yvvlee/kirby/server/internal/model"
 	"github.com/yvvlee/kirby/server/internal/permission"
 	"github.com/yvvlee/kirby/server/internal/repository"
+	"github.com/yvvlee/kirby/server/internal/safeint"
 )
 
 type Logic interface {
@@ -149,12 +150,16 @@ func (s *Service) UpdateEnvironmentUserRoles(ctx context.Context, request *admin
 }
 
 func environmentToProto(item *model.Environment) (*commonv1.Environment, error) {
-	if item == nil || item.ID <= 0 || item.Version < 0 || uint64(item.Version) > uint64(^uint32(0)) {
+	if item == nil || item.ID <= 0 {
+		return nil, fmt.Errorf("invalid environment record")
+	}
+	version, err := safeint.Uint32FromInt64(item.Version)
+	if err != nil {
 		return nil, fmt.Errorf("invalid environment record")
 	}
 	return &commonv1.Environment{
 		Id: item.ID, Key: item.Key, Name: item.Name, Description: item.Description, Enabled: item.Enabled,
-		CreatedAt: formatTime(item.CreatedAt), UpdatedAt: formatTime(item.UpdatedAt), Version: uint32(item.Version),
+		CreatedAt: formatTime(item.CreatedAt), UpdatedAt: formatTime(item.UpdatedAt), Version: version,
 	}, nil
 }
 
@@ -178,17 +183,25 @@ func memberToProto(item *repository.EnvironmentMemberRecord) (*commonv1.Environm
 }
 
 func userToProto(item *model.User) (*commonv1.User, error) {
-	if item == nil || item.ID <= 0 || item.Version < 0 || uint64(item.Version) > uint64(^uint32(0)) {
+	if item == nil || item.ID <= 0 {
+		return nil, fmt.Errorf("invalid user record")
+	}
+	version, err := safeint.Uint32FromInt64(item.Version)
+	if err != nil {
 		return nil, fmt.Errorf("invalid user record")
 	}
 	return &commonv1.User{
 		Id: item.ID, Username: item.Username, DisplayName: item.DisplayName, Enabled: item.Enabled, IsSystemAdmin: item.IsSystemAdmin,
-		CreatedAt: formatTime(item.CreatedAt), UpdatedAt: formatTime(item.UpdatedAt), Version: uint32(item.Version),
+		CreatedAt: formatTime(item.CreatedAt), UpdatedAt: formatTime(item.UpdatedAt), Version: version,
 	}, nil
 }
 
 func roleToProto(item *repository.RoleWithPermissions) (*commonv1.Role, error) {
-	if item == nil || item.Role.ID <= 0 || item.Role.Version < 0 || uint64(item.Role.Version) > uint64(^uint32(0)) {
+	if item == nil || item.Role.ID <= 0 {
+		return nil, fmt.Errorf("invalid role record")
+	}
+	version, err := safeint.Uint32FromInt64(item.Role.Version)
+	if err != nil {
 		return nil, fmt.Errorf("invalid role record")
 	}
 	permissions := make([]*commonv1.Permission, 0, len(item.Permissions))
@@ -197,7 +210,7 @@ func roleToProto(item *repository.RoleWithPermissions) (*commonv1.Role, error) {
 	}
 	return &commonv1.Role{
 		Id: item.Role.ID, Key: item.Role.Key, Name: item.Role.Name, Description: item.Role.Description, Builtin: item.Role.Builtin,
-		Permissions: permissions, CreatedAt: formatTime(item.Role.CreatedAt), UpdatedAt: formatTime(item.Role.UpdatedAt), Version: uint32(item.Role.Version),
+		Permissions: permissions, CreatedAt: formatTime(item.Role.CreatedAt), UpdatedAt: formatTime(item.Role.UpdatedAt), Version: version,
 	}, nil
 }
 

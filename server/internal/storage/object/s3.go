@@ -17,6 +17,7 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 
 	"github.com/yvvlee/kirby/server/internal/config"
+	"github.com/yvvlee/kirby/server/internal/safeint"
 )
 
 const (
@@ -206,12 +207,16 @@ func (s *S3Storage) CompleteUpload(ctx context.Context, key string) (*Metadata, 
 		return nil, safeS3Error("open validated S3 upload", err)
 	}
 	defer source.Close()
+	publishSize, err := safeint.Int64FromUint64(metadata.Size)
+	if err != nil {
+		return nil, fmt.Errorf("%w: S3 object size is invalid", ErrObjectIntegrity)
+	}
 	publishInfo, err := s.internalClient.PutObjectIfAbsent(
 		ctx,
 		s.bucket,
 		finalKey,
 		source,
-		int64(metadata.Size),
+		publishSize,
 		metadata.ContentType,
 		map[string]string{
 			declaredSizeMetadata:        strconv.FormatUint(metadata.DeclaredSize, 10),
@@ -264,12 +269,16 @@ func (s *S3Storage) ReadMetadata(ctx context.Context, key string) (*Metadata, er
 	if !scope.Temporary {
 		objectURL = s.publicURL(key)
 	}
+	objectSize, err := safeint.Uint64FromInt64(info.Size)
+	if err != nil {
+		return nil, fmt.Errorf("%w: S3 object size is invalid", ErrObjectIntegrity)
+	}
 	return &Metadata{
 		Key:                 key,
 		URL:                 objectURL,
 		ETag:                info.ETag,
 		ContentType:         info.ContentType,
-		Size:                uint64(info.Size),
+		Size:                objectSize,
 		DeclaredContentType: declaredContentType,
 		DeclaredSize:        declaredSize,
 		LastModified:        info.LastModified.UTC(),

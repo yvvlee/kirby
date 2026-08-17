@@ -14,6 +14,7 @@ import (
 	"github.com/yvvlee/kirby/server/internal/entity"
 	"github.com/yvvlee/kirby/server/internal/model"
 	"github.com/yvvlee/kirby/server/internal/repository/base"
+	"github.com/yvvlee/kirby/server/internal/safeint"
 	"github.com/yvvlee/kirby/server/internal/storage/cache"
 	"github.com/yvvlee/kirby/server/internal/storage/database"
 )
@@ -119,7 +120,8 @@ func (l *Logic) Read(ctx context.Context, fullCredential, requestedProject, conf
 		if config == nil {
 			return fmt.Errorf("runtime config repository returned nil config")
 		}
-		if config.RuntimeVersion < 0 {
+		runtimeVersion, err := safeint.Uint64FromInt64(config.RuntimeVersion)
+		if err != nil {
 			return fmt.Errorf("runtime config version is invalid")
 		}
 		cacheKey, err := contentCacheKey(project.EnvironmentID, project.ID, config.Key, config.RuntimeVersion)
@@ -128,7 +130,7 @@ func (l *Logic) Read(ctx context.Context, fullCredential, requestedProject, conf
 		}
 		content, err := l.cache.store.Get(ctx, cacheKey)
 		if err == nil {
-			result = &Result{Content: string(content), Version: uint64(config.RuntimeVersion)}
+			result = &Result{Content: string(content), Version: runtimeVersion}
 			return nil
 		}
 		if !errors.Is(err, cache.ErrNotFound) {
@@ -152,7 +154,7 @@ func (l *Logic) Read(ctx context.Context, fullCredential, requestedProject, conf
 		if err := l.cache.store.Set(ctx, cacheKey, []byte(decoded.Config.GetValue()), contentTTL); err != nil {
 			return fmt.Errorf("write runtime content cache: %w", err)
 		}
-		result = &Result{Content: decoded.Config.GetValue(), Version: uint64(config.RuntimeVersion)}
+		result = &Result{Content: decoded.Config.GetValue(), Version: runtimeVersion}
 		return nil
 	})
 	if err != nil {

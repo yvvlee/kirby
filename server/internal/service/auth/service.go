@@ -25,6 +25,7 @@ import (
 	adminmiddleware "github.com/yvvlee/kirby/server/internal/middleware"
 	"github.com/yvvlee/kirby/server/internal/model"
 	"github.com/yvvlee/kirby/server/internal/repository"
+	"github.com/yvvlee/kirby/server/internal/safeint"
 	"github.com/yvvlee/kirby/server/internal/storage/cache"
 )
 
@@ -317,30 +318,38 @@ func loginReply(accessToken string, ttl time.Duration, user *model.User) (*admin
 	if err != nil {
 		return nil, errorsv1.ErrorInternal("authentication is unavailable")
 	}
-	seconds := uint64(ttl / time.Second)
-	if seconds == 0 || seconds > uint64(^uint32(0)) {
+	seconds, err := safeint.Uint32FromInt64(int64(ttl / time.Second))
+	if err != nil || seconds == 0 {
 		return nil, errorsv1.ErrorInternal("authentication is unavailable")
 	}
-	return &adminv1.LoginReply{AccessToken: accessToken, ExpiresIn: uint32(seconds), User: protoUser}, nil
+	return &adminv1.LoginReply{AccessToken: accessToken, ExpiresIn: seconds, User: protoUser}, nil
 }
 
 func userToProto(user *model.User) (*commonv1.User, error) {
-	if user == nil || user.ID <= 0 || user.Version < 0 || uint64(user.Version) > uint64(^uint32(0)) {
+	if user == nil || user.ID <= 0 {
+		return nil, fmt.Errorf("invalid user record")
+	}
+	version, err := safeint.Uint32FromInt64(user.Version)
+	if err != nil {
 		return nil, fmt.Errorf("invalid user record")
 	}
 	return &commonv1.User{
 		Id: user.ID, Username: user.Username, DisplayName: user.DisplayName, Enabled: user.Enabled,
-		IsSystemAdmin: user.IsSystemAdmin, CreatedAt: formatTime(user.CreatedAt), UpdatedAt: formatTime(user.UpdatedAt), Version: uint32(user.Version),
+		IsSystemAdmin: user.IsSystemAdmin, CreatedAt: formatTime(user.CreatedAt), UpdatedAt: formatTime(user.UpdatedAt), Version: version,
 	}, nil
 }
 
 func environmentToProto(environment *model.Environment) (*commonv1.Environment, error) {
-	if environment == nil || environment.ID <= 0 || environment.Version < 0 || uint64(environment.Version) > uint64(^uint32(0)) {
+	if environment == nil || environment.ID <= 0 {
+		return nil, fmt.Errorf("invalid environment record")
+	}
+	version, err := safeint.Uint32FromInt64(environment.Version)
+	if err != nil {
 		return nil, fmt.Errorf("invalid environment record")
 	}
 	return &commonv1.Environment{
 		Id: environment.ID, Key: environment.Key, Name: environment.Name, Description: environment.Description, Enabled: environment.Enabled,
-		CreatedAt: formatTime(environment.CreatedAt), UpdatedAt: formatTime(environment.UpdatedAt), Version: uint32(environment.Version),
+		CreatedAt: formatTime(environment.CreatedAt), UpdatedAt: formatTime(environment.UpdatedAt), Version: version,
 	}, nil
 }
 

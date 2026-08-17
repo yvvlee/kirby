@@ -13,6 +13,7 @@ import (
 	"github.com/yvvlee/kirby/server/internal/permission"
 	"github.com/yvvlee/kirby/server/internal/repository"
 	"github.com/yvvlee/kirby/server/internal/repository/base"
+	"github.com/yvvlee/kirby/server/internal/safeint"
 	"github.com/yvvlee/kirby/server/internal/storage/database"
 )
 
@@ -111,7 +112,11 @@ func (l *Logic) Update(ctx context.Context, actor permission.Actor, environmentI
 		if locked.Key != key && referenced {
 			return entity.Conflict("referenced enum key cannot be changed")
 		}
-		candidate := &commonv1.ConfigEnum{Id: locked.Id, ConfigId: locked.ConfigId, Key: key, Name: name, Description: description, Values: values, Version: uint32(version)}
+		protoVersion, err := safeint.Uint32FromInt64(version)
+		if err != nil {
+			return entity.Invalid("invalid enum version")
+		}
+		candidate := &commonv1.ConfigEnum{Id: locked.Id, ConfigId: locked.ConfigId, Key: key, Name: name, Description: description, Values: values, Version: protoVersion}
 		for index, item := range enums {
 			if item.Id == enumID {
 				enums[index] = candidate

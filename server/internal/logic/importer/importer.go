@@ -22,6 +22,7 @@ import (
 	"github.com/yvvlee/kirby/server/internal/permission"
 	"github.com/yvvlee/kirby/server/internal/repository"
 	"github.com/yvvlee/kirby/server/internal/repository/base"
+	"github.com/yvvlee/kirby/server/internal/safeint"
 	"github.com/yvvlee/kirby/server/internal/storage/database"
 )
 
@@ -340,12 +341,13 @@ func resourceModels(content *entity.ConfigSnapshot, configID, actorID int64) ([]
 }
 
 func canonicalTargetContent(source *entity.ConfigSnapshot, config *model.Config, structures []*model.Structure, enums []*model.ConfigEnum) (*entity.ConfigSnapshot, error) {
-	if config.RuntimeVersion < 0 {
+	runtimeVersion, err := safeint.Uint64FromInt64(config.RuntimeVersion)
+	if err != nil {
 		return nil, fmt.Errorf("target config runtime version is invalid")
 	}
 	result := &entity.ConfigSnapshot{Config: proto.Clone(source.Config).(*commonv1.Config)}
 	result.Config.Id, result.Config.ProjectId, result.Config.Key = config.ID, config.ProjectID, config.Key
-	result.Config.RuntimeVersion = uint64(config.RuntimeVersion)
+	result.Config.RuntimeVersion = runtimeVersion
 	result.Config.CreatedBy, result.Config.UpdatedBy, result.Config.CreatedAt, result.Config.UpdatedAt, result.Config.Version = "", "", "", "", 0
 	result.Structures = make([]*commonv1.Structure, 0, len(source.Structures))
 	structureByKey := make(map[string]*model.Structure, len(structures))

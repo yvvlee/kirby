@@ -14,6 +14,7 @@ import (
 	"github.com/yvvlee/kirby/server/internal/model"
 	"github.com/yvvlee/kirby/server/internal/permission"
 	"github.com/yvvlee/kirby/server/internal/repository/base"
+	"github.com/yvvlee/kirby/server/internal/safeint"
 )
 
 type Logic interface {
@@ -143,7 +144,16 @@ func (s *Service) ListSnapshot(ctx context.Context, request *adminv1.ListSnapsho
 			limit = *request.Page.Limit
 		}
 	}
-	page, err := s.logic.List(ctx, actor, request.EnvironmentId, request.ProjectId, request.ConfigId, base.PageRequest{Offset: int((uint64(pageNumber) - 1) * uint64(limit)), Limit: int(limit)})
+	offsetValue := (uint64(pageNumber) - 1) * uint64(limit)
+	offset, err := safeint.IntFromUint64(offsetValue)
+	if err != nil {
+		return nil, badRequest()
+	}
+	pageLimit, err := safeint.IntFromUint32(limit)
+	if err != nil {
+		return nil, badRequest()
+	}
+	page, err := s.logic.List(ctx, actor, request.EnvironmentId, request.ProjectId, request.ConfigId, base.PageRequest{Offset: offset, Limit: pageLimit})
 	if err != nil {
 		return nil, entity.APIError(err)
 	}
@@ -155,7 +165,15 @@ func (s *Service) ListSnapshot(ctx context.Context, request *adminv1.ListSnapsho
 		}
 		items = append(items, converted)
 	}
-	return &adminv1.ListSnapshotReply{Page: &commonv1.Pagination{Page: pageNumber, Limit: uint32(page.Limit), Total: uint64(page.Total)}, List: items}, nil
+	responseLimit, err := safeint.Uint32FromInt(page.Limit)
+	if err != nil {
+		return nil, entity.APIError(fmt.Errorf("invalid snapshot page limit"))
+	}
+	total, err := safeint.Uint64FromInt64(page.Total)
+	if err != nil {
+		return nil, entity.APIError(fmt.Errorf("invalid snapshot page total"))
+	}
+	return &adminv1.ListSnapshotReply{Page: &commonv1.Pagination{Page: pageNumber, Limit: responseLimit, Total: total}, List: items}, nil
 }
 
 func reply(item *model.Snapshot, err error) (*adminv1.SnapshotReply, error) {

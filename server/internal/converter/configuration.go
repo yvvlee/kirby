@@ -6,6 +6,7 @@ import (
 
 	commonv1 "github.com/yvvlee/kirby/server/gen/kirby/common/v1"
 	"github.com/yvvlee/kirby/server/internal/model"
+	"github.com/yvvlee/kirby/server/internal/safeint"
 	"github.com/yvvlee/kirby/server/internal/timeutil"
 )
 
@@ -13,13 +14,14 @@ func ProjectToProto(item *model.Project) (*commonv1.Project, error) {
 	if item == nil {
 		return nil, fmt.Errorf("invalid database record")
 	}
-	if err := validMeta(item.ID, item.Version); err != nil {
+	version, err := validMeta(item.ID, item.Version)
+	if err != nil {
 		return nil, err
 	}
 	return &commonv1.Project{
 		Id: item.ID, EnvironmentId: item.EnvironmentID, Key: item.Key, Name: item.Name, Description: item.Description,
 		CreatedBy: formatActor(item.CreatedBy), UpdatedBy: formatActor(item.UpdatedBy),
-		CreatedAt: timeutil.FormatRFC3339(item.CreatedAt), UpdatedAt: timeutil.FormatRFC3339(item.UpdatedAt), Version: uint32(item.Version),
+		CreatedAt: timeutil.FormatRFC3339(item.CreatedAt), UpdatedAt: timeutil.FormatRFC3339(item.UpdatedAt), Version: version,
 	}, nil
 }
 
@@ -27,21 +29,23 @@ func ConfigToProto(item *model.Config) (*commonv1.Config, error) {
 	if item == nil {
 		return nil, fmt.Errorf("invalid database record")
 	}
-	if err := validMeta(item.ID, item.Version); err != nil {
+	version, err := validMeta(item.ID, item.Version)
+	if err != nil {
 		return nil, err
 	}
 	fieldType, err := DecodeFieldType(item.TypeJSON)
 	if err != nil {
 		return nil, err
 	}
-	if item.RuntimeVersion < 0 {
+	runtimeVersion, err := safeint.Uint64FromInt64(item.RuntimeVersion)
+	if err != nil {
 		return nil, fmt.Errorf("invalid config runtime version")
 	}
 	return &commonv1.Config{
 		Id: item.ID, ProjectId: item.ProjectID, Key: item.Key, Description: item.Description,
-		IsArray: item.IsArray, Type: fieldType, Value: item.Value, RuntimeVersion: uint64(item.RuntimeVersion),
+		IsArray: item.IsArray, Type: fieldType, Value: item.Value, RuntimeVersion: runtimeVersion,
 		CreatedBy: formatActor(item.CreatedBy), UpdatedBy: formatActor(item.UpdatedBy),
-		CreatedAt: timeutil.FormatRFC3339(item.CreatedAt), UpdatedAt: timeutil.FormatRFC3339(item.UpdatedAt), Version: uint32(item.Version),
+		CreatedAt: timeutil.FormatRFC3339(item.CreatedAt), UpdatedAt: timeutil.FormatRFC3339(item.UpdatedAt), Version: version,
 	}, nil
 }
 
@@ -49,7 +53,8 @@ func StructureToProto(item *model.Structure) (*commonv1.Structure, error) {
 	if item == nil {
 		return nil, fmt.Errorf("invalid database record")
 	}
-	if err := validMeta(item.ID, item.Version); err != nil {
+	version, err := validMeta(item.ID, item.Version)
+	if err != nil {
 		return nil, err
 	}
 	fields, err := DecodeFields(item.FieldsJSON)
@@ -59,7 +64,7 @@ func StructureToProto(item *model.Structure) (*commonv1.Structure, error) {
 	return &commonv1.Structure{
 		Id: item.ID, ConfigId: item.ConfigID, Key: item.Key, Name: item.Name, Description: item.Description, Fields: fields,
 		CreatedBy: formatActor(item.CreatedBy), UpdatedBy: formatActor(item.UpdatedBy),
-		CreatedAt: timeutil.FormatRFC3339(item.CreatedAt), UpdatedAt: timeutil.FormatRFC3339(item.UpdatedAt), Version: uint32(item.Version),
+		CreatedAt: timeutil.FormatRFC3339(item.CreatedAt), UpdatedAt: timeutil.FormatRFC3339(item.UpdatedAt), Version: version,
 	}, nil
 }
 
@@ -67,7 +72,8 @@ func EnumToProto(item *model.ConfigEnum) (*commonv1.ConfigEnum, error) {
 	if item == nil {
 		return nil, fmt.Errorf("invalid database record")
 	}
-	if err := validMeta(item.ID, item.Version); err != nil {
+	version, err := validMeta(item.ID, item.Version)
+	if err != nil {
 		return nil, err
 	}
 	values, err := DecodeOptions(item.ValuesJSON)
@@ -77,7 +83,7 @@ func EnumToProto(item *model.ConfigEnum) (*commonv1.ConfigEnum, error) {
 	return &commonv1.ConfigEnum{
 		Id: item.ID, ConfigId: item.ConfigID, Key: item.Key, Name: item.Name, Description: item.Description, Values: values,
 		CreatedBy: formatActor(item.CreatedBy), UpdatedBy: formatActor(item.UpdatedBy),
-		CreatedAt: timeutil.FormatRFC3339(item.CreatedAt), UpdatedAt: timeutil.FormatRFC3339(item.UpdatedAt), Version: uint32(item.Version),
+		CreatedAt: timeutil.FormatRFC3339(item.CreatedAt), UpdatedAt: timeutil.FormatRFC3339(item.UpdatedAt), Version: version,
 	}, nil
 }
 
@@ -85,7 +91,8 @@ func SnapshotToProto(item *model.Snapshot) (*commonv1.Snapshot, error) {
 	if item == nil {
 		return nil, fmt.Errorf("invalid database record")
 	}
-	if err := validMeta(item.ID, item.Version); err != nil {
+	version, err := validMeta(item.ID, item.Version)
+	if err != nil {
 		return nil, err
 	}
 	tags, err := DecodeTags(item.TagsJSON)
@@ -99,7 +106,7 @@ func SnapshotToProto(item *model.Snapshot) (*commonv1.Snapshot, error) {
 		Id: item.ID, ProjectId: item.ProjectID, ConfigId: item.ConfigID, ConfigKey: item.ConfigKey,
 		Description: item.Description, Content: item.Content, Status: commonv1.Snapshot_Status(item.Status), Tags: tags, IsUsing: item.IsUsing,
 		CreatedBy: formatActor(item.CreatedBy), UpdatedBy: formatActor(item.UpdatedBy),
-		CreatedAt: timeutil.FormatRFC3339(item.CreatedAt), UpdatedAt: timeutil.FormatRFC3339(item.UpdatedAt), Version: uint32(item.Version),
+		CreatedAt: timeutil.FormatRFC3339(item.CreatedAt), UpdatedAt: timeutil.FormatRFC3339(item.UpdatedAt), Version: version,
 	}, nil
 }
 
@@ -115,11 +122,15 @@ func SimpleSnapshotToProto(item *model.Snapshot) (*commonv1.SimpleSnapshot, erro
 	}, nil
 }
 
-func validMeta(recordID, recordVersion int64) error {
-	if recordID <= 0 || recordVersion < 0 || uint64(recordVersion) > uint64(^uint32(0)) {
-		return fmt.Errorf("invalid database record")
+func validMeta(recordID, recordVersion int64) (uint32, error) {
+	if recordID <= 0 {
+		return 0, fmt.Errorf("invalid database record")
 	}
-	return nil
+	version, err := safeint.Uint32FromInt64(recordVersion)
+	if err != nil {
+		return 0, fmt.Errorf("invalid database record")
+	}
+	return version, nil
 }
 
 func formatActor(value int64) string {

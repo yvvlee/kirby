@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"mime"
 	"net/http"
 	"os"
@@ -17,6 +18,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/yvvlee/kirby/server/internal/safefile"
+	"github.com/yvvlee/kirby/server/internal/safeint"
 )
 
 const localMetadataSuffix = ".kirby-metadata"
@@ -149,7 +153,7 @@ func (s *LocalStorage) ReadMetadata(ctx context.Context, key string) (*Metadata,
 	if !metadataInfo.Mode().IsRegular() {
 		return nil, fmt.Errorf("%w: local metadata is not a regular file", ErrObjectIntegrity)
 	}
-	encoded, err := os.ReadFile(metadataPath)
+	encoded, err := safefile.ReadFile(metadataPath)
 	if err != nil {
 		return nil, classifyLocalReadError(err)
 	}
@@ -161,11 +165,15 @@ func (s *LocalStorage) ReadMetadata(ctx context.Context, key string) (*Metadata,
 	if info.Size() < 0 {
 		return nil, fmt.Errorf("%w: local object size is invalid", ErrObjectIntegrity)
 	}
+	size, err := safeint.Uint64FromInt64(info.Size())
+	if err != nil {
+		return nil, fmt.Errorf("%w: local object size is invalid", ErrObjectIntegrity)
+	}
 	return &Metadata{
 		Key:                 key,
 		URL:                 LocalObjectPathPrefix + key,
 		ContentType:         stored.ContentType,
-		Size:                uint64(info.Size()),
+		Size:                size,
 		DeclaredContentType: stored.DeclaredContentType,
 		DeclaredSize:        stored.DeclaredSize,
 		LastModified:        info.ModTime().UTC(),
@@ -230,9 +238,12 @@ func (s *LocalStorage) handleUpload(writer http.ResponseWriter, request *http.Re
 		http.Error(writer, "content type does not match upload ticket", http.StatusBadRequest)
 		return
 	}
-	if request.ContentLength >= 0 && uint64(request.ContentLength) != claims.Size {
-		http.Error(writer, "content length does not match upload ticket", http.StatusBadRequest)
-		return
+	if request.ContentLength >= 0 {
+		contentLength, conversionErr := safeint.Uint64FromInt64(request.ContentLength)
+		if conversionErr != nil || contentLength != claims.Size {
+			http.Error(writer, "content length does not match upload ticket", http.StatusBadRequest)
+			return
+		}
 	}
 	if err := s.writeUpload(request.Context(), claims, request.Body); err != nil {
 		status := http.StatusInternalServerError
@@ -295,12 +306,18 @@ func (s *LocalStorage) writeUpload(ctx context.Context, claims localUploadClaims
 		_ = temporary.Close()
 		return fmt.Errorf("secure local upload: %w", ErrStorageUnavailable)
 	}
-	written, copyErr := io.Copy(temporary, io.LimitReader(source, int64(claims.Size)+1))
+	limit, err := safeint.Int64FromUint64(claims.Size)
+	if err != nil || limit == math.MaxInt64 {
+		_ = temporary.Close()
+		return fmt.Errorf("%w: upload size is invalid", ErrInvalidInput)
+	}
+	written, copyErr := io.Copy(temporary, io.LimitReader(source, limit+1))
 	closeErr := temporary.Close()
 	if copyErr != nil || closeErr != nil {
 		return fmt.Errorf("write local upload: %w", ErrStorageUnavailable)
 	}
-	if written < 0 || uint64(written) != claims.Size {
+	writtenSize, conversionErr := safeint.Uint64FromInt64(written)
+	if conversionErr != nil || writtenSize != claims.Size {
 		return fmt.Errorf("%w: uploaded size does not match declaration", ErrObjectIntegrity)
 	}
 	if err := os.Link(temporaryPath, objectPath); err != nil {
@@ -433,7 +450,7 @@ func (s *LocalStorage) verifyToken(token string) (localUploadClaims, error) {
 }
 
 func writeExclusiveFile(path string, contents []byte, mode os.FileMode) error {
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
+	file, err := safefile.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
 	if err != nil {
 		return err
 	}

@@ -13,6 +13,7 @@ import (
 	"github.com/yvvlee/kirby/server/internal/permission"
 	"github.com/yvvlee/kirby/server/internal/repository"
 	"github.com/yvvlee/kirby/server/internal/repository/base"
+	"github.com/yvvlee/kirby/server/internal/safeint"
 	"github.com/yvvlee/kirby/server/internal/storage/database"
 )
 
@@ -108,7 +109,11 @@ func (l *Logic) Update(ctx context.Context, actor permission.Actor, environmentI
 		if lockedCurrent.Key != key && referenced {
 			return entity.Conflict("referenced structure key cannot be changed")
 		}
-		candidate := &commonv1.Structure{Id: lockedCurrent.Id, ConfigId: lockedCurrent.ConfigId, Key: key, Name: name, Description: description, Fields: fields, Version: uint32(version)}
+		protoVersion, err := safeint.Uint32FromInt64(version)
+		if err != nil {
+			return entity.Invalid("invalid structure version")
+		}
+		candidate := &commonv1.Structure{Id: lockedCurrent.Id, ConfigId: lockedCurrent.ConfigId, Key: key, Name: name, Description: description, Fields: fields, Version: protoVersion}
 		for index, item := range structures {
 			if item.Id == lockedCurrent.Id {
 				structures[index] = candidate

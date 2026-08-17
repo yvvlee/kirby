@@ -4,11 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/yvvlee/kirby/server/internal/safefile"
 )
 
 const ConfigFileEnvironment = "KIRBY_CONFIG_FILE"
@@ -42,7 +43,7 @@ func Load(flagPath string, lookupEnv LookupEnv) (*Config, error) {
 
 // LoadFile strictly decodes one YAML document and validates it.
 func LoadFile(path string) (*Config, error) {
-	file, err := os.Open(path)
+	file, err := safefile.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("open config %q: %w", path, err)
 	}

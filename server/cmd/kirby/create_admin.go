@@ -12,6 +12,8 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
+	"github.com/yvvlee/kirby/server/internal/safefile"
+
 	"github.com/yvvlee/kirby/server/internal/auth/password"
 	"github.com/yvvlee/kirby/server/internal/config"
 	"github.com/yvvlee/kirby/server/internal/model"
@@ -168,7 +170,7 @@ func readPasswordFile(path string) ([]byte, error) {
 	if linkInfo.Mode()&os.ModeSymlink != 0 {
 		return nil, fmt.Errorf("password file cannot be a symbolic link")
 	}
-	file, err := os.Open(path)
+	file, err := safefile.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("open password file: %w", err)
 	}

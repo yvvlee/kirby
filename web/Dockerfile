@@ -34,7 +34,7 @@ RUN printf '%s\n' \
     '  }' \
     '}' > /tmp/nginx.conf
 
-FROM nginx:1.28.0-alpine3.21-slim@sha256:ce2bd4775ed6859d35f47d65401ee9f35f1dd00b32ed05f0ce38b68aa1830195
+FROM nginx:1.30.4-alpine3.24-slim@sha256:ddde39c6e51f02fde7410c2e9c234cf2d0a4c7bdbbe176aeb37d8ad7ab4eb58c
 
 COPY --from=build /tmp/nginx.conf /etc/nginx/nginx.conf
 COPY --from=build /src/web/dist/ /usr/share/nginx/html/
