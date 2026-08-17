@@ -102,8 +102,9 @@ func (s *LocalStorage) PresignUpload(ctx context.Context, input PresignUploadInp
 		return nil, fmt.Errorf("sign local upload ticket: %w", ErrStorageUnavailable)
 	}
 	return &UploadTicket{
-		Key: input.Key,
-		URL: LocalUploadPath + "?token=" + token,
+		Key:    input.Key,
+		URL:    LocalUploadPath + "?token=" + token,
+		Method: UploadMethodPut,
 		Headers: map[string]string{
 			"Content-Type": contentType,
 		},

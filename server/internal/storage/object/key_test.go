@@ -21,6 +21,16 @@ func TestBuildAndParseObjectKey(t *testing.T) {
 	assert.Equal(t, int64(34), scope.ProjectID)
 	assert.Equal(t, testObjectID, scope.ObjectID)
 	assert.Equal(t, ".png", scope.Extension)
+	assert.False(t, scope.Temporary)
+
+	uploadKey, err := BuildUploadObjectKey(12, 34, testObjectID, ".png")
+	require.NoError(t, err)
+	assert.Equal(t, "uploads/environments/12/projects/34/assets/"+testObjectID+".png", uploadKey)
+	uploadScope, err := ParseObjectKey(uploadKey)
+	require.NoError(t, err)
+	assert.True(t, uploadScope.Temporary)
+	assert.Equal(t, int64(12), uploadScope.EnvironmentID)
+	assert.Equal(t, int64(34), uploadScope.ProjectID)
 }
 
 func TestParseObjectKeyRejectsTraversalAndForgedShapes(t *testing.T) {
@@ -32,6 +42,8 @@ func TestParseObjectKeyRejectsTraversalAndForgedShapes(t *testing.T) {
 		"environments/1/projects/2/assets/" + testObjectID + ".PNG",
 		"/environments/1/projects/2/assets/" + testObjectID + ".png",
 		"environments\\1\\projects\\2\\assets\\" + testObjectID + ".png",
+		"uploads/environments/1/projects/2/assets/extra/" + testObjectID + ".png",
+		"temporary/environments/1/projects/2/assets/" + testObjectID + ".png",
 	} {
 		t.Run(key, func(t *testing.T) {
 			_, err := ParseObjectKey(key)

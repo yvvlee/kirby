@@ -15,11 +15,22 @@ type ObjectScope struct {
 	ProjectID     int64
 	ObjectID      string
 	Extension     string
+	Temporary     bool
 }
 
 // BuildObjectKey creates a key whose ownership can be verified without using
 // the user-provided filename as a path.
 func BuildObjectKey(environmentID, projectID int64, objectID, extension string) (string, error) {
+	return buildObjectKey(environmentID, projectID, objectID, extension, false)
+}
+
+// BuildUploadObjectKey creates a private temporary key. Only the server may
+// promote it to a separately named public object.
+func BuildUploadObjectKey(environmentID, projectID int64, objectID, extension string) (string, error) {
+	return buildObjectKey(environmentID, projectID, objectID, extension, true)
+}
+
+func buildObjectKey(environmentID, projectID int64, objectID, extension string, temporary bool) (string, error) {
 	if environmentID <= 0 || projectID <= 0 {
 		return "", fmt.Errorf("%w: environment and project IDs must be positive", ErrInvalidInput)
 	}
@@ -35,7 +46,11 @@ func BuildObjectKey(environmentID, projectID int64, objectID, extension string) 
 			return "", fmt.Errorf("%w: extension contains unsupported characters", ErrInvalidInput)
 		}
 	}
-	return fmt.Sprintf("environments/%d/projects/%d/assets/%s%s", environmentID, projectID, objectID, extension), nil
+	prefix := ""
+	if temporary {
+		prefix = "uploads/"
+	}
+	return fmt.Sprintf("%senvironments/%d/projects/%d/assets/%s%s", prefix, environmentID, projectID, objectID, extension), nil
 }
 
 // ParseObjectKey validates the exact canonical key shape.
@@ -44,6 +59,10 @@ func ParseObjectKey(key string) (ObjectScope, error) {
 		return ObjectScope{}, fmt.Errorf("%w: object key is not canonical", ErrInvalidInput)
 	}
 	parts := strings.Split(key, "/")
+	temporary := len(parts) == 7 && parts[0] == "uploads"
+	if temporary {
+		parts = parts[1:]
+	}
 	if len(parts) != 6 || parts[0] != "environments" || parts[2] != "projects" || parts[4] != "assets" {
 		return ObjectScope{}, fmt.Errorf("%w: object key has an invalid scope", ErrInvalidInput)
 	}
@@ -71,6 +90,7 @@ func ParseObjectKey(key string) (ObjectScope, error) {
 		ProjectID:     projectID,
 		ObjectID:      objectID,
 		Extension:     extension,
+		Temporary:     temporary,
 	}, nil
 }
 

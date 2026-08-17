@@ -182,12 +182,28 @@ func TestCompleteRevalidatesSizeAndMIMEAndDeletesInvalidObject(t *testing.T) {
 }
 
 func TestCompleteReturnsValidatedMetadata(t *testing.T) {
-	key, err := object.BuildObjectKey(1, 2, deterministicID, ".png")
+	uploadKey, err := object.BuildUploadObjectKey(1, 2, deterministicID, ".png")
 	require.NoError(t, err)
-	want := &object.Metadata{Key: key, URL: "https://objects.example.test/" + key, ContentType: "image/png", Size: 4, DeclaredContentType: "image/png", DeclaredSize: 4}
+	finalKey, err := object.BuildObjectKey(1, 2, "223e4567-e89b-42d3-a456-426614174000", ".png")
+	require.NoError(t, err)
+	want := &object.Metadata{Key: finalKey, URL: "https://objects.example.test/" + finalKey, ContentType: "image/png", Size: 4, DeclaredContentType: "image/png", DeclaredSize: 4}
 	logic := newTestLogic(t, &fakeStorage{metadata: want}, &fakeAuthorizer{allowed: true}, &fakeProjects{exists: true})
 
-	got, err := logic.Complete(context.Background(), 1, 2, key)
+	got, err := logic.Complete(context.Background(), 1, 2, uploadKey)
 	require.NoError(t, err)
 	assert.Equal(t, want, got)
+}
+
+func TestCompleteRejectsStorageResultOutsideRequestedScope(t *testing.T) {
+	uploadKey, err := object.BuildUploadObjectKey(1, 2, deterministicID, ".png")
+	require.NoError(t, err)
+	foreignKey, err := object.BuildObjectKey(9, 2, deterministicID, ".png")
+	require.NoError(t, err)
+	logic := newTestLogic(t, &fakeStorage{metadata: &object.Metadata{
+		Key: foreignKey, URL: "https://objects.example.test/" + foreignKey, ContentType: "image/png",
+		Size: 4, DeclaredContentType: "image/png", DeclaredSize: 4,
+	}}, &fakeAuthorizer{allowed: true}, &fakeProjects{exists: true})
+
+	_, err = logic.Complete(context.Background(), 1, 2, uploadKey)
+	require.ErrorIs(t, err, ErrAssetIntegrity)
 }

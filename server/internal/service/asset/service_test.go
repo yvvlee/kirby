@@ -22,6 +22,7 @@ func (storage *serviceStorage) PresignUpload(_ context.Context, input object.Pre
 	return &object.UploadTicket{
 		Key:       input.Key,
 		URL:       "https://upload.example.test/signed",
+		Method:    object.UploadMethodPut,
 		Headers:   map[string]string{"Content-Type": input.ContentType},
 		ExpiresAt: time.Date(2026, 8, 17, 10, 15, 0, 0, time.UTC),
 	}, nil
@@ -63,6 +64,7 @@ func TestServicePresignAndComplete(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "image/png", presign.Headers["Content-Type"])
+	assert.Equal(t, object.UploadMethodPut, presign.UploadMethod)
 	assert.Equal(t, "2026-08-17T10:15:00Z", presign.ExpiresAt)
 
 	storage.metadata = &object.Metadata{
@@ -85,4 +87,11 @@ func TestServiceRejectsInvalidRequestWithoutLeakingValidationDetails(t *testing.
 	assert.Equal(t, int32(400), kratosError.Code)
 	assert.Equal(t, "InvalidParam", kratosError.Reason)
 	assert.Equal(t, "asset request is invalid", kratosError.Message)
+}
+
+func TestServiceMapsImmutablePublishConflict(t *testing.T) {
+	err := publicError(assetlogic.ErrAssetConflict)
+	kratosError := errors.FromError(err)
+	assert.Equal(t, int32(409), kratosError.Code)
+	assert.Equal(t, "Conflict", kratosError.Reason)
 }

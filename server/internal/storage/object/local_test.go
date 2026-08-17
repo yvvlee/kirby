@@ -30,6 +30,8 @@ func TestLocalDirectUploadAndComplete(t *testing.T) {
 		Key: key, ContentType: "image/png", Size: 4, ExpiresIn: time.Minute,
 	})
 	require.NoError(t, err)
+	assert.Equal(t, UploadMethodPut, ticket.Method)
+	assert.Empty(t, ticket.FormFields)
 	assert.Equal(t, map[string]string{"Content-Type": "image/png"}, ticket.Headers)
 	assert.NotContains(t, strings.ToLower(ticket.URL), "authorization")
 	assert.NotContains(t, strings.ToLower(ticket.URL), "api-key")

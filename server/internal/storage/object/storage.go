@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"mime"
 	"strings"
 	"time"
@@ -20,11 +19,18 @@ const (
 	LocalObjectPathPrefix = "/api/assets/objects/"
 	// DefaultUploadTTL limits how long a browser upload ticket remains valid.
 	DefaultUploadTTL = 15 * time.Minute
+	// MaxUploadSize is enforced both before signing and by the storage provider.
+	MaxUploadSize = 64 * 1024 * 1024
+	// UploadMethodPut streams a raw request body to local object storage.
+	UploadMethodPut = "PUT"
+	// UploadMethodPost sends a multipart form governed by an S3 POST policy.
+	UploadMethodPost = "POST"
 )
 
 var (
 	ErrInvalidInput       = errors.New("invalid object storage input")
 	ErrObjectNotFound     = errors.New("object not found")
+	ErrObjectConflict     = errors.New("object already published")
 	ErrObjectIntegrity    = errors.New("object metadata does not match upload declaration")
 	ErrStorageUnavailable = errors.New("object storage unavailable")
 )
@@ -40,16 +46,19 @@ type PresignUploadInput struct {
 // UploadTicket contains only the data the browser sends to object storage.
 // It must never contain a management JWT, Cookie, or project API key.
 type UploadTicket struct {
-	Key       string
-	URL       string
-	Headers   map[string]string
-	ExpiresAt time.Time
+	Key        string
+	URL        string
+	Method     string
+	Headers    map[string]string
+	FormFields map[string]string
+	ExpiresAt  time.Time
 }
 
 // Metadata is read from storage after the browser finishes uploading.
 type Metadata struct {
 	Key                 string
 	URL                 string
+	ETag                string
 	ContentType         string
 	Size                uint64
 	DeclaredContentType string
@@ -97,8 +106,8 @@ func validatePresignInput(input PresignUploadInput) (string, error) {
 	if _, err := ParseObjectKey(input.Key); err != nil {
 		return "", err
 	}
-	if input.Size == 0 || input.Size > math.MaxInt64-1 {
-		return "", fmt.Errorf("%w: size must be between one and the supported maximum", ErrInvalidInput)
+	if input.Size == 0 || input.Size > MaxUploadSize {
+		return "", fmt.Errorf("%w: size must be between one and %d bytes", ErrInvalidInput, MaxUploadSize)
 	}
 	contentType, err := normalizeContentType(input.ContentType)
 	if err != nil {

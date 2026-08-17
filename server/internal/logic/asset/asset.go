@@ -19,7 +19,7 @@ import (
 
 const (
 	PermissionAssetWrite = "asset:write"
-	DefaultMaxSize       = 64 * 1024 * 1024
+	DefaultMaxSize       = object.MaxUploadSize
 )
 
 var (
@@ -27,6 +27,7 @@ var (
 	ErrForbidden       = errors.New("asset operation is forbidden")
 	ErrProjectNotFound = errors.New("project not found in environment")
 	ErrAssetNotFound   = errors.New("asset not found")
+	ErrAssetConflict   = errors.New("asset already published")
 	ErrAssetIntegrity  = errors.New("asset failed integrity validation")
 	ErrDependency      = errors.New("asset dependency failed")
 )
@@ -175,12 +176,23 @@ func (logic *Logic) Complete(ctx context.Context, environmentID, projectID int64
 				return nil, fmt.Errorf("%w: remove invalid object", ErrDependency)
 			}
 			return nil, fmt.Errorf("%w: stored metadata differs from upload declaration", ErrAssetIntegrity)
+		case errors.Is(err, object.ErrObjectConflict):
+			return nil, fmt.Errorf("%w", ErrAssetConflict)
 		default:
 			return nil, fmt.Errorf("%w: inspect uploaded object", ErrDependency)
 		}
 	}
+	if metadata == nil {
+		return nil, fmt.Errorf("%w: storage returned no published object", ErrDependency)
+	}
+	publishedScope, err := object.ParseObjectKey(metadata.Key)
+	if err != nil || publishedScope.Temporary ||
+		publishedScope.EnvironmentID != environmentID || publishedScope.ProjectID != projectID ||
+		publishedScope.Extension != scope.Extension {
+		return nil, fmt.Errorf("%w: storage returned an invalid published object scope", ErrAssetIntegrity)
+	}
 	if err := logic.validateCompleted(scope.Extension, metadata); err != nil {
-		if deleteErr := logic.storage.DeleteIncomplete(ctx, key); deleteErr != nil {
+		if deleteErr := logic.storage.DeleteIncomplete(ctx, metadata.Key); deleteErr != nil {
 			return nil, fmt.Errorf("%w: remove invalid object", ErrDependency)
 		}
 		return nil, err

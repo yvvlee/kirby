@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"path"
@@ -19,20 +20,54 @@ import (
 )
 
 const (
-	declaredSizeHeader        = "X-Amz-Meta-Kirby-Declared-Size"
-	declaredContentTypeHeader = "X-Amz-Meta-Kirby-Declared-Content-Type"
+	declaredSizeMetadata        = "kirby-declared-size"
+	declaredContentTypeMetadata = "kirby-declared-content-type"
+	declaredSizeHeader          = "X-Amz-Meta-Kirby-Declared-Size"
+	declaredContentTypeHeader   = "X-Amz-Meta-Kirby-Declared-Content-Type"
 )
 
 var safeProviderCode = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,128}$`)
 
 type s3PresignAPI interface {
-	PresignHeader(context.Context, string, string, string, time.Duration, url.Values, http.Header) (*url.URL, error)
+	PresignedPostPolicy(context.Context, *minio.PostPolicy) (*url.URL, map[string]string, error)
 }
 
 type s3InternalAPI interface {
 	StatObject(context.Context, string, string, minio.StatObjectOptions) (minio.ObjectInfo, error)
+	OpenObject(context.Context, string, string, string) (io.ReadCloser, error)
+	PutObjectIfAbsent(context.Context, string, string, io.Reader, int64, string, map[string]string) (minio.UploadInfo, error)
 	RemoveObject(context.Context, string, string, minio.RemoveObjectOptions) error
 	BucketExists(context.Context, string) (bool, error)
+}
+
+type minioInternalClient struct {
+	*minio.Client
+}
+
+func (client *minioInternalClient) OpenObject(ctx context.Context, bucket, key, etag string) (io.ReadCloser, error) {
+	options := minio.GetObjectOptions{}
+	if err := options.SetMatchETag(etag); err != nil {
+		return nil, err
+	}
+	return client.GetObject(ctx, bucket, key, options)
+}
+
+func (client *minioInternalClient) PutObjectIfAbsent(
+	ctx context.Context,
+	bucket string,
+	key string,
+	source io.Reader,
+	size int64,
+	contentType string,
+	metadata map[string]string,
+) (minio.UploadInfo, error) {
+	options := minio.PutObjectOptions{
+		ContentType:      contentType,
+		UserMetadata:     metadata,
+		DisableMultipart: true,
+	}
+	options.SetMatchETagExcept("*")
+	return client.PutObject(ctx, bucket, key, source, size, options)
 }
 
 // S3Storage implements ObjectStorage against an S3-compatible provider.
@@ -70,7 +105,7 @@ func NewS3(cfg config.S3Config) (*S3Storage, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse S3 public base URL: invalid configuration")
 	}
-	return newS3(internalClient, presignClient, cfg.Bucket, publicBaseURL, time.Now), nil
+	return newS3(&minioInternalClient{Client: internalClient}, presignClient, cfg.Bucket, publicBaseURL, time.Now), nil
 }
 
 func newS3(internalClient s3InternalAPI, presignClient s3PresignAPI, bucket string, publicBaseURL *url.URL, now func() time.Time) *S3Storage {
@@ -91,41 +126,70 @@ func (s *S3Storage) bucketExists(ctx context.Context) (bool, error) {
 	return exists, nil
 }
 
-// PresignUpload signs only storage-specific headers. Management credentials
-// never cross the object storage boundary.
+// PresignUpload creates a POST policy whose content-length-range is enforced
+// by S3 while it receives the request body. Management credentials never
+// cross the object storage boundary.
 func (s *S3Storage) PresignUpload(ctx context.Context, input PresignUploadInput) (*UploadTicket, error) {
 	contentType, err := validatePresignInput(input)
 	if err != nil {
 		return nil, err
 	}
-	headers := http.Header{}
-	headers.Set("Content-Type", contentType)
-	headers.Set(declaredSizeHeader, strconv.FormatUint(input.Size, 10))
-	headers.Set(declaredContentTypeHeader, contentType)
-	uploadURL, err := s.presignClient.PresignHeader(
-		ctx,
-		http.MethodPut,
-		s.bucket,
-		input.Key,
-		input.ExpiresIn,
-		nil,
-		headers,
-	)
+	scope, err := ParseObjectKey(input.Key)
+	if err != nil || scope.Temporary {
+		return nil, fmt.Errorf("%w: S3 presign requires a final scoped key", ErrInvalidInput)
+	}
+	uploadKey, err := BuildUploadObjectKey(scope.EnvironmentID, scope.ProjectID, scope.ObjectID, scope.Extension)
+	if err != nil {
+		return nil, err
+	}
+	expiresAt := s.now().UTC().Add(input.ExpiresIn)
+	policy := minio.NewPostPolicy()
+	if err := policy.SetBucket(s.bucket); err != nil {
+		return nil, fmt.Errorf("%w: build S3 upload policy", ErrInvalidInput)
+	}
+	if err := policy.SetKey(uploadKey); err != nil {
+		return nil, fmt.Errorf("%w: build S3 upload policy", ErrInvalidInput)
+	}
+	if err := policy.SetExpires(expiresAt); err != nil {
+		return nil, fmt.Errorf("%w: build S3 upload policy", ErrInvalidInput)
+	}
+	if err := policy.SetContentType(contentType); err != nil {
+		return nil, fmt.Errorf("%w: build S3 upload policy", ErrInvalidInput)
+	}
+	if err := policy.SetContentLengthRange(1, int64(MaxUploadSize)); err != nil {
+		return nil, fmt.Errorf("%w: build S3 upload policy", ErrInvalidInput)
+	}
+	if err := policy.SetUserMetadata(declaredSizeMetadata, strconv.FormatUint(input.Size, 10)); err != nil {
+		return nil, fmt.Errorf("%w: build S3 upload policy", ErrInvalidInput)
+	}
+	if err := policy.SetUserMetadata(declaredContentTypeMetadata, contentType); err != nil {
+		return nil, fmt.Errorf("%w: build S3 upload policy", ErrInvalidInput)
+	}
+	uploadURL, formFields, err := s.presignClient.PresignedPostPolicy(ctx, policy)
 	if err != nil {
 		return nil, safeS3Error("presign S3 upload", err)
 	}
-	expiresAt := s.now().UTC().Add(input.ExpiresIn)
 	return &UploadTicket{
-		Key:       input.Key,
-		URL:       uploadURL.String(),
-		Headers:   firstHeaderValues(headers),
-		ExpiresAt: expiresAt,
+		Key:        uploadKey,
+		URL:        uploadURL.String(),
+		Method:     UploadMethodPost,
+		Headers:    map[string]string{},
+		FormFields: cloneStringMap(formFields),
+		ExpiresAt:  expiresAt,
 	}, nil
 }
 
-// CompleteUpload verifies actual provider metadata against signed upload
-// declarations stored with the object.
+// CompleteUpload verifies a private temporary object, streams that exact ETag
+// into a conditionally created public object, and deletes the temporary source.
+// Reusing an upload ticket can therefore never change a published URL.
 func (s *S3Storage) CompleteUpload(ctx context.Context, key string) (*Metadata, error) {
+	scope, err := ParseObjectKey(key)
+	if err != nil {
+		return nil, err
+	}
+	if !scope.Temporary {
+		return nil, fmt.Errorf("%w: only temporary S3 upload keys can be completed", ErrInvalidInput)
+	}
 	metadata, err := s.ReadMetadata(ctx, key)
 	if err != nil {
 		return nil, err
@@ -133,12 +197,48 @@ func (s *S3Storage) CompleteUpload(ctx context.Context, key string) (*Metadata, 
 	if err := validateCompletedMetadata(metadata); err != nil {
 		return nil, err
 	}
-	return metadata, nil
+	finalKey, err := BuildObjectKey(scope.EnvironmentID, scope.ProjectID, scope.ObjectID, scope.Extension)
+	if err != nil {
+		return nil, fmt.Errorf("generate final S3 object key: %w", ErrStorageUnavailable)
+	}
+	source, err := s.internalClient.OpenObject(ctx, s.bucket, key, metadata.ETag)
+	if err != nil {
+		return nil, safeS3Error("open validated S3 upload", err)
+	}
+	defer source.Close()
+	publishInfo, err := s.internalClient.PutObjectIfAbsent(
+		ctx,
+		s.bucket,
+		finalKey,
+		source,
+		int64(metadata.Size),
+		metadata.ContentType,
+		map[string]string{
+			declaredSizeMetadata:        strconv.FormatUint(metadata.DeclaredSize, 10),
+			declaredContentTypeMetadata: metadata.DeclaredContentType,
+		},
+	)
+	if err != nil {
+		return nil, safeS3Error("publish S3 object", err)
+	}
+	// Publishing is the commit point. A failed temporary-object cleanup must
+	// not delete or hide the immutable final object. The required uploads/
+	// lifecycle rule removes this bounded residue asynchronously.
+	_ = s.internalClient.RemoveObject(ctx, s.bucket, key, minio.RemoveObjectOptions{})
+	published := *metadata
+	published.Key = finalKey
+	published.URL = s.publicURL(finalKey)
+	published.ETag = publishInfo.ETag
+	if !publishInfo.LastModified.IsZero() {
+		published.LastModified = publishInfo.LastModified.UTC()
+	}
+	return &published, nil
 }
 
 // ReadMetadata calls HEAD/Stat on the object provider.
 func (s *S3Storage) ReadMetadata(ctx context.Context, key string) (*Metadata, error) {
-	if _, err := ParseObjectKey(key); err != nil {
+	scope, err := ParseObjectKey(key)
+	if err != nil {
 		return nil, err
 	}
 	info, err := s.internalClient.StatObject(ctx, s.bucket, key, minio.StatObjectOptions{})
@@ -147,6 +247,9 @@ func (s *S3Storage) ReadMetadata(ctx context.Context, key string) (*Metadata, er
 	}
 	if info.Size < 0 {
 		return nil, fmt.Errorf("%w: S3 object size is invalid", ErrObjectIntegrity)
+	}
+	if strings.TrimSpace(info.ETag) == "" {
+		return nil, fmt.Errorf("%w: S3 object ETag is missing", ErrObjectIntegrity)
 	}
 	declaredSizeValue := metadataValue(info.UserMetadata, declaredSizeHeader)
 	declaredSize, err := strconv.ParseUint(declaredSizeValue, 10, 64)
@@ -157,9 +260,14 @@ func (s *S3Storage) ReadMetadata(ctx context.Context, key string) (*Metadata, er
 	if declaredContentType == "" {
 		return nil, fmt.Errorf("%w: S3 content type declaration is missing", ErrObjectIntegrity)
 	}
+	objectURL := ""
+	if !scope.Temporary {
+		objectURL = s.publicURL(key)
+	}
 	return &Metadata{
 		Key:                 key,
-		URL:                 s.publicURL(key),
+		URL:                 objectURL,
+		ETag:                info.ETag,
 		ContentType:         info.ContentType,
 		Size:                uint64(info.Size),
 		DeclaredContentType: declaredContentType,
@@ -200,12 +308,10 @@ func metadataValue(metadata map[string]string, name string) string {
 	return ""
 }
 
-func firstHeaderValues(headers http.Header) map[string]string {
-	result := make(map[string]string, len(headers))
-	for key, values := range headers {
-		if len(values) > 0 {
-			result[key] = values[0]
-		}
+func cloneStringMap(input map[string]string) map[string]string {
+	result := make(map[string]string, len(input))
+	for key, value := range input {
+		result[key] = value
 	}
 	return result
 }
@@ -217,6 +323,9 @@ func safeS3Error(operation string, err error) error {
 	response := minio.ToErrorResponse(err)
 	if response.Code == "NoSuchKey" || response.Code == "NoSuchObject" || response.StatusCode == http.StatusNotFound {
 		return fmt.Errorf("%s: %w", operation, ErrObjectNotFound)
+	}
+	if response.Code == "PreconditionFailed" || response.Code == "ConditionNotMet" || response.StatusCode == http.StatusPreconditionFailed {
+		return fmt.Errorf("%s: %w", operation, ErrObjectConflict)
 	}
 	if safeProviderCode.MatchString(response.Code) {
 		return fmt.Errorf("%s: %w (provider code %s)", operation, ErrStorageUnavailable, response.Code)

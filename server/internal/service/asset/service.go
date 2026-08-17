@@ -44,10 +44,12 @@ func (service *Service) PresignAsset(ctx context.Context, request *adminv1.Presi
 		return nil, publicError(err)
 	}
 	return &adminv1.PresignAssetReply{
-		ObjectKey: ticket.Key,
-		UploadUrl: ticket.URL,
-		Headers:   ticket.Headers,
-		ExpiresAt: ticket.ExpiresAt.Format("2006-01-02T15:04:05Z07:00"),
+		ObjectKey:    ticket.Key,
+		UploadUrl:    ticket.URL,
+		Headers:      ticket.Headers,
+		ExpiresAt:    ticket.ExpiresAt.Format("2006-01-02T15:04:05Z07:00"),
+		UploadMethod: ticket.Method,
+		FormFields:   ticket.FormFields,
 	}, nil
 }
 
@@ -79,6 +81,8 @@ func publicError(err error) error {
 		return errorsv1.ErrorForbidden("asset operation is not permitted")
 	case errors.Is(err, assetlogic.ErrProjectNotFound), errors.Is(err, assetlogic.ErrAssetNotFound):
 		return errorsv1.ErrorNotFound("asset scope was not found")
+	case errors.Is(err, assetlogic.ErrAssetConflict):
+		return errorsv1.ErrorConflict("asset upload was already completed")
 	case errors.Is(err, assetlogic.ErrAssetIntegrity):
 		return errorsv1.ErrorBadRequest("uploaded asset failed integrity validation")
 	default:

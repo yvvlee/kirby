@@ -222,6 +222,10 @@ func (m *PresignAssetReply) validate(all bool) error {
 
 	// no validation rules for ExpiresAt
 
+	// no validation rules for UploadMethod
+
+	// no validation rules for FormFields
+
 	if len(errors) > 0 {
 		return PresignAssetReplyMultiError(errors)
 	}
