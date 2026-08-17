@@ -93,6 +93,7 @@ describe('API client', () => {
     const adapter = async (config) => {
       if (config.url === '/auth/refresh') {
         refreshCalls += 1
+        expect(config.data).toBeNull()
         await new Promise((resolve) => setTimeout(resolve, 0))
         return success(config, { access_token: 'renewed-token' })
       }

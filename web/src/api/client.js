@@ -47,7 +47,7 @@ export function createApiClient(options = {}) {
 
   function refreshAccessToken() {
     return refreshAccessTokenSession(async () => {
-      const { data } = await refreshClient.post('/auth/refresh')
+      const { data } = await refreshClient.post('/auth/refresh', null)
       return data
     })
   }
