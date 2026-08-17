@@ -7,8 +7,8 @@ This report records the security verification completed on 2026-08-17.
 High and critical findings are zero after remediation. The scan initially found
 22 high or critical findings in the Go 1.25.0 server binary and 17 in the
 Alpine 3.21 web runtime. The build image was upgraded to Go 1.25.13. The web
-runtime was upgraded to Nginx 1.30.4 on Alpine 3.24. Both rebuilt release images
-then scanned clean.
+runtime was replaced with a scratch image containing a standard-library static
+server. Both rebuilt release images then scanned clean.
 
 ## Tools and evidence
 

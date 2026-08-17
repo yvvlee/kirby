@@ -192,7 +192,7 @@ services:
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=16m,mode=1777
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:8080/"]
+      test: ["CMD", "/kirby-web", "healthcheck"]
       interval: 5s
       timeout: 3s
       retries: 12

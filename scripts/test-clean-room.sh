@@ -50,6 +50,7 @@ fi
 
 (cd "$checkout_dir/server" && go mod download && go test ./... && go vet ./... && go build -trimpath -o "$work_dir/kirby-server" .)
 (cd "$checkout_dir/web" && npm ci && npm run lint && npm run test -- --run && npm run build)
+(cd "$checkout_dir/web/cmd/static-server" && go test ./... && go vet ./...)
 
 docker buildx create --name "$builder_name" --driver docker-container >/dev/null
 docker buildx inspect --builder "$builder_name" --bootstrap >/dev/null

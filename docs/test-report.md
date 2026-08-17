@@ -39,7 +39,7 @@ default. The names and published ports are configurable through the
 | Local Redis | 8.8.0 |
 | Go build image | `sha256:e401dae1bf814e29204a8cb7915682e1780951e609ca0dd8865ee1937f510c48` |
 | Node build image | `sha256:9e70124bd00f47dd023e349cd587132ae61892acc0e47ed641416c3e18f401c3` |
-| Web runtime image | `sha256:ddde39c6e51f02fde7410c2e9c234cf2d0a4c7bdbbe176aeb37d8ad7ab4eb58c` |
+| Web runtime image | `scratch` with the repository's standard-library static server |
 
 ## Result
 
