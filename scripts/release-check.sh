@@ -73,10 +73,11 @@ docker run --rm \
   -e "KIRBY_VERSION=$version" \
   -e "KIRBY_COMMIT=$head_commit" \
   -e "KIRBY_BUILD_DATE=$build_date" \
+  -e "KIRBY_GO_PROXY=${KIRBY_GO_PROXY:-https://proxy.golang.org,direct}" \
   -v "$repo_dir:/src:ro" \
   -v "$release_dir:/out" \
   "$go_image" /bin/sh -ec '
-    export GOMODCACHE=/tmp/go-mod GOCACHE=/tmp/go-build GOPROXY=https://proxy.golang.org,direct
+    export GOMODCACHE=/tmp/go-mod GOCACHE=/tmp/go-build GOPROXY="$KIRBY_GO_PROXY"
     cd /src/server
     ldflags="-s -w -X github.com/yvvlee/kirby/server/internal/version.Version=$KIRBY_VERSION -X github.com/yvvlee/kirby/server/internal/version.Commit=$KIRBY_COMMIT -X github.com/yvvlee/kirby/server/internal/version.BuildDate=$KIRBY_BUILD_DATE"
     for arch in amd64 arm64; do

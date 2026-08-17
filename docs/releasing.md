@@ -20,6 +20,9 @@ The dry run accepts a tag that does not exist yet. If it does exist, it must be
 an annotated tag pointing to `HEAD`. The script builds each Linux binary twice
 inside the pinned Go container and compares the bytes.
 
+Set `KIRBY_GO_PROXY` when the default Go module proxy is not reachable. The
+same value is used by clean-room image builds and the release binary build.
+
 ## Create the tag
 
 Create a signed annotated tag and push only after the dry run passes:
