@@ -37,7 +37,7 @@ fi
 
 export GOMODCACHE="$work_dir/go-mod"
 export GOCACHE="$work_dir/go-build"
-export GOPROXY="https://proxy.golang.org,direct"
+export GOPROXY="${KIRBY_GO_PROXY:-https://proxy.golang.org,direct}"
 export npm_config_cache="$work_dir/npm"
 export npm_config_fetch_retries=5
 export npm_config_fetch_retry_mintimeout=1000
@@ -54,10 +54,7 @@ fi
 
 docker buildx create --name "$builder_name" --driver docker-container >/dev/null
 docker buildx inspect --builder "$builder_name" --bootstrap >/dev/null
-server_build_args=""
-if [ -n "${KIRBY_GO_PROXY:-}" ]; then
-  server_build_args="--build-arg GOPROXY=$KIRBY_GO_PROXY"
-fi
+server_build_args="--build-arg GOPROXY=$GOPROXY"
 # shellcheck disable=SC2086
 docker buildx build --builder "$builder_name" --pull --no-cache --load $server_build_args -t "$server_image" -f "$checkout_dir/server/Dockerfile" "$checkout_dir"
 docker buildx build --builder "$builder_name" --pull --no-cache --load -t "$web_image" -f "$checkout_dir/web/Dockerfile" "$checkout_dir"
