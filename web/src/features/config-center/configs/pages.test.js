@@ -313,4 +313,26 @@ describe('core configuration pages', () => {
       values: [{ label: 'Enabled', value: 'ENABLED', description: '' }],
     })
   })
+
+  it('derives snapshot and API Key entries only from backend permissions', () => {
+    const permissions = new Set([
+      'snapshot:read',
+      'project:api_key:manage',
+    ])
+    const context = {
+      $store: {
+        getters: {
+          'environment/hasPermission': (permission) =>
+            permissions.has(permission),
+        },
+      },
+    }
+
+    expect(ConfigDetailPage.computed.canReadSnapshots.call(context)).toBe(true)
+    expect(ConfigsPage.computed.canReadApiKeys.call(context)).toBe(true)
+
+    permissions.clear()
+    expect(ConfigDetailPage.computed.canReadSnapshots.call(context)).toBe(false)
+    expect(ConfigsPage.computed.canReadApiKeys.call(context)).toBe(false)
+  })
 })

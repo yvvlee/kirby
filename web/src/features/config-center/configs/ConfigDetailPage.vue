@@ -127,6 +127,18 @@
             @changed="reload"
           />
         </el-tab-pane>
+        <el-tab-pane
+          v-if="canReadSnapshots"
+          label="快照"
+          name="snapshots"
+        >
+          <SnapshotsPanel
+            v-if="activeTab === 'snapshots'"
+            :project-id="projectId"
+            :config-id="configId"
+            @changed="reload"
+          />
+        </el-tab-pane>
       </el-tabs>
     </el-card>
 
@@ -199,6 +211,7 @@ import MonacoEditor from '@/components/MonacoEditor'
 import SchemaForm from '@/components/SchemaForm'
 import EnumsPanel from '@/features/config-center/enums/EnumsPanel.vue'
 import ModelsPanel from '@/features/config-center/models/ModelsPanel.vue'
+import SnapshotsPanel from '@/features/config-center/snapshots/SnapshotsPanel.vue'
 import {
   normalizeModel,
   normalizeTree,
@@ -256,6 +269,7 @@ export default {
     ModelsPanel,
     MonacoEditor,
     SchemaForm,
+    SnapshotsPanel,
   },
 
   props: {
@@ -298,6 +312,9 @@ export default {
     },
     canWriteConfig() {
       return this.$store.getters['environment/hasPermission']('config:write')
+    },
+    canReadSnapshots() {
+      return this.$store.getters['environment/hasPermission']('snapshot:read')
     },
     typeLabel() {
       if (!this.config?.type) {

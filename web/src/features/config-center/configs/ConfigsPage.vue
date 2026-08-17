@@ -39,14 +39,23 @@
             </el-button>
           </el-form-item>
         </el-form>
-        <el-button
-          v-if="canWrite"
-          type="primary"
-          size="small"
-          @click="openCreate"
-        >
-          创建配置
-        </el-button>
+        <div class="configs-page__actions">
+          <el-button
+            v-if="canReadApiKeys"
+            size="small"
+            @click="apiKeysVisible = true"
+          >
+            API Key
+          </el-button>
+          <el-button
+            v-if="canWrite"
+            type="primary"
+            size="small"
+            @click="openCreate"
+          >
+            创建配置
+          </el-button>
+        </div>
       </header>
 
       <el-table
@@ -159,6 +168,12 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <ApiKeysPanel
+      v-if="apiKeysVisible"
+      :visible.sync="apiKeysVisible"
+      :project-id="projectId"
+    />
   </section>
 </template>
 
@@ -166,6 +181,7 @@
 import { createConfig, deleteConfig } from '@/api/configs'
 import { getProject } from '@/api/projects'
 import EnvironmentTag from '@/components/EnvironmentTag'
+import ApiKeysPanel from '@/features/config-center/api-keys/ApiKeysPanel.vue'
 
 function errorMessage(error, fallback) {
   return error?.response?.data?.message || error?.message || fallback
@@ -186,7 +202,7 @@ function normalizeConfigList(reply) {
 export default {
   name: 'ConfigsPage',
 
-  components: { EnvironmentTag },
+  components: { ApiKeysPanel, EnvironmentTag },
 
   props: {
     projectId: {
@@ -202,6 +218,7 @@ export default {
       keyFilter: '',
       loading: false,
       loadSequence: 0,
+      apiKeysVisible: false,
       dialog: {
         visible: false,
         saving: false,
@@ -230,6 +247,13 @@ export default {
     canWrite() {
       return this.$store.getters['environment/hasPermission']('config:write')
     },
+    canReadApiKeys() {
+      const hasPermission = this.$store.getters['environment/hasPermission']
+      return (
+        hasPermission('project:api_key:read') ||
+        hasPermission('project:api_key:manage')
+      )
+    },
   },
 
   watch: {
@@ -245,6 +269,7 @@ export default {
       ) {
         this.project = null
         this.configs = []
+        this.apiKeysVisible = false
         return
       }
       this.reload()
@@ -369,7 +394,8 @@ export default {
 }
 
 .configs-page__title,
-.configs-page__toolbar {
+.configs-page__toolbar,
+.configs-page__actions {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -379,6 +405,10 @@ export default {
 .configs-page__title {
   justify-content: flex-start;
   font-weight: 600;
+}
+
+.configs-page__actions {
+  justify-content: flex-end;
 }
 
 .configs-page__danger {
