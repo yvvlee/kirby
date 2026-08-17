@@ -56,7 +56,7 @@ INNER JOIN projects AS target_project
     ON target_project.id = ? AND target_project.environment_id = target_environment.id
    AND target_project.deleted_at IS NULL
 WHERE u.id = ? AND u.enabled = TRUE AND u.deleted_at IS NULL
-ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)`,
+ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(import_records.id)`,
 		record.IdempotencyKey, record.RequestHash, model.ImportStatusPending,
 		record.ErrorMessage, record.CreatedBy, record.UpdatedBy,
 		record.SourceEnvironmentID, record.SourceSnapshotID,

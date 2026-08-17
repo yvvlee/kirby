@@ -24,7 +24,7 @@ func TestImportRecordClaimBindsSourceAndTargetScope(t *testing.T) {
 		SourceEnvironmentID: 1, TargetEnvironmentID: 2, SourceSnapshotID: 12, TargetProjectID: 20,
 		IdempotencyKey: "request-00000001", RequestHash: hash, Status: model.ImportStatusPending, ErrorMessage: claimToken,
 	}
-	mock.ExpectExec(`(?s)INSERT INTO import_records.*source_snapshot\.id.*source_project\.environment_id = source_environment\.id.*target_project\.environment_id = target_environment\.id.*ON DUPLICATE KEY UPDATE`).
+	mock.ExpectExec(`(?s)INSERT INTO import_records.*source_snapshot\.id.*source_project\.environment_id = source_environment\.id.*target_project\.environment_id = target_environment\.id.*ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID\(import_records\.id\)`).
 		WithArgs(record.IdempotencyKey, hash, model.ImportStatusPending, claimToken, int64(9), int64(9), int64(1), int64(12), int64(2), int64(20), int64(9)).
 		WillReturnResult(sqlmock.NewResult(501, 1))
 	mock.ExpectQuery(`(?s)SELECT r\.id.*r\.user_id = \?.*r\.target_environment_id = \?.*r\.idempotency_key = \?.*FOR UPDATE`).
