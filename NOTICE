@@ -1,0 +1,27 @@
+Kirby third-party notices
+=========================
+
+Kirby is licensed under the MIT License. The complete license text is in the
+repository root LICENSE file.
+
+Kirby includes open-source Go and npm dependencies. Their exact names,
+versions, package checksums, and release-image membership are recorded in
+docs/third-party-licenses.md and dist/sbom/*.cdx.json. The applicable license
+families are 0BSD, Apache-2.0, BSD-2-Clause, BSD-3-Clause, BlueOak-1.0.0,
+CC0-1.0, ISC, MIT, MPL-2.0, and Python-2.0. Copyright notices and license texts
+remain available in the corresponding source distributions.
+
+The following MIT-licensed generator source is redistributed in this
+repository:
+
+- protoc-gen-go-errors v1.0.0, copyright (c) 2026 yvvlee
+- protoc-gen-go-json v1.0.1, copyright (c) 2023 yvvlee
+
+Their complete MIT license texts and immutable source provenance are stored in
+server/tools/third_party/protoc-gen-go-errors and
+server/tools/third_party/protoc-gen-go-json.
+
+Kirby source extracted from the recorded dashboard, backend, and protobuf
+inputs is released by its author under the repository MIT License. The frozen
+source revisions and extraction boundaries are recorded in
+docs/source-provenance.md.
