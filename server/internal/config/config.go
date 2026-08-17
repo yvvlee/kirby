@@ -4,6 +4,7 @@ package config
 import (
 	"fmt"
 	"log/slog"
+	"net"
 	"net/netip"
 	"net/url"
 	"path"
@@ -196,6 +197,9 @@ func (c Config) Validate() error {
 	if err := validateListener("grpc", c.GRPC); err != nil {
 		return err
 	}
+	if listenerAddressesConflict(c.HTTP.Address, c.GRPC.Address) {
+		return fmt.Errorf("http.address and grpc.address must use different listeners")
+	}
 	if c.MySQL.DSN.Empty() {
 		return fmt.Errorf("mysql.dsn is required")
 	}
@@ -230,6 +234,23 @@ func (c Config) Validate() error {
 		return fmt.Errorf("mode=multi requires object_storage.driver=s3")
 	}
 	return nil
+}
+
+func listenerAddressesConflict(first, second string) bool {
+	firstHost, firstPort, firstErr := net.SplitHostPort(strings.TrimSpace(first))
+	secondHost, secondPort, secondErr := net.SplitHostPort(strings.TrimSpace(second))
+	if firstErr != nil || secondErr != nil || firstPort != secondPort {
+		return strings.TrimSpace(first) == strings.TrimSpace(second)
+	}
+	normalizeHost := func(host string) string {
+		switch strings.TrimSpace(strings.Trim(host, "[]")) {
+		case "", "0.0.0.0", "::":
+			return "*"
+		default:
+			return strings.ToLower(host)
+		}
+	}
+	return normalizeHost(firstHost) == normalizeHost(secondHost)
 }
 
 func validateListener(name string, listener ListenerConfig) error {

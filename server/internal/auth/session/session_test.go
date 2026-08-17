@@ -25,6 +25,9 @@ func TestGenerateStoresOnlyHash(t *testing.T) {
 }
 
 func TestRefreshCookieSecurityContract(t *testing.T) {
+	if CookiePath != "/api/auth" {
+		t.Fatalf("unexpected refresh cookie path: %q", CookiePath)
+	}
 	cookie := Cookie("opaque", time.Now().Add(time.Hour), true)
 	if cookie.Name != CookieName || cookie.Path != CookiePath || !cookie.HttpOnly || !cookie.Secure || cookie.SameSite != http.SameSiteLaxMode || cookie.Domain != "" {
 		t.Fatalf("unsafe refresh cookie: %+v", cookie)

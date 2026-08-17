@@ -16,7 +16,7 @@ import (
 
 const (
 	CookieName  = "kirby_refresh"
-	CookiePath  = "/auth"
+	CookiePath  = "/api/auth"
 	tokenLength = 32
 )
 

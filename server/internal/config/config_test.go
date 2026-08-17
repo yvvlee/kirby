@@ -49,6 +49,15 @@ func TestLoadFileRejectsMissingRequiredField(t *testing.T) {
 	assert.Contains(t, err.Error(), "mysql.dsn is required")
 }
 
+func TestListenerAddressesMustNotConflict(t *testing.T) {
+	for _, grpcAddress := range []string{":8000", "0.0.0.0:8000", "[::]:8000"} {
+		content := strings.Replace(validConfig("single", "memory", "local"), `address: ":9000"`, `address: "`+grpcAddress+`"`, 1)
+		_, err := LoadFile(writeConfig(t, content))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "different listeners")
+	}
+}
+
 func TestSecuritySettingsAreRequired(t *testing.T) {
 	tests := []struct {
 		name    string
