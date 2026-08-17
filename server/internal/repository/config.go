@@ -37,8 +37,11 @@ type ConfigRepository interface {
 	FindByKey(context.Context, int64, int64, string) (*model.Config, error)
 	List(context.Context, int64, ConfigFilter, base.PageRequest) (base.PageResult[model.Config], error)
 	Update(context.Context, int64, int64, ConfigUpdate) error
+	UpdateTx(context.Context, *xorm.Session, int64, int64, ConfigUpdate) error
 	UpdateValue(context.Context, int64, int64, ConfigValueUpdate) error
+	UpdateValueTx(context.Context, *xorm.Session, int64, int64, ConfigValueUpdate) error
 	Delete(context.Context, int64, int64, int64) error
+	DeleteTx(context.Context, *xorm.Session, int64, int64, int64) error
 	LockByID(context.Context, *xorm.Session, int64, int64) (*model.Config, error)
 }
 
@@ -191,6 +194,23 @@ WHERE c.id = ? AND c.version = ? AND c.deleted_at IS NULL
 	return err
 }
 
+func (r *ConfigRepositoryImpl) UpdateTx(ctx context.Context, tx *xorm.Session, environmentID, configID int64, update ConfigUpdate) error {
+	if err := validateVersionedResource(environmentID, "config_id", configID, update.Version); err != nil {
+		return err
+	}
+	_, err := base.ExecuteTx(ctx, tx, "config", `
+UPDATE configs AS c
+SET c.description = ?, c.is_array = ?, c.type_json = ?, c.updated_by = ?,
+    c.updated_at = UTC_TIMESTAMP(6), c.version = c.version + 1
+WHERE c.id = ? AND c.version = ? AND c.deleted_at IS NULL
+  AND EXISTS (
+      SELECT 1 FROM projects AS p
+      WHERE p.id = c.project_id AND p.environment_id = ? AND p.deleted_at IS NULL
+  )`, update.Description, update.IsArray, update.TypeJSON, update.UpdatedBy,
+		configID, update.Version, environmentID)
+	return err
+}
+
 func (r *ConfigRepositoryImpl) UpdateValue(ctx context.Context, environmentID, configID int64, update ConfigValueUpdate) error {
 	if err := validateVersionedResource(environmentID, "config_id", configID, update.Version); err != nil {
 		return err
@@ -206,11 +226,42 @@ WHERE c.id = ? AND c.version = ? AND c.deleted_at IS NULL
 	return err
 }
 
+func (r *ConfigRepositoryImpl) UpdateValueTx(ctx context.Context, tx *xorm.Session, environmentID, configID int64, update ConfigValueUpdate) error {
+	if err := validateVersionedResource(environmentID, "config_id", configID, update.Version); err != nil {
+		return err
+	}
+	_, err := base.ExecuteTx(ctx, tx, "config", `
+UPDATE configs AS c
+SET c.value = ?, c.updated_by = ?, c.updated_at = UTC_TIMESTAMP(6), c.version = c.version + 1
+WHERE c.id = ? AND c.version = ? AND c.deleted_at IS NULL
+  AND EXISTS (
+      SELECT 1 FROM projects AS p
+      WHERE p.id = c.project_id AND p.environment_id = ? AND p.deleted_at IS NULL
+  )`, update.Value, update.UpdatedBy, configID, update.Version, environmentID)
+	return err
+}
+
 func (r *ConfigRepositoryImpl) Delete(ctx context.Context, environmentID, configID, updatedBy int64) error {
 	if err := validateEnvironmentResource(environmentID, "config_id", configID); err != nil {
 		return err
 	}
 	_, err := base.Execute(ctx, r.engine, "config", `
+UPDATE configs AS c
+SET c.deleted_at = UTC_TIMESTAMP(6), c.updated_by = ?,
+    c.updated_at = UTC_TIMESTAMP(6), c.version = c.version + 1
+WHERE c.id = ? AND c.deleted_at IS NULL
+  AND EXISTS (
+      SELECT 1 FROM projects AS p
+      WHERE p.id = c.project_id AND p.environment_id = ? AND p.deleted_at IS NULL
+  )`, updatedBy, configID, environmentID)
+	return err
+}
+
+func (r *ConfigRepositoryImpl) DeleteTx(ctx context.Context, tx *xorm.Session, environmentID, configID, updatedBy int64) error {
+	if err := validateEnvironmentResource(environmentID, "config_id", configID); err != nil {
+		return err
+	}
+	_, err := base.ExecuteTx(ctx, tx, "config", `
 UPDATE configs AS c
 SET c.deleted_at = UTC_TIMESTAMP(6), c.updated_by = ?,
     c.updated_at = UTC_TIMESTAMP(6), c.version = c.version + 1

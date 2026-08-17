@@ -22,9 +22,12 @@ type SnapshotRepository interface {
 	FindByID(context.Context, int64, int64) (*model.Snapshot, error)
 	List(context.Context, int64, SnapshotFilter, base.PageRequest) (base.PageResult[model.Snapshot], error)
 	FindReleasedForConfig(context.Context, int64, int64) (*model.Snapshot, error)
+	FindReleasedForConfigTx(context.Context, *xorm.Session, int64, int64) (*model.Snapshot, error)
 	FindCurrentForConfig(context.Context, int64, int64) (*model.Snapshot, error)
+	FindCurrentForConfigTx(context.Context, *xorm.Session, int64, int64) (*model.Snapshot, error)
 	ListReleasedConfigIDs(context.Context, int64, int64) ([]int64, error)
 	Delete(context.Context, int64, int64, int64) error
+	DeleteTx(context.Context, *xorm.Session, int64, int64, int64) error
 	LockByID(context.Context, *xorm.Session, int64, int64) (*model.Snapshot, error)
 	SetCurrent(context.Context, *xorm.Session, int64, int64, int64, int64) error
 }
@@ -178,6 +181,14 @@ func (r *SnapshotRepositoryImpl) FindCurrentForConfig(ctx context.Context, envir
 	return r.findForConfig(ctx, environmentID, configID, "s.is_using = TRUE", nil, "current snapshot")
 }
 
+func (r *SnapshotRepositoryImpl) FindReleasedForConfigTx(ctx context.Context, tx *xorm.Session, environmentID, configID int64) (*model.Snapshot, error) {
+	return r.findForConfigTx(ctx, tx, environmentID, configID, "s.status = ?", model.SnapshotStatusReleased, "released snapshot")
+}
+
+func (r *SnapshotRepositoryImpl) FindCurrentForConfigTx(ctx context.Context, tx *xorm.Session, environmentID, configID int64) (*model.Snapshot, error) {
+	return r.findForConfigTx(ctx, tx, environmentID, configID, "s.is_using = TRUE", nil, "current snapshot")
+}
+
 func (r *SnapshotRepositoryImpl) findForConfig(ctx context.Context, environmentID, configID int64, condition string, argument any, resource string) (*model.Snapshot, error) {
 	if err := validateEnvironmentResource(environmentID, "config_id", configID); err != nil {
 		return nil, err
@@ -195,6 +206,30 @@ INNER JOIN projects AS p ON p.id = s.project_id AND p.deleted_at IS NULL
 WHERE p.environment_id = ? AND c.id = ? AND s.deleted_at IS NULL AND `+condition+`
 ORDER BY s.id DESC
 LIMIT 1`, args, &snapshot)
+	if err != nil {
+		return nil, err
+	}
+	return &snapshot, nil
+}
+
+func (r *SnapshotRepositoryImpl) findForConfigTx(ctx context.Context, tx *xorm.Session, environmentID, configID int64, condition string, argument any, resource string) (*model.Snapshot, error) {
+	if err := validateEnvironmentResource(environmentID, "config_id", configID); err != nil {
+		return nil, err
+	}
+	args := []any{environmentID, configID}
+	if argument != nil {
+		args = append(args, argument)
+	}
+	var snapshot model.Snapshot
+	err := base.LockOne(ctx, tx, resource, `
+SELECT s.*
+FROM snapshots AS s
+INNER JOIN configs AS c ON c.id = s.config_id AND c.project_id = s.project_id AND c.deleted_at IS NULL
+INNER JOIN projects AS p ON p.id = s.project_id AND p.deleted_at IS NULL
+WHERE p.environment_id = ? AND c.id = ? AND s.deleted_at IS NULL AND `+condition+`
+ORDER BY s.id DESC
+LIMIT 1
+FOR UPDATE`, args, &snapshot)
 	if err != nil {
 		return nil, err
 	}
@@ -230,6 +265,22 @@ func (r *SnapshotRepositoryImpl) Delete(ctx context.Context, environmentID, snap
 		return err
 	}
 	_, err := base.Execute(ctx, r.engine, "snapshot", `
+UPDATE snapshots AS s
+SET s.deleted_at = UTC_TIMESTAMP(6), s.updated_by = ?,
+    s.updated_at = UTC_TIMESTAMP(6), s.version = s.version + 1
+WHERE s.id = ? AND s.status = ? AND s.deleted_at IS NULL
+  AND EXISTS (
+      SELECT 1 FROM projects AS p
+      WHERE p.id = s.project_id AND p.environment_id = ? AND p.deleted_at IS NULL
+  )`, updatedBy, snapshotID, model.SnapshotStatusUnreleased, environmentID)
+	return err
+}
+
+func (r *SnapshotRepositoryImpl) DeleteTx(ctx context.Context, tx *xorm.Session, environmentID, snapshotID, updatedBy int64) error {
+	if err := validateEnvironmentResource(environmentID, "snapshot_id", snapshotID); err != nil {
+		return err
+	}
+	_, err := base.ExecuteTx(ctx, tx, "snapshot", `
 UPDATE snapshots AS s
 SET s.deleted_at = UTC_TIMESTAMP(6), s.updated_by = ?,
     s.updated_at = UTC_TIMESTAMP(6), s.version = s.version + 1

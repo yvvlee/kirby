@@ -48,6 +48,30 @@ func TestConfigUpdateCannotCrossEnvironment(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestConfigMetadataUpdateTxNeverWritesValue(t *testing.T) {
+	engine, mock := newRepositoryMockEngine(t)
+	mock.ExpectBegin()
+	tx := engine.NewSession()
+	t.Cleanup(func() { _ = tx.Close() })
+	require.NoError(t, tx.Begin())
+	mock.ExpectExec(`(?s)UPDATE configs AS c\s+SET c\.description = \?, c\.is_array = \?, c\.type_json = \?, c\.updated_by = \?.*p\.environment_id = \?`).
+		WithArgs("description", true, `{"baseType":"INT"}`, int64(7), int64(42), int64(3), int64(99)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	err := NewConfigRepository(engine).UpdateTx(context.Background(), tx, 99, 42, ConfigUpdate{
+		Description: "description",
+		IsArray:     true,
+		TypeJSON:    `{"baseType":"INT"}`,
+		UpdatedBy:   7,
+		Version:     3,
+	})
+
+	require.NoError(t, err)
+	require.NoError(t, tx.Commit())
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestNestedCreateUsesEnvironmentInInsertQuery(t *testing.T) {
 	engine, mock := newRepositoryMockEngine(t)
 	mock.ExpectExec(`(?s)INSERT INTO structures.*p\.environment_id = \?`).
@@ -62,6 +86,31 @@ func TestNestedCreateUsesEnvironmentInInsertQuery(t *testing.T) {
 	})
 
 	assert.ErrorIs(t, err, base.ErrNoRowsAffected)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestStructureReconcileSoftDeletesRowsMissingFromSnapshot(t *testing.T) {
+	engine, mock := newRepositoryMockEngine(t)
+	mock.ExpectBegin()
+	tx := engine.NewSession()
+	t.Cleanup(func() { _ = tx.Close() })
+	require.NoError(t, tx.Begin())
+	mock.ExpectQuery(`(?s)SELECT c\.id.*p\.environment_id = \?.*FOR UPDATE`).
+		WithArgs(int64(5), int64(9)).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(9))
+	mock.ExpectQuery(`(?s)SELECT s\.\*.*WHERE s\.config_id = \?.*FOR UPDATE`).
+		WithArgs(int64(9)).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "config_id", "key", "name", "description", "fields_json", "version", "deleted_at"}).
+			AddRow(12, 9, "User", "User", "", "[]", 2, nil))
+	mock.ExpectExec(`(?s)UPDATE structures\s+SET deleted_at = UTC_TIMESTAMP`).
+		WithArgs(int64(7), int64(12), int64(9)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	err := NewStructureRepository(engine).ReconcileTx(context.Background(), tx, 5, 9, nil, 7)
+
+	require.NoError(t, err)
+	require.NoError(t, tx.Commit())
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 

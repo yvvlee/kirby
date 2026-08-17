@@ -29,8 +29,33 @@ type ConfigEnumRepository interface {
 	FindByID(context.Context, int64, int64) (*model.ConfigEnum, error)
 	FindByKey(context.Context, int64, int64, string) (*model.ConfigEnum, error)
 	List(context.Context, int64, ConfigEnumFilter, base.PageRequest) (base.PageResult[model.ConfigEnum], error)
+	ListForConfigTx(context.Context, *xorm.Session, int64, int64) ([]model.ConfigEnum, error)
 	Update(context.Context, int64, int64, ConfigEnumUpdate) error
+	UpdateTx(context.Context, *xorm.Session, int64, int64, ConfigEnumUpdate) error
 	Delete(context.Context, int64, int64, int64) error
+	DeleteTx(context.Context, *xorm.Session, int64, int64, int64) error
+	ReconcileTx(context.Context, *xorm.Session, int64, int64, []*model.ConfigEnum, int64) error
+}
+
+func (r *ConfigEnumRepositoryImpl) ListForConfigTx(ctx context.Context, tx *xorm.Session, environmentID, configID int64) ([]model.ConfigEnum, error) {
+	if err := validateEnvironmentResource(environmentID, "config_id", configID); err != nil {
+		return nil, err
+	}
+	if tx == nil {
+		return nil, base.InvalidArgument("transaction session is nil")
+	}
+	items := make([]model.ConfigEnum, 0)
+	if err := tx.Context(ctx).SQL(`
+SELECT e.*
+FROM config_enums AS e
+INNER JOIN configs AS c ON c.id = e.config_id AND c.deleted_at IS NULL
+INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
+WHERE p.environment_id = ? AND c.id = ? AND e.deleted_at IS NULL
+ORDER BY e.id ASC
+FOR UPDATE`, environmentID, configID).Find(&items); err != nil {
+		return nil, base.Wrap("lock config enums for config", err)
+	}
+	return items, nil
 }
 
 type ConfigEnumRepositoryImpl struct {
@@ -189,6 +214,25 @@ WHERE e.id = ? AND e.version = ? AND e.deleted_at IS NULL
 	return err
 }
 
+func (r *ConfigEnumRepositoryImpl) UpdateTx(ctx context.Context, tx *xorm.Session, environmentID, enumID int64, update ConfigEnumUpdate) error {
+	if err := validateVersionedResource(environmentID, "enum_id", enumID, update.Version); err != nil {
+		return err
+	}
+	_, err := base.ExecuteTx(ctx, tx, "config enum", `
+UPDATE config_enums AS e
+SET e.`+"`key`"+` = ?, e.name = ?, e.description = ?, e.values_json = ?, e.updated_by = ?,
+    e.updated_at = UTC_TIMESTAMP(6), e.version = e.version + 1
+WHERE e.id = ? AND e.version = ? AND e.deleted_at IS NULL
+  AND EXISTS (
+      SELECT 1
+      FROM configs AS c
+      INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
+      WHERE c.id = e.config_id AND c.deleted_at IS NULL AND p.environment_id = ?
+  )`, update.Key, update.Name, update.Description, update.ValuesJSON, update.UpdatedBy,
+		enumID, update.Version, environmentID)
+	return err
+}
+
 func (r *ConfigEnumRepositoryImpl) Delete(ctx context.Context, environmentID, enumID, updatedBy int64) error {
 	if err := validateEnvironmentResource(environmentID, "enum_id", enumID); err != nil {
 		return err
@@ -205,6 +249,102 @@ WHERE e.id = ? AND e.deleted_at IS NULL
       WHERE c.id = e.config_id AND c.deleted_at IS NULL AND p.environment_id = ?
   )`, updatedBy, enumID, environmentID)
 	return err
+}
+
+func (r *ConfigEnumRepositoryImpl) DeleteTx(ctx context.Context, tx *xorm.Session, environmentID, enumID, updatedBy int64) error {
+	if err := validateEnvironmentResource(environmentID, "enum_id", enumID); err != nil {
+		return err
+	}
+	_, err := base.ExecuteTx(ctx, tx, "config enum", `
+UPDATE config_enums AS e
+SET e.deleted_at = UTC_TIMESTAMP(6), e.updated_by = ?,
+    e.updated_at = UTC_TIMESTAMP(6), e.version = e.version + 1
+WHERE e.id = ? AND e.deleted_at IS NULL
+  AND EXISTS (
+      SELECT 1
+      FROM configs AS c
+      INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
+      WHERE c.id = e.config_id AND c.deleted_at IS NULL AND p.environment_id = ?
+  )`, updatedBy, enumID, environmentID)
+	return err
+}
+
+func (r *ConfigEnumRepositoryImpl) ReconcileTx(ctx context.Context, tx *xorm.Session, environmentID, configID int64, enums []*model.ConfigEnum, actorID int64) error {
+	if err := validateEnvironmentResource(environmentID, "config_id", configID); err != nil {
+		return err
+	}
+	if actorID <= 0 {
+		return base.InvalidArgument("actor_id must be greater than zero")
+	}
+	var locked struct {
+		ID int64 `xorm:"id"`
+	}
+	if err := base.LockOne(ctx, tx, "config", `
+SELECT c.id
+FROM configs AS c
+INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
+WHERE p.environment_id = ? AND c.id = ? AND c.deleted_at IS NULL
+LIMIT 1
+FOR UPDATE`, []any{environmentID, configID}, &locked); err != nil {
+		return err
+	}
+	existing := make([]model.ConfigEnum, 0)
+	if err := tx.Context(ctx).SQL(`
+SELECT e.*
+FROM config_enums AS e
+WHERE e.config_id = ?
+ORDER BY e.id ASC
+FOR UPDATE`, configID).Find(&existing); err != nil {
+		return base.Wrap("lock config enums for reconciliation", err)
+	}
+	byKey := make(map[string]*model.ConfigEnum, len(existing))
+	for index := range existing {
+		byKey[existing[index].Key] = &existing[index]
+	}
+	desired := make(map[string]struct{}, len(enums))
+	for _, item := range enums {
+		if item == nil || item.Key == "" {
+			return base.InvalidArgument("config enum and key are required")
+		}
+		if _, duplicate := desired[item.Key]; duplicate {
+			return base.InvalidArgument("config enum keys must be unique")
+		}
+		desired[item.Key] = struct{}{}
+		item.ConfigID = configID
+		item.UpdatedBy = actorID
+		current := byKey[item.Key]
+		if current == nil {
+			item.ID = 0
+			item.CreatedBy = actorID
+			if err := r.CreateTx(ctx, tx, environmentID, configID, item); err != nil {
+				return err
+			}
+			continue
+		}
+		if _, err := base.ExecuteTx(ctx, tx, "config enum", `
+UPDATE config_enums
+SET name = ?, description = ?, values_json = ?, deleted_at = NULL, updated_by = ?,
+    updated_at = UTC_TIMESTAMP(6), version = version + 1
+WHERE id = ? AND config_id = ?`, item.Name, item.Description, item.ValuesJSON,
+			actorID, current.ID, configID); err != nil {
+			return err
+		}
+		item.ID = current.ID
+		item.Version = current.Version + 1
+	}
+	for index := range existing {
+		current := &existing[index]
+		if _, keep := desired[current.Key]; keep || !current.DeletedAt.IsZero() {
+			continue
+		}
+		if _, err := base.ExecuteTx(ctx, tx, "config enum", `
+UPDATE config_enums
+SET deleted_at = UTC_TIMESTAMP(6), updated_by = ?, updated_at = UTC_TIMESTAMP(6), version = version + 1
+WHERE id = ? AND config_id = ? AND deleted_at IS NULL`, actorID, current.ID, configID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 var _ ConfigEnumRepository = (*ConfigEnumRepositoryImpl)(nil)

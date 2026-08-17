@@ -30,8 +30,33 @@ type StructureRepository interface {
 	FindByID(context.Context, int64, int64) (*model.Structure, error)
 	FindByKey(context.Context, int64, int64, string) (*model.Structure, error)
 	List(context.Context, int64, StructureFilter, base.PageRequest) (base.PageResult[model.Structure], error)
+	ListForConfigTx(context.Context, *xorm.Session, int64, int64) ([]model.Structure, error)
 	Update(context.Context, int64, int64, StructureUpdate) error
+	UpdateTx(context.Context, *xorm.Session, int64, int64, StructureUpdate) error
 	Delete(context.Context, int64, int64, int64) error
+	DeleteTx(context.Context, *xorm.Session, int64, int64, int64) error
+	ReconcileTx(context.Context, *xorm.Session, int64, int64, []*model.Structure, int64) error
+}
+
+func (r *StructureRepositoryImpl) ListForConfigTx(ctx context.Context, tx *xorm.Session, environmentID, configID int64) ([]model.Structure, error) {
+	if err := validateEnvironmentResource(environmentID, "config_id", configID); err != nil {
+		return nil, err
+	}
+	if tx == nil {
+		return nil, base.InvalidArgument("transaction session is nil")
+	}
+	items := make([]model.Structure, 0)
+	if err := tx.Context(ctx).SQL(`
+SELECT s.*
+FROM structures AS s
+INNER JOIN configs AS c ON c.id = s.config_id AND c.deleted_at IS NULL
+INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
+WHERE p.environment_id = ? AND c.id = ? AND s.deleted_at IS NULL
+ORDER BY s.id ASC
+FOR UPDATE`, environmentID, configID).Find(&items); err != nil {
+		return nil, base.Wrap("lock structures for config", err)
+	}
+	return items, nil
 }
 
 type StructureRepositoryImpl struct {
@@ -202,6 +227,25 @@ WHERE s.id = ? AND s.version = ? AND s.deleted_at IS NULL
 	return err
 }
 
+func (r *StructureRepositoryImpl) UpdateTx(ctx context.Context, tx *xorm.Session, environmentID, structureID int64, update StructureUpdate) error {
+	if err := validateVersionedResource(environmentID, "structure_id", structureID, update.Version); err != nil {
+		return err
+	}
+	_, err := base.ExecuteTx(ctx, tx, "structure", `
+UPDATE structures AS s
+SET s.`+"`key`"+` = ?, s.name = ?, s.description = ?, s.fields_json = ?, s.updated_by = ?,
+    s.updated_at = UTC_TIMESTAMP(6), s.version = s.version + 1
+WHERE s.id = ? AND s.version = ? AND s.deleted_at IS NULL
+  AND EXISTS (
+      SELECT 1
+      FROM configs AS c
+      INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
+      WHERE c.id = s.config_id AND c.deleted_at IS NULL AND p.environment_id = ?
+  )`, update.Key, update.Name, update.Description, update.FieldsJSON, update.UpdatedBy,
+		structureID, update.Version, environmentID)
+	return err
+}
+
 func (r *StructureRepositoryImpl) Delete(ctx context.Context, environmentID, structureID, updatedBy int64) error {
 	if err := validateEnvironmentResource(environmentID, "structure_id", structureID); err != nil {
 		return err
@@ -218,6 +262,102 @@ WHERE s.id = ? AND s.deleted_at IS NULL
       WHERE c.id = s.config_id AND c.deleted_at IS NULL AND p.environment_id = ?
   )`, updatedBy, structureID, environmentID)
 	return err
+}
+
+func (r *StructureRepositoryImpl) DeleteTx(ctx context.Context, tx *xorm.Session, environmentID, structureID, updatedBy int64) error {
+	if err := validateEnvironmentResource(environmentID, "structure_id", structureID); err != nil {
+		return err
+	}
+	_, err := base.ExecuteTx(ctx, tx, "structure", `
+UPDATE structures AS s
+SET s.deleted_at = UTC_TIMESTAMP(6), s.updated_by = ?,
+    s.updated_at = UTC_TIMESTAMP(6), s.version = s.version + 1
+WHERE s.id = ? AND s.deleted_at IS NULL
+  AND EXISTS (
+      SELECT 1
+      FROM configs AS c
+      INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
+      WHERE c.id = s.config_id AND c.deleted_at IS NULL AND p.environment_id = ?
+  )`, updatedBy, structureID, environmentID)
+	return err
+}
+
+func (r *StructureRepositoryImpl) ReconcileTx(ctx context.Context, tx *xorm.Session, environmentID, configID int64, structures []*model.Structure, actorID int64) error {
+	if err := validateEnvironmentResource(environmentID, "config_id", configID); err != nil {
+		return err
+	}
+	if actorID <= 0 {
+		return base.InvalidArgument("actor_id must be greater than zero")
+	}
+	var locked struct {
+		ID int64 `xorm:"id"`
+	}
+	if err := base.LockOne(ctx, tx, "config", `
+SELECT c.id
+FROM configs AS c
+INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
+WHERE p.environment_id = ? AND c.id = ? AND c.deleted_at IS NULL
+LIMIT 1
+FOR UPDATE`, []any{environmentID, configID}, &locked); err != nil {
+		return err
+	}
+	existing := make([]model.Structure, 0)
+	if err := tx.Context(ctx).SQL(`
+SELECT s.*
+FROM structures AS s
+WHERE s.config_id = ?
+ORDER BY s.id ASC
+FOR UPDATE`, configID).Find(&existing); err != nil {
+		return base.Wrap("lock structures for reconciliation", err)
+	}
+	byKey := make(map[string]*model.Structure, len(existing))
+	for index := range existing {
+		byKey[existing[index].Key] = &existing[index]
+	}
+	desired := make(map[string]struct{}, len(structures))
+	for _, structure := range structures {
+		if structure == nil || structure.Key == "" {
+			return base.InvalidArgument("structure and key are required")
+		}
+		if _, duplicate := desired[structure.Key]; duplicate {
+			return base.InvalidArgument("structure keys must be unique")
+		}
+		desired[structure.Key] = struct{}{}
+		structure.ConfigID = configID
+		structure.UpdatedBy = actorID
+		current := byKey[structure.Key]
+		if current == nil {
+			structure.ID = 0
+			structure.CreatedBy = actorID
+			if err := r.CreateTx(ctx, tx, environmentID, configID, structure); err != nil {
+				return err
+			}
+			continue
+		}
+		if _, err := base.ExecuteTx(ctx, tx, "structure", `
+UPDATE structures
+SET name = ?, description = ?, fields_json = ?, deleted_at = NULL, updated_by = ?,
+    updated_at = UTC_TIMESTAMP(6), version = version + 1
+WHERE id = ? AND config_id = ?`, structure.Name, structure.Description, structure.FieldsJSON,
+			actorID, current.ID, configID); err != nil {
+			return err
+		}
+		structure.ID = current.ID
+		structure.Version = current.Version + 1
+	}
+	for index := range existing {
+		current := &existing[index]
+		if _, keep := desired[current.Key]; keep || !current.DeletedAt.IsZero() {
+			continue
+		}
+		if _, err := base.ExecuteTx(ctx, tx, "structure", `
+UPDATE structures
+SET deleted_at = UTC_TIMESTAMP(6), updated_by = ?, updated_at = UTC_TIMESTAMP(6), version = version + 1
+WHERE id = ? AND config_id = ? AND deleted_at IS NULL`, actorID, current.ID, configID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 var _ StructureRepository = (*StructureRepositoryImpl)(nil)
