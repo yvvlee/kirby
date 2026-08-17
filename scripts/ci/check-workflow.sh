@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
+repo_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd)
 workflow_dir="$repo_dir/.github/workflows"
 
 if grep -R -n -E 'uses:[[:space:]]+[^@[:space:]]+@(main|master|v[0-9]+([.][0-9]+){0,2})[[:space:]]*(#.*)?$' "$workflow_dir"; then

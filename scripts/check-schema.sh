@@ -28,8 +28,8 @@ fail() {
 schema_file=$1
 [[ -f "$schema_file" ]] || fail "file does not exist: $schema_file"
 
-script_dir=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-repo_dir=$(CDPATH= cd -- "$script_dir/.." && pwd)
+script_dir=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+repo_dir=$(CDPATH='' cd -- "$script_dir/.." && pwd)
 server_dir="$repo_dir/server"
 
 expected_tables='audit_logs

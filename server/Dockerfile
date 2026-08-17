@@ -1,4 +1,4 @@
-FROM golang:1.25.13-bookworm@sha256:e401dae1bf814e29204a8cb7915682e1780951e609ca0dd8865ee1937f510c48 AS build
+FROM --platform=$BUILDPLATFORM golang:1.25.13-bookworm@sha256:e401dae1bf814e29204a8cb7915682e1780951e609ca0dd8865ee1937f510c48 AS build
 
 WORKDIR /src/server
 
@@ -11,8 +11,10 @@ COPY server/ ./
 ARG VERSION=dev
 ARG COMMIT=unknown
 ARG BUILD_DATE=unknown
+ARG TARGETOS
+ARG TARGETARCH
 
-RUN CGO_ENABLED=0 GOOS=linux go build \
+RUN CGO_ENABLED=0 GOOS="$TARGETOS" GOARCH="$TARGETARCH" go build \
     -buildvcs=false \
     -trimpath \
     -ldflags "-s -w -X github.com/yvvlee/kirby/server/internal/version.Version=${VERSION} -X github.com/yvvlee/kirby/server/internal/version.Commit=${COMMIT} -X github.com/yvvlee/kirby/server/internal/version.BuildDate=${BUILD_DATE}" \

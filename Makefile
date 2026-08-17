@@ -1,5 +1,8 @@
 .PHONY: dependencies generate generate-check lint test test-race build static-server-test schema-check license-check security-check workflow-check sbom ci
 
+ACTIONLINT_VERSION := v1.7.12
+SHELLCHECK_IMAGE := koalaman/shellcheck-alpine:v0.11.0@sha256:9955be09ea7f0dbf7ae942ac1f2094355bb30d96fffba0ec09f5432207544002
+
 dependencies:
 	cd server && go mod download
 	npm --prefix web ci
@@ -40,6 +43,9 @@ security-check:
 
 workflow-check:
 	./scripts/ci/check-workflow.sh
+	go run github.com/rhysd/actionlint/cmd/actionlint@$(ACTIONLINT_VERSION) .github/workflows/*.yml
+	docker run --rm --entrypoint /bin/sh -v "$(CURDIR):/mnt:ro" $(SHELLCHECK_IMAGE) -ec \
+		'shellcheck --severity=warning /mnt/scripts/*.sh /mnt/scripts/ci/*.sh'
 
 sbom:
 	./scripts/generate-sbom.sh

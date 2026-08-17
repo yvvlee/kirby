@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+repo_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 work_dir=$(mktemp -d "${TMPDIR:-/tmp}/kirby-local-dev.XXXXXX")
 mysql_container=${KIRBY_TEST_MYSQL_CONTAINER:-mysql}
 redis_container=${KIRBY_TEST_REDIS_CONTAINER:-redis}

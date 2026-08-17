@@ -164,6 +164,7 @@ the request changes the `project` parameter.
 - [Snapshot import and export](docs/import-export.md)
 - [Development](docs/development.md)
 - [Operations](docs/operations.md)
+- [Releasing](docs/releasing.md)
 - [Security design](docs/security.md)
 - [Source provenance](docs/source-provenance.md)
 

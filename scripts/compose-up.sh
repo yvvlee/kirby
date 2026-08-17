@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 repo_dir=$(dirname -- "$script_dir")
 deploy_dir="$repo_dir/deploy"
 env_file=${KIRBY_COMPOSE_ENV_FILE:-"$deploy_dir/.env"}

@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+repo_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 work_dir=$(mktemp -d "${TMPDIR:-/tmp}/kirby-clean-room.XXXXXX")
 checkout_dir="$work_dir/kirby"
 builder_name="kirby-clean-$PPID-$$"

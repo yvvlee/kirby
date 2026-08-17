@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+repo_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 work_dir=$(mktemp -d "${TMPDIR:-/tmp}/kirby-security.XXXXXX")
 server_image="kirby-security-server:$PPID-$$"
 web_image="kirby-security-web:$PPID-$$"

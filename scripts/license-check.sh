@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+repo_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 work_dir=$(mktemp -d "${TMPDIR:-/tmp}/kirby-license.XXXXXX")
 go_licenses_version=v1.6.0
 go_licenses_sum='h1:MM+VCXf0slYkpWO0mECvdYDVCxZXIQNal5wqUIXEZ/A='

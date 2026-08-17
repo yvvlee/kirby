@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
+repo_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd)
 
 (cd "$repo_dir/server" && make generate)
 changes=$(git -C "$repo_dir" status --porcelain -- api server/gen)

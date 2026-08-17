@@ -1,8 +1,10 @@
 #!/bin/sh
 set -eu
 
-repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+repo_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 source_commit=${KIRBY_SOURCE_COMMIT:-$(git -C "$repo_dir" rev-parse HEAD)}
+release_version=${KIRBY_RELEASE_VERSION:-dev}
+build_date=${KIRBY_BUILD_DATE:-unknown}
 work_dir=$(mktemp -d "${TMPDIR:-/tmp}/kirby-sbom.XXXXXX")
 checkout_dir="$work_dir/source"
 server_image="kirby-sbom-server:$PPID-$$"
@@ -38,9 +40,13 @@ source_time=$(git -C "$repo_dir" show -s --format=%cI "$source_commit")
 echo "Building release images from $source_commit..."
 if [ -n "${KIRBY_GO_PROXY:-}" ]; then
   docker build --provenance=false --build-arg "GOPROXY=$KIRBY_GO_PROXY" \
+    --build-arg "VERSION=$release_version" --build-arg "COMMIT=$source_commit" \
+    --build-arg "BUILD_DATE=$build_date" \
     -t "$server_image" -f "$checkout_dir/server/Dockerfile" "$checkout_dir"
 else
-  docker build --provenance=false -t "$server_image" \
+  docker build --provenance=false --build-arg "VERSION=$release_version" \
+    --build-arg "COMMIT=$source_commit" --build-arg "BUILD_DATE=$build_date" \
+    -t "$server_image" \
     -f "$checkout_dir/server/Dockerfile" "$checkout_dir"
 fi
 docker build --provenance=false -t "$web_image" \

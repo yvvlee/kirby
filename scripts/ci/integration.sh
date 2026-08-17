@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
+repo_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd)
 work_dir=$(mktemp -d "${TMPDIR:-/tmp}/kirby-ci-integration.XXXXXX")
 config_file="$work_dir/config.yaml"
 password_file="$work_dir/admin-password"
