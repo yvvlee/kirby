@@ -12,6 +12,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/google/wire v0.7.0
 	github.com/minio/minio-go/v7 v7.3.0
+	github.com/pkg/errors v0.9.1
 	github.com/redis/go-redis/v9 v9.22.0
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1

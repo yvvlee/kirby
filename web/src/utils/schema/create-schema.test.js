@@ -118,4 +118,10 @@ describe('createBaseTypeSchema', () => {
       },
     })
   })
+
+  it('拒绝未知基本类型', () => {
+    expect(() => createBaseTypeSchema('UnknownType')).toThrow(
+      '不支持的基本类型: UnknownType',
+    )
+  })
 })

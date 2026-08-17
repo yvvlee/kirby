@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package kirby.errors.v1;
+
+import "errors/errors.proto";
+
+option go_package = "github.com/yvvlee/kirby/server/gen/kirby/errors/v1;errorsv1";
+
+enum Error {
+  option (.errors.default_code) = 500;
+
+  Unknown = 0 [(.errors.code) = 400];
+  DatabaseError = 2 [(.errors.code) = 500];
+  Unimplemented = 3 [(.errors.code) = 501];
+  NoneRecordUpdated = 4 [(.errors.code) = 202];
+  InvalidParam = 5 [(.errors.code) = 400];
+  Internal = 6 [(.errors.code) = 500];
+  InvalidOperation = 7 [(.errors.code) = 404];
+  BadRequest = 400 [(.errors.code) = 400];
+  Unauthorized = 401 [(.errors.code) = 401];
+  Forbidden = 403 [(.errors.code) = 403];
+  NotFound = 404 [(.errors.code) = 404];
+  Conflict = 409 [(.errors.code) = 409];
+  TooManyRequests = 429 [(.errors.code) = 429];
+}

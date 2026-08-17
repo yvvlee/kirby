@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package kirby.runtime.v1;
+
+import "google/api/annotations.proto";
+import "validate/validate.proto";
+
+option go_package = "github.com/yvvlee/kirby/server/gen/kirby/runtime/v1;runtimev1";
+
+service Api {
+  rpc Config(ConfigRequest) returns (ConfigReply) {
+    option (google.api.http) = {get: "/v1/config"};
+  }
+}
+
+message ConfigRequest {
+  string project = 1 [(validate.rules).string = {min_len: 1, max_len: 64}];
+  string key = 2 [(validate.rules).string = {min_len: 1, max_len: 64}];
+}
+
+message ConfigReply {
+  string content = 1;
+  uint64 version = 2;
+}

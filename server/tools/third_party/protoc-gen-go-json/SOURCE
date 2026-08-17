@@ -1,0 +1,8 @@
+Project: protoc-gen-go-json
+Source: https://github.com/yvvlee/protoc-gen-go-json
+Tag: v1.0.1
+Commit: 217c673080d2518111c3b3330a7647803058b865
+License: MIT (see LICENSE)
+
+Only the files required to build the generator are included. The included
+source is unchanged from the recorded commit.

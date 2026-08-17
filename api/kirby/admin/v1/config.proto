@@ -1,0 +1,86 @@
+syntax = "proto3";
+
+package kirby.admin.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "kirby/common/v1/entity.proto";
+import "validate/validate.proto";
+
+option go_package = "github.com/yvvlee/kirby/server/gen/kirby/admin/v1;adminv1";
+
+service ConfigService {
+  rpc CreateConfig(CreateConfigRequest) returns (ConfigReply) {
+    option (google.api.http) = {post: "/admin/environments/{environment_id}/config/create", body: "*"};
+  }
+  rpc UpdateConfig(UpdateConfigRequest) returns (ConfigReply) {
+    option (google.api.http) = {post: "/admin/environments/{environment_id}/config/update", body: "*"};
+  }
+  rpc UpdateConfigValue(UpdateConfigValueRequest) returns (ConfigReply) {
+    option (google.api.http) = {post: "/admin/environments/{environment_id}/config/updateValue", body: "*"};
+  }
+  rpc ListConfig(ListConfigRequest) returns (ListConfigReply) {
+    option (google.api.http) = {post: "/admin/environments/{environment_id}/config/list", body: "*"};
+  }
+  rpc DeleteConfig(ConfigIDRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {post: "/admin/environments/{environment_id}/config/delete", body: "*"};
+  }
+  rpc ConfigDetail(ConfigIDRequest) returns (ConfigDetailReply) {
+    option (google.api.http) = {post: "/admin/environments/{environment_id}/config/detail", body: "*"};
+  }
+}
+
+message ConfigIDRequest {
+  int64 environment_id = 1 [(validate.rules).int64 = {gt: 0}];
+  int64 id = 2 [(validate.rules).int64 = {gt: 0}];
+}
+
+message CreateConfigRequest {
+  int64 environment_id = 1 [(validate.rules).int64 = {gt: 0}];
+  string key = 2 [(validate.rules).string = {
+    min_len: 1, max_len: 64, pattern: "^[A-Za-z][A-Za-z0-9]*$"
+  }];
+  int64 project_id = 3 [(validate.rules).int64 = {gt: 0}];
+  string description = 4 [(validate.rules).string = {max_len: 255}];
+}
+
+message UpdateConfigRequest {
+  int64 environment_id = 1 [(validate.rules).int64 = {gt: 0}];
+  int64 id = 2 [(validate.rules).int64 = {gt: 0}];
+  string description = 3 [(validate.rules).string = {max_len: 255}];
+  kirby.common.v1.Field.Type type = 4;
+  bool is_array = 5;
+  uint32 version = 55;
+}
+
+message UpdateConfigValueRequest {
+  int64 environment_id = 1 [(validate.rules).int64 = {gt: 0}];
+  int64 id = 2 [(validate.rules).int64 = {gt: 0}];
+  string value = 3;
+  uint32 version = 55;
+}
+
+message ListConfigRequest {
+  int64 environment_id = 1 [(validate.rules).int64 = {gt: 0}];
+  optional string key = 2 [(validate.rules).string = {max_len: 255}];
+  optional int64 project_id = 3 [(validate.rules).int64 = {gt: 0}];
+  optional string project_key = 4 [(validate.rules).string = {max_len: 64}];
+}
+
+message ConfigReply {
+  kirby.common.v1.Config config = 1;
+}
+
+message ListConfigReply {
+  repeated ListConfigItem list = 1;
+}
+
+message ListConfigItem {
+  kirby.common.v1.Config config = 1;
+  bool is_released = 2;
+}
+
+message ConfigDetailReply {
+  kirby.common.v1.Config config = 1;
+  kirby.common.v1.TreeNode tree = 2;
+}

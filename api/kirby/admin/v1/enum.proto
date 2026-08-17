@@ -1,0 +1,68 @@
+syntax = "proto3";
+
+package kirby.admin.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "kirby/common/v1/entity.proto";
+import "kirby/common/v1/types.proto";
+import "validate/validate.proto";
+
+option go_package = "github.com/yvvlee/kirby/server/gen/kirby/admin/v1;adminv1";
+
+service EnumService {
+  rpc CreateEnum(CreateEnumRequest) returns (EnumReply) {
+    option (google.api.http) = {post: "/admin/environments/{environment_id}/enum/create", body: "*"};
+  }
+  rpc UpdateEnum(UpdateEnumRequest) returns (EnumReply) {
+    option (google.api.http) = {post: "/admin/environments/{environment_id}/enum/update", body: "*"};
+  }
+  rpc ListEnum(ListEnumRequest) returns (ListEnumReply) {
+    option (google.api.http) = {post: "/admin/environments/{environment_id}/enum/list", body: "*"};
+  }
+  rpc DeleteEnum(EnumIDRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {post: "/admin/environments/{environment_id}/enum/delete", body: "*"};
+  }
+}
+
+message EnumIDRequest {
+  int64 environment_id = 1 [(validate.rules).int64 = {gt: 0}];
+  int64 id = 2 [(validate.rules).int64 = {gt: 0}];
+}
+
+message CreateEnumRequest {
+  int64 environment_id = 1 [(validate.rules).int64 = {gt: 0}];
+  int64 config_id = 2 [(validate.rules).int64 = {gt: 0}];
+  string key = 3 [(validate.rules).string = {
+    min_len: 1, max_len: 64, pattern: "^[A-Za-z][A-Za-z0-9]*$"
+  }];
+  string name = 4 [(validate.rules).string = {min_len: 1, max_len: 64}];
+  string description = 5 [(validate.rules).string = {max_len: 255}];
+  repeated kirby.common.v1.SelectOption values = 6 [(validate.rules).repeated = {min_items: 1}];
+}
+
+message UpdateEnumRequest {
+  int64 environment_id = 1 [(validate.rules).int64 = {gt: 0}];
+  int64 id = 2 [(validate.rules).int64 = {gt: 0}];
+  string key = 3 [(validate.rules).string = {
+    min_len: 1, max_len: 64, pattern: "^[A-Za-z][A-Za-z0-9]*$"
+  }];
+  string name = 4 [(validate.rules).string = {min_len: 1, max_len: 64}];
+  string description = 5 [(validate.rules).string = {max_len: 255}];
+  repeated kirby.common.v1.SelectOption values = 6 [(validate.rules).repeated = {min_items: 1}];
+  uint32 version = 55;
+}
+
+message ListEnumRequest {
+  int64 environment_id = 1 [(validate.rules).int64 = {gt: 0}];
+  int64 config_id = 2 [(validate.rules).int64 = {gt: 0}];
+  int64 project_id = 3 [(validate.rules).int64 = {gt: 0}];
+}
+
+message EnumReply {
+  kirby.common.v1.ConfigEnum enum = 1;
+}
+
+message ListEnumReply {
+  repeated kirby.common.v1.ConfigEnum list = 1;
+}

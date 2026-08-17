@@ -1,0 +1,9 @@
+Project: protoc-gen-go-errors
+Source: https://github.com/yvvlee/protoc-gen-go-errors
+Tag: v1.0.0
+Commit: 04802e1d2794f6fc2e8a2d0d9d770eb32f8600cd
+License: MIT (see LICENSE)
+
+Only the files required to build the generator and resolve its protobuf error
+extensions are included. The module declaration and its matching self-import
+were changed to the public repository path. No generator logic was changed.

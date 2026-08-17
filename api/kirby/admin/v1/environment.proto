@@ -1,0 +1,78 @@
+syntax = "proto3";
+
+package kirby.admin.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "kirby/common/v1/entity.proto";
+import "validate/validate.proto";
+
+option go_package = "github.com/yvvlee/kirby/server/gen/kirby/admin/v1;adminv1";
+
+service EnvironmentService {
+  rpc ListEnvironments(google.protobuf.Empty) returns (ListEnvironmentsReply) {
+    option (google.api.http) = {get: "/admin/environments"};
+  }
+  rpc CreateEnvironment(CreateEnvironmentRequest) returns (EnvironmentReply) {
+    option (google.api.http) = {post: "/admin/environments", body: "*"};
+  }
+  rpc UpdateEnvironment(UpdateEnvironmentRequest) returns (EnvironmentReply) {
+    option (google.api.http) = {put: "/admin/environments/{environment_id}", body: "*"};
+  }
+  rpc MyPermissions(EnvironmentIDRequest) returns (MyPermissionsReply) {
+    option (google.api.http) = {get: "/admin/environments/{environment_id}/my-permissions"};
+  }
+  rpc ListEnvironmentUsers(EnvironmentIDRequest) returns (ListEnvironmentUsersReply) {
+    option (google.api.http) = {get: "/admin/environments/{environment_id}/users"};
+  }
+  rpc UpdateEnvironmentUserRoles(UpdateEnvironmentUserRolesRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      put: "/admin/environments/{environment_id}/users/{user_id}/roles"
+      body: "*"
+    };
+  }
+}
+
+message EnvironmentIDRequest {
+  int64 environment_id = 1 [(validate.rules).int64 = {gt: 0}];
+}
+
+message CreateEnvironmentRequest {
+  string key = 1 [(validate.rules).string = {
+    min_len: 1, max_len: 64, pattern: "^[a-z][a-z0-9-]*$"
+  }];
+  string name = 2 [(validate.rules).string = {min_len: 1, max_len: 64}];
+  string description = 3 [(validate.rules).string = {max_len: 255}];
+}
+
+message UpdateEnvironmentRequest {
+  int64 environment_id = 1 [(validate.rules).int64 = {gt: 0}];
+  string name = 2 [(validate.rules).string = {min_len: 1, max_len: 64}];
+  string description = 3 [(validate.rules).string = {max_len: 255}];
+  bool enabled = 4;
+  uint32 version = 55;
+}
+
+message EnvironmentReply {
+  kirby.common.v1.Environment environment = 1;
+}
+
+message ListEnvironmentsReply {
+  repeated kirby.common.v1.Environment list = 1;
+}
+
+message MyPermissionsReply {
+  repeated string permissions = 1;
+}
+
+message ListEnvironmentUsersReply {
+  repeated kirby.common.v1.EnvironmentMember list = 1;
+}
+
+message UpdateEnvironmentUserRolesRequest {
+  int64 environment_id = 1 [(validate.rules).int64 = {gt: 0}];
+  int64 user_id = 2 [(validate.rules).int64 = {gt: 0}];
+  repeated int64 role_ids = 3 [(validate.rules).repeated = {
+    unique: true, items: {int64: {gt: 0}}
+  }];
+}

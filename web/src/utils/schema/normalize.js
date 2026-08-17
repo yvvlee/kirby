@@ -1,8 +1,30 @@
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 const TIME_RE = /^\d{2}:\d{2}:\d{2}$/
 const DATETIME_RE = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/
+const BASE_TYPES = new Set([
+  'String',
+  'Int',
+  'Decimal',
+  'Boolean',
+  'Date',
+  'Time',
+  'Datetime',
+  'DateRange',
+  'TimeRange',
+  'DatetimeRange',
+  'Image',
+  'Video',
+  'File',
+])
+
+const assertBaseType = (baseType) => {
+  if (!BASE_TYPES.has(baseType)) {
+    throw new Error(`不支持的基本类型: ${baseType}`)
+  }
+}
 
 const getBaseTypeDefault = (baseType) => {
+  assertBaseType(baseType)
   if (baseType === 'Int' || baseType === 'Decimal') {
     return 0
   }
@@ -21,6 +43,7 @@ const isValidRange = (value, expression) =>
   value.every((item) => typeof item === 'string' && expression.test(item))
 
 const isValidBaseType = (baseType, value) => {
+  assertBaseType(baseType)
   switch (baseType) {
     case 'Int':
       return Number.isInteger(value)
@@ -40,8 +63,13 @@ const isValidBaseType = (baseType, value) => {
       return isValidRange(value, TIME_RE)
     case 'DatetimeRange':
       return isValidRange(value, DATETIME_RE)
-    default:
+    case 'String':
+    case 'Image':
+    case 'Video':
+    case 'File':
       return typeof value === 'string'
+    default:
+      throw new Error(`不支持的基本类型: ${baseType}`)
   }
 }
 
@@ -138,6 +166,7 @@ const normalizeValue = (node, data, resources, modelPath) => {
   if (!baseType) {
     return data
   }
+  assertBaseType(baseType)
   if (value.isArray) {
     if (!Array.isArray(data)) {
       return []
@@ -161,8 +190,11 @@ export const normalizeData = (node, data, resources) => {
   let parsed
   try {
     parsed = JSON.parse(data)
-  } catch {
-    return normalizeValue(node, undefined, checkedResources, [])
+  } catch (error) {
+    throw new SyntaxError(
+      `配置项 ${getNodeValue(node).key} 的值不是合法 JSON: ${error.message}`,
+      { cause: error },
+    )
   }
   return normalizeValue(node, parsed, checkedResources, [])
 }

@@ -1,0 +1,49 @@
+syntax = "proto3";
+
+package kirby.admin.v1;
+
+import "google/api/annotations.proto";
+import "kirby/common/v1/entity.proto";
+import "validate/validate.proto";
+
+option go_package = "github.com/yvvlee/kirby/server/gen/kirby/admin/v1;adminv1";
+
+service SnapshotTransferService {
+  rpc ExportSnapshot(ExportSnapshotRequest) returns (ExportSnapshotReply) {
+    option (google.api.http) = {
+      get: "/admin/environments/{source_environment_id}/snapshots/{snapshot_id}/export"
+    };
+  }
+  rpc ImportSnapshot(ImportSnapshotRequest) returns (ImportSnapshotReply) {
+    option (google.api.http) = {
+      post: "/admin/environments/{target_environment_id}/snapshot-imports"
+      body: "*"
+    };
+  }
+}
+
+message ExportSnapshotRequest {
+  int64 source_environment_id = 1 [(validate.rules).int64 = {gt: 0}];
+  int64 snapshot_id = 2 [(validate.rules).int64 = {gt: 0}];
+}
+
+message ExportSnapshotReply {
+  int64 source_environment_id = 1;
+  kirby.common.v1.Snapshot snapshot = 2;
+}
+
+message ImportSnapshotRequest {
+  int64 target_environment_id = 1 [(validate.rules).int64 = {gt: 0}];
+  int64 source_environment_id = 2 [(validate.rules).int64 = {gt: 0}];
+  int64 source_snapshot_id = 3 [(validate.rules).int64 = {gt: 0}];
+  int64 target_project_id = 4 [(validate.rules).int64 = {gt: 0}];
+  optional int64 target_config_id = 5 [(validate.rules).int64 = {gt: 0}];
+  string description = 6 [(validate.rules).string = {min_len: 2, max_len: 255}];
+  repeated kirby.common.v1.Snapshot.Tag tags = 7;
+  string idempotency_key = 8 [(validate.rules).string = {min_len: 16, max_len: 128}];
+}
+
+message ImportSnapshotReply {
+  kirby.common.v1.Snapshot snapshot = 1;
+  bool replayed = 2;
+}

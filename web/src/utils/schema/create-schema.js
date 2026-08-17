@@ -187,10 +187,12 @@ export const createBaseTypeSchema = (
       schema['x-component-props'] = { uploadType: baseType, isArray: false }
       break
     case 'String':
-    default:
       schema.type = 'string'
       schema['x-component'] = 'Input'
       schema['x-component-props'] = { size: 'small' }
+      break
+    default:
+      throw new Error(`不支持的基本类型: ${baseType}`)
   }
 
   if (needDecorator) {
