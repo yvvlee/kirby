@@ -5,6 +5,7 @@
 *.local.yaml
 *.local.yml
 config.yaml
+.local/
 
 # Go
 server/bin/
