@@ -1,32 +1,15 @@
 import axios from 'axios'
 
+import { getAccessTokenSnapshot } from '@/auth/token'
 import {
-  clearAccessToken,
-  getAccessToken,
-  notifySessionExpired,
-  setAccessToken,
-} from '@/auth/token'
+  expireAccessTokenSession,
+  refreshAccessTokenSession,
+} from '@/store/refresh-coordinator'
 
 const API_BASE_URL = '/api'
 
-function readAccessToken(data) {
-  const token = data?.access_token
-  if (typeof token !== 'string' || token.length === 0) {
-    throw new TypeError('refresh response does not contain access_token')
-  }
-  return token
-}
-
-function shouldRefresh(error) {
-  return (
-    error.response?.status === 401 &&
-    !error.config?.skipAuthRefresh &&
-    !error.config?._kirbyRetried
-  )
-}
-
-function isRejectedRetry(error) {
-  return error.response?.status === 401 && error.config?._kirbyRetried
+function isRefreshableUnauthorized(error) {
+  return error.response?.status === 401 && !error.config?.skipAuthRefresh
 }
 
 function setAuthorization(config, token) {
@@ -51,62 +34,69 @@ export function createApiClient(options = {}) {
 
   const client = axios.create(commonOptions)
   const refreshClient = axios.create(commonOptions)
-  let refreshPromise = null
-  let expirationPromise = null
 
   client.interceptors.request.use((config) => {
-    const token = getAccessToken()
-    if (token && !config.skipAccessToken) {
-      setAuthorization(config, token)
+    const snapshot = getAccessTokenSnapshot()
+    config._kirbyAccessTokenGeneration = snapshot.accessTokenGeneration
+    config._kirbySessionGeneration = snapshot.sessionGeneration
+    if (snapshot.token && !config.skipAccessToken) {
+      setAuthorization(config, snapshot.token)
     }
     return config
   })
 
-  function expireSession(error) {
-    if (!expirationPromise) {
-      clearAccessToken()
-      expirationPromise = notifySessionExpired(error).finally(() => {
-        expirationPromise = null
-      })
-    }
-    return expirationPromise
-  }
-
   function refreshAccessToken() {
-    if (!refreshPromise) {
-      refreshPromise = refreshClient
-        .post('/auth/refresh')
-        .then(({ data }) => {
-          const token = readAccessToken(data)
-          setAccessToken(token)
-          return token
-        })
-        .catch(async (error) => {
-          await expireSession(error)
-          throw error
-        })
-        .finally(() => {
-          refreshPromise = null
-        })
-    }
-    return refreshPromise
+    return refreshAccessTokenSession(async () => {
+      const { data } = await refreshClient.post('/auth/refresh')
+      return data
+    })
   }
 
   client.interceptors.response.use(
     (value) => value,
     async (error) => {
-      if (isRejectedRetry(error)) {
-        await expireSession(error)
-        throw error
-      }
-      if (!shouldRefresh(error)) {
+      if (!isRefreshableUnauthorized(error)) {
         throw error
       }
 
       const originalConfig = error.config
+      const requestSessionGeneration =
+        originalConfig._kirbySessionGeneration
+      const requestAccessTokenGeneration =
+        originalConfig._kirbyAccessTokenGeneration
+      let current = getAccessTokenSnapshot()
+
+      if (requestSessionGeneration !== current.sessionGeneration) {
+        throw error
+      }
+      if (current.token === null) {
+        if (!current.refreshAllowed) {
+          await expireAccessTokenSession(error, current.sessionGeneration)
+          throw error
+        }
+      } else if (
+        requestAccessTokenGeneration !== current.accessTokenGeneration
+      ) {
+        originalConfig._kirbyRetried = true
+        setAuthorization(originalConfig, current.token)
+        return client.request(originalConfig)
+      }
+      if (originalConfig._kirbyRetried) {
+        await expireAccessTokenSession(error, current.sessionGeneration)
+        throw error
+      }
+
+      const refresh = await refreshAccessToken()
+      current = getAccessTokenSnapshot()
+      if (
+        refresh.started.sessionGeneration !== requestSessionGeneration ||
+        refresh.completed.sessionGeneration !== current.sessionGeneration ||
+        current.token === null
+      ) {
+        throw error
+      }
       originalConfig._kirbyRetried = true
-      const token = await refreshAccessToken()
-      setAuthorization(originalConfig, token)
+      setAuthorization(originalConfig, current.token)
       return client.request(originalConfig)
     },
   )

@@ -9,9 +9,9 @@ const trackedCommits = new Set()
 
 registerEnvironmentScopeCleanup(
   'config-center-cache',
-  async ({ fromEnvironmentId }) => {
+  async () => {
     for (const commit of trackedCommits) {
-      commit('CLEAR_ENVIRONMENT', fromEnvironmentId)
+      commit('RESET')
     }
   },
 )

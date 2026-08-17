@@ -3,6 +3,7 @@ import {
   listEnvironments,
 } from '@/api/environments'
 import { clearEnvironmentScope } from '@/auth/environment-scope'
+import { getAccessTokenSnapshot } from '@/auth/token'
 
 function initialState() {
   return {
@@ -12,6 +13,7 @@ function initialState() {
     switchSequence: 0,
     switching: false,
     scopeVersion: 0,
+    lifecycleVersion: 0,
   }
 }
 
@@ -67,13 +69,29 @@ export default {
       state.switching = false
     },
     RESET(state) {
-      Object.assign(state, initialState())
+      const switchSequence = state.switchSequence + 1
+      const scopeVersion = state.scopeVersion + 1
+      const lifecycleVersion = state.lifecycleVersion + 1
+      Object.assign(state, initialState(), {
+        switchSequence,
+        scopeVersion,
+        lifecycleVersion,
+      })
     },
   },
 
   actions: {
     async loadAvailable({ state, commit, dispatch }) {
+      const lifecycleVersion = state.lifecycleVersion
+      const sessionGeneration =
+        getAccessTokenSnapshot().sessionGeneration
       const environments = requireEnvironmentList(await listEnvironments())
+      if (
+        lifecycleVersion !== state.lifecycleVersion ||
+        sessionGeneration !== getAccessTokenSnapshot().sessionGeneration
+      ) {
+        return []
+      }
       commit('SET_AVAILABLE', environments)
 
       const current = environments.find(
@@ -102,11 +120,18 @@ export default {
 
       commit('BEGIN_SWITCH')
       const sequence = state.switchSequence
+      const lifecycleVersion = state.lifecycleVersion
+      const sessionGeneration =
+        getAccessTokenSnapshot().sessionGeneration
       try {
         const permissions = requirePermissions(
           await getMyPermissions(environment.id),
         )
-        if (sequence !== state.switchSequence) {
+        if (
+          sequence !== state.switchSequence ||
+          lifecycleVersion !== state.lifecycleVersion ||
+          sessionGeneration !== getAccessTokenSnapshot().sessionGeneration
+        ) {
           return null
         }
 
@@ -118,7 +143,11 @@ export default {
             toEnvironmentId: environment.id,
           })
         }
-        if (sequence !== state.switchSequence) {
+        if (
+          sequence !== state.switchSequence ||
+          lifecycleVersion !== state.lifecycleVersion ||
+          sessionGeneration !== getAccessTokenSnapshot().sessionGeneration
+        ) {
           return null
         }
 
@@ -128,7 +157,11 @@ export default {
         })
         return environment
       } catch (error) {
-        if (sequence === state.switchSequence) {
+        if (
+          sequence === state.switchSequence &&
+          lifecycleVersion === state.lifecycleVersion &&
+          sessionGeneration === getAccessTokenSnapshot().sessionGeneration
+        ) {
           commit('CANCEL_SWITCH')
         }
         throw error
@@ -137,12 +170,10 @@ export default {
 
     async resetScope({ state, commit, getters }) {
       const previous = getters.current
-      if (previous || state.currentId !== null) {
-        await clearEnvironmentScope({
-          fromEnvironmentId: previous?.id ?? state.currentId,
-          toEnvironmentId: null,
-        })
-      }
+      await clearEnvironmentScope({
+        fromEnvironmentId: previous?.id ?? state.currentId,
+        toEnvironmentId: null,
+      })
       commit('RESET')
     },
   },

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const client = vi.hoisted(() => ({
   get: vi.fn(),
@@ -9,12 +9,17 @@ const client = vi.hoisted(() => ({
 vi.mock('./client', () => ({ default: client }))
 
 import { login, refreshSession } from './auth'
+import { clearAccessToken } from '@/auth/token'
 import { getMyPermissions, updateEnvironment } from './environments'
 
 beforeEach(() => {
   client.get.mockResolvedValue({ data: {} })
-  client.post.mockResolvedValue({ data: {} })
+  client.post.mockResolvedValue({ data: { access_token: 'contract-token' } })
   client.put.mockResolvedValue({ data: {} })
+})
+
+afterEach(() => {
+  clearAccessToken()
 })
 
 describe('HTTP contract mapping', () => {

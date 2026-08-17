@@ -1,4 +1,6 @@
 import client from './client'
+import { getAccessToken } from '@/auth/token'
+import { refreshAccessTokenSession } from '@/store/refresh-coordinator'
 
 export async function login(credentials) {
   const { data } = await client.post('/auth/login', credentials, {
@@ -9,16 +11,23 @@ export async function login(credentials) {
 }
 
 export async function refreshSession() {
-  const { data } = await client.post('/auth/refresh', null, {
-    skipAuthRefresh: true,
-    skipAccessToken: true,
+  const { reply } = await refreshAccessTokenSession(async () => {
+    const { data } = await client.post('/auth/refresh', null, {
+      skipAuthRefresh: true,
+      skipAccessToken: true,
+    })
+    return data
   })
-  return data
+  return reply
 }
 
-export async function logout() {
+export async function logout(accessToken = getAccessToken()) {
   await client.post('/auth/logout', null, {
+    headers: accessToken
+      ? { Authorization: `Bearer ${accessToken}` }
+      : undefined,
     skipAuthRefresh: true,
+    skipAccessToken: true,
   })
 }
 

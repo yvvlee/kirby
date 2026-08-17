@@ -6,8 +6,12 @@ import {
 import {
   clearAccessToken,
   getAccessToken,
-  setAccessToken,
+  getAccessTokenSnapshot,
+  startAccessTokenSession,
 } from '@/auth/token'
+import { SESSION_CHANGED_DURING_REFRESH } from '@/store/refresh-coordinator'
+
+const bootstrapOperations = new WeakMap()
 
 function initialState() {
   return {
@@ -17,14 +21,25 @@ function initialState() {
   }
 }
 
-function applyLoginReply(commit, reply) {
+function requireLoginReply(reply) {
   if (typeof reply?.access_token !== 'string' || !reply.access_token) {
     throw new TypeError('authentication response does not contain access_token')
   }
   if (!reply.user || typeof reply.user !== 'object') {
     throw new TypeError('authentication response does not contain user')
   }
-  setAccessToken(reply.access_token)
+  return reply
+}
+
+function applyLoginReply(commit, reply, { tokenReady = false } = {}) {
+  requireLoginReply(reply)
+  if (tokenReady) {
+    if (getAccessToken() !== reply.access_token) {
+      throw new Error('refresh reply does not match the active access token')
+    }
+  } else {
+    startAccessTokenSession(reply.access_token)
+  }
   commit('SET_USER', reply.user)
 }
 
@@ -72,41 +87,85 @@ export default {
       }
     },
 
-    async bootstrap({ state, commit, dispatch }) {
+    bootstrap(context) {
+      const { state } = context
       if (state.initialized) {
         return Boolean(state.user && getAccessToken())
       }
-
-      try {
-        applyLoginReply(commit, await refreshSession())
-        await dispatch('environment/loadAvailable', null, { root: true })
-        commit('SET_INITIALIZED', true)
-        return true
-      } catch (error) {
-        clearAccessToken()
-        commit('SET_USER', null)
-        await dispatch('environment/resetScope', null, { root: true })
-        commit('SET_INITIALIZED', true)
-        if (isAnonymousResponse(error)) {
-          return false
-        }
-        throw error
+      const pending = bootstrapOperations.get(state)
+      if (pending) {
+        return pending
       }
+
+      const operation = (async () => {
+        const { commit, dispatch } = context
+        const startedSessionGeneration =
+          getAccessTokenSnapshot().sessionGeneration
+        let refreshedSessionGeneration = null
+        try {
+          const reply = await refreshSession()
+          refreshedSessionGeneration =
+            getAccessTokenSnapshot().sessionGeneration
+          applyLoginReply(commit, reply, {
+            tokenReady: true,
+          })
+          await dispatch('environment/loadAvailable', null, { root: true })
+          commit('SET_INITIALIZED', true)
+          return true
+        } catch (error) {
+          const current = getAccessTokenSnapshot()
+          if (
+            current.sessionGeneration !== startedSessionGeneration &&
+            current.sessionGeneration !== refreshedSessionGeneration &&
+            current.sessionActive
+          ) {
+            return Boolean(state.user && current.token)
+          }
+          if (
+            (current.sessionGeneration === startedSessionGeneration ||
+              current.sessionGeneration === refreshedSessionGeneration) &&
+            (current.sessionActive || current.refreshAllowed)
+          ) {
+            clearAccessToken()
+          }
+          commit('SET_USER', null)
+          await dispatch('environment/resetScope', null, { root: true })
+          commit('SET_INITIALIZED', true)
+          if (
+            error?.code === SESSION_CHANGED_DURING_REFRESH ||
+            isAnonymousResponse(error)
+          ) {
+            return false
+          }
+          throw error
+        } finally {
+          bootstrapOperations.delete(state)
+        }
+      })()
+      bootstrapOperations.set(state, operation)
+      return operation
     },
 
     async logout({ commit, dispatch }) {
+      const logoutOperation = logoutRequest(getAccessToken())
+      clearAccessToken()
+      commit('SET_USER', null)
+      commit('SET_INITIALIZED', true)
+      const resetOperation = dispatch('environment/resetScope', null, {
+        root: true,
+      })
       try {
-        await logoutRequest()
+        await logoutOperation
       } finally {
-        clearAccessToken()
-        commit('SET_USER', null)
-        commit('SET_INITIALIZED', true)
-        await dispatch('environment/resetScope', null, { root: true })
+        await resetOperation
       }
     },
 
     async expire({ commit, dispatch }) {
-      clearAccessToken()
+      const current = getAccessTokenSnapshot()
+      if (current.sessionActive || current.refreshAllowed) {
+        clearAccessToken()
+      }
       commit('SET_USER', null)
       commit('SET_INITIALIZED', true)
       await dispatch('environment/resetScope', null, { root: true })

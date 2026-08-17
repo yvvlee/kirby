@@ -15,6 +15,14 @@ const environments = [
   { id: 22, key: 'west', name: '西部', enabled: true },
 ]
 
+function deferred() {
+  let resolve
+  const promise = new Promise((done) => {
+    resolve = done
+  })
+  return { promise, resolve }
+}
+
 describe('environment store', () => {
   let store
   let unregister
@@ -54,5 +62,30 @@ describe('environment store', () => {
     await expect(store.dispatch('environment/select', 99)).rejects.toThrow(
       'environment is not available: 99',
     )
+  })
+
+  it('没有当前环境时仍执行全量作用域清理', async () => {
+    const cleanup = vi.fn()
+    unregister = registerEnvironmentScopeCleanup('config-center-test', cleanup)
+
+    await store.dispatch('environment/resetScope')
+
+    expect(cleanup).toHaveBeenCalledWith({
+      fromEnvironmentId: null,
+      toEnvironmentId: null,
+    })
+  })
+
+  it('退出清理后不接收在途环境列表响应', async () => {
+    const pending = deferred()
+    environmentApi.listEnvironments.mockReturnValueOnce(pending.promise)
+    const loading = store.dispatch('environment/loadAvailable')
+
+    await store.dispatch('environment/resetScope')
+    pending.resolve({ list: environments })
+
+    await expect(loading).resolves.toEqual([])
+    expect(store.state.environment.available).toEqual([])
+    expect(store.state.environment.currentId).toBeNull()
   })
 })

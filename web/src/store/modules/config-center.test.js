@@ -14,6 +14,11 @@ const environmentApi = vi.hoisted(() => ({
   getMyPermissions: vi.fn(),
   listEnvironments: vi.fn(),
 }))
+const authApi = vi.hoisted(() => ({
+  login: vi.fn(),
+  logout: vi.fn(),
+  refreshSession: vi.fn(),
+}))
 
 vi.mock('@/api/configs', () => ({ listConfigs: api.listConfigs }))
 vi.mock('@/api/enums', () => ({ listEnums: api.listEnums }))
@@ -21,6 +26,7 @@ vi.mock('@/api/models', () => ({ listModels: api.listModels }))
 vi.mock('@/api/projects', () => ({ listProjects: api.listProjects }))
 vi.mock('@/api/snapshots', () => ({ listSnapshots: api.listSnapshots }))
 vi.mock('@/api/environments', () => environmentApi)
+vi.mock('@/api/auth', () => authApi)
 
 import { clearEnvironmentScope } from '@/auth/environment-scope'
 import { createStore as createRootStore } from '@/store'
@@ -72,6 +78,7 @@ describe('config center store', () => {
       ],
     })
     environmentApi.getMyPermissions.mockResolvedValue({ permissions: [] })
+    authApi.logout.mockResolvedValue()
   })
 
   it('isolates the same project ID in different environments', async () => {
@@ -130,7 +137,7 @@ describe('config center store', () => {
     ])
   })
 
-  it('clears only the old environment through the shared cleanup protocol', async () => {
+  it('clears every environment through the shared cleanup protocol', async () => {
     await store.dispatch('configCenter/loadProjects', { environmentId: 11 })
     await store.dispatch('configCenter/loadProjects', { environmentId: 22 })
 
@@ -140,9 +147,7 @@ describe('config center store', () => {
     })
 
     expect(store.getters['configCenter/projects'](11)).toEqual([])
-    expect(store.getters['configCenter/projects'](22)).toEqual([
-      { id: 22, environment_id: 22 },
-    ])
+    expect(store.getters['configCenter/projects'](22)).toEqual([])
   })
 
   it('does not restore an old environment cache from an in-flight response', async () => {
@@ -160,6 +165,38 @@ describe('config center store', () => {
     await loading
 
     expect(store.getters['configCenter/projects'](11)).toEqual([])
+  })
+
+  it('logout clears the current and prefetched environment caches', async () => {
+    const rootStore = createRootStore()
+    await rootStore.dispatch('environment/loadAvailable')
+    await rootStore.dispatch('configCenter/loadProjects', {
+      environmentId: 11,
+    })
+    await rootStore.dispatch('configCenter/loadProjects', {
+      environmentId: 22,
+    })
+
+    await rootStore.dispatch('session/logout')
+
+    expect(rootStore.getters['configCenter/projects'](11)).toEqual([])
+    expect(rootStore.getters['configCenter/projects'](22)).toEqual([])
+  })
+
+  it('does not restore a prefetched environment after logout', async () => {
+    const rootStore = createRootStore()
+    const pending = deferred()
+    await rootStore.dispatch('environment/loadAvailable')
+    api.listProjects.mockReturnValueOnce(pending.promise)
+    const loading = rootStore.dispatch('configCenter/loadProjects', {
+      environmentId: 22,
+    })
+
+    await rootStore.dispatch('session/logout')
+    pending.resolve({ list: [{ id: 22, environment_id: 22 }] })
+    await loading
+
+    expect(rootStore.getters['configCenter/projects'](22)).toEqual([])
   })
 
   it('fails immediately when a list response does not match the contract', async () => {
