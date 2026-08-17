@@ -9,6 +9,13 @@
       </router-link>
 
       <div class="app-shell__actions">
+        <router-link
+          v-if="showAdministration"
+          class="app-shell__admin-link"
+          :to="{ name: 'system-home' }"
+        >
+          管理
+        </router-link>
         <EnvironmentTag :environment="currentEnvironment" />
         <el-select
           v-if="environments.length"
@@ -69,6 +76,14 @@ export default {
       const user = this.$store.state.session.user
       return user?.display_name || user?.username || ''
     },
+    showAdministration() {
+      return (
+        this.$store.getters['session/systemAdmin'] ||
+        this.$store.getters['environment/hasPermission'](
+          'environment:member:manage',
+        )
+      )
+    },
   },
 
   methods: {
@@ -127,6 +142,13 @@ export default {
 .app-shell__user {
   color: #4b5563;
   font-size: 14px;
+}
+
+.app-shell__admin-link {
+  color: #2563eb;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
 }
 
 .app-shell__content {
