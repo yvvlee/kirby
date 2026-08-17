@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"path"
 	"regexp"
 	"strconv"
 	"strings"
@@ -24,8 +25,11 @@ const (
 
 var safeProviderCode = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,128}$`)
 
-type s3API interface {
+type s3PresignAPI interface {
 	PresignHeader(context.Context, string, string, string, time.Duration, url.Values, http.Header) (*url.URL, error)
+}
+
+type s3InternalAPI interface {
 	StatObject(context.Context, string, string, minio.StatObjectOptions) (minio.ObjectInfo, error)
 	RemoveObject(context.Context, string, string, minio.RemoveObjectOptions) error
 	BucketExists(context.Context, string) (bool, error)
@@ -33,46 +37,54 @@ type s3API interface {
 
 // S3Storage implements ObjectStorage against an S3-compatible provider.
 type S3Storage struct {
-	client   s3API
-	bucket   string
-	endpoint string
-	scheme   string
-	now      func() time.Time
+	internalClient s3InternalAPI
+	presignClient  s3PresignAPI
+	bucket         string
+	publicBaseURL  url.URL
+	now            func() time.Time
 }
 
 // NewS3 constructs an S3-compatible adapter without creating a bucket.
 func NewS3(cfg config.S3Config) (*S3Storage, error) {
-	endpoint, err := validateS3Endpoint(cfg.Endpoint)
-	if err != nil {
+	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(cfg.Bucket) == "" {
-		return nil, fmt.Errorf("S3 bucket is required")
-	}
-	if cfg.AccessKey.Empty() || cfg.SecretKey.Empty() {
-		return nil, fmt.Errorf("S3 credentials are required")
-	}
-	client, err := minio.New(endpoint, &minio.Options{
-		Creds:  credentials.NewStaticV4(cfg.AccessKey.Value(), cfg.SecretKey.Value(), ""),
+	sharedCredentials := credentials.NewStaticV4(cfg.AccessKey.Value(), cfg.SecretKey.Value(), "")
+	internalClient, err := minio.New(cfg.Endpoint, &minio.Options{
+		Creds:  sharedCredentials,
 		Secure: cfg.UseSSL,
 		Region: cfg.Region,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create S3 client: invalid configuration")
 	}
-	scheme := "http"
-	if cfg.UseSSL {
-		scheme = "https"
+	presignClient, err := minio.New(cfg.PresignEndpoint, &minio.Options{
+		Creds:  sharedCredentials,
+		Secure: *cfg.PresignUseSSL,
+		Region: cfg.Region,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create S3 presign client: invalid configuration")
 	}
-	return newS3(client, cfg.Bucket, endpoint, scheme, time.Now), nil
+	publicBaseURL, err := url.Parse(cfg.PublicBaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("parse S3 public base URL: invalid configuration")
+	}
+	return newS3(internalClient, presignClient, cfg.Bucket, publicBaseURL, time.Now), nil
 }
 
-func newS3(client s3API, bucket, endpoint, scheme string, now func() time.Time) *S3Storage {
-	return &S3Storage{client: client, bucket: bucket, endpoint: endpoint, scheme: scheme, now: now}
+func newS3(internalClient s3InternalAPI, presignClient s3PresignAPI, bucket string, publicBaseURL *url.URL, now func() time.Time) *S3Storage {
+	return &S3Storage{
+		internalClient: internalClient,
+		presignClient:  presignClient,
+		bucket:         bucket,
+		publicBaseURL:  *publicBaseURL,
+		now:            now,
+	}
 }
 
 func (s *S3Storage) bucketExists(ctx context.Context) (bool, error) {
-	exists, err := s.client.BucketExists(ctx, s.bucket)
+	exists, err := s.internalClient.BucketExists(ctx, s.bucket)
 	if err != nil {
 		return false, safeS3Error("check S3 bucket", err)
 	}
@@ -90,7 +102,7 @@ func (s *S3Storage) PresignUpload(ctx context.Context, input PresignUploadInput)
 	headers.Set("Content-Type", contentType)
 	headers.Set(declaredSizeHeader, strconv.FormatUint(input.Size, 10))
 	headers.Set(declaredContentTypeHeader, contentType)
-	uploadURL, err := s.client.PresignHeader(
+	uploadURL, err := s.presignClient.PresignHeader(
 		ctx,
 		http.MethodPut,
 		s.bucket,
@@ -129,7 +141,7 @@ func (s *S3Storage) ReadMetadata(ctx context.Context, key string) (*Metadata, er
 	if _, err := ParseObjectKey(key); err != nil {
 		return nil, err
 	}
-	info, err := s.client.StatObject(ctx, s.bucket, key, minio.StatObjectOptions{})
+	info, err := s.internalClient.StatObject(ctx, s.bucket, key, minio.StatObjectOptions{})
 	if err != nil {
 		return nil, safeS3Error("read S3 object metadata", err)
 	}
@@ -161,7 +173,7 @@ func (s *S3Storage) DeleteIncomplete(ctx context.Context, key string) error {
 	if _, err := ParseObjectKey(key); err != nil {
 		return err
 	}
-	if err := s.client.RemoveObject(ctx, s.bucket, key, minio.RemoveObjectOptions{}); err != nil {
+	if err := s.internalClient.RemoveObject(ctx, s.bucket, key, minio.RemoveObjectOptions{}); err != nil {
 		return safeS3Error("remove incomplete S3 object", err)
 	}
 	return nil
@@ -172,22 +184,9 @@ func (s *S3Storage) DeleteIncomplete(ctx context.Context, key string) error {
 func (*S3Storage) Close() error { return nil }
 
 func (s *S3Storage) publicURL(key string) string {
-	return (&url.URL{
-		Scheme: s.scheme,
-		Host:   s.endpoint,
-		Path:   "/" + s.bucket + "/" + key,
-	}).String()
-}
-
-func validateS3Endpoint(endpoint string) (string, error) {
-	if strings.TrimSpace(endpoint) != endpoint || endpoint == "" || strings.Contains(endpoint, "://") || strings.ContainsAny(endpoint, "/?#@") {
-		return "", fmt.Errorf("S3 endpoint must be a host with optional port and no scheme or path")
-	}
-	parsed, err := url.Parse("http://" + endpoint)
-	if err != nil || parsed.Host != endpoint || parsed.Hostname() == "" || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.User != nil {
-		return "", fmt.Errorf("S3 endpoint must be a host with optional port and no scheme or path")
-	}
-	return endpoint, nil
+	publicURL := s.publicBaseURL
+	publicURL.Path = path.Join(publicURL.Path, key)
+	return publicURL.String()
 }
 
 func metadataValue(metadata map[string]string, name string) string {

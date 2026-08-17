@@ -145,6 +145,106 @@ func TestMultiModeRequiresSharedDependencies(t *testing.T) {
 	}
 }
 
+func TestS3ConfigurationRequiresSeparateBrowserAddresses(t *testing.T) {
+	base := validConfig("single", "memory", "s3")
+	tests := []struct {
+		name    string
+		content string
+		want    string
+	}{
+		{
+			name:    "missing internal endpoint",
+			content: strings.Replace(base, "    endpoint: minio:9000\n", "", 1),
+			want:    "object_storage.s3.endpoint",
+		},
+		{
+			name:    "internal endpoint has scheme",
+			content: strings.Replace(base, "endpoint: minio:9000", "endpoint: http://minio:9000", 1),
+			want:    "object_storage.s3.endpoint",
+		},
+		{
+			name:    "missing presign endpoint",
+			content: strings.Replace(base, "    presign_endpoint: files.example.com\n", "", 1),
+			want:    "object_storage.s3.presign_endpoint",
+		},
+		{
+			name:    "presign endpoint has path",
+			content: strings.Replace(base, "presign_endpoint: files.example.com", "presign_endpoint: files.example.com/upload", 1),
+			want:    "object_storage.s3.presign_endpoint",
+		},
+		{
+			name:    "presign endpoint has credentials",
+			content: strings.Replace(base, "presign_endpoint: files.example.com", "presign_endpoint: user@files.example.com", 1),
+			want:    "object_storage.s3.presign_endpoint",
+		},
+		{
+			name:    "presign endpoint has invalid port",
+			content: strings.Replace(base, "presign_endpoint: files.example.com", "presign_endpoint: files.example.com:70000", 1),
+			want:    "object_storage.s3.presign_endpoint",
+		},
+		{
+			name:    "missing presign TLS choice",
+			content: strings.Replace(base, "    presign_use_ssl: true\n", "", 1),
+			want:    "object_storage.s3.presign_use_ssl is required",
+		},
+		{
+			name:    "missing public URL",
+			content: strings.Replace(base, "    public_base_url: \"https://cdn.example.com/kirby/assets\"\n", "", 1),
+			want:    "object_storage.s3.public_base_url is required",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := LoadFile(writeConfig(t, test.content))
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), test.want)
+		})
+	}
+}
+
+func TestS3PublicBaseURLIsStrictAndAllowsFixedPath(t *testing.T) {
+	base := validConfig("single", "memory", "s3")
+	invalidValues := []string{
+		"/kirby/assets",
+		"ftp://cdn.example.com/kirby",
+		"https://user@cdn.example.com/kirby",
+		"https://cdn.example.com/kirby?token=value",
+		"https://cdn.example.com/kirby#fragment",
+		"https://cdn.example.com/kirby/../private",
+		"https://cdn.example.com/kirby%2Fprivate",
+		"https://*.example.com/kirby",
+	}
+	for _, value := range invalidValues {
+		t.Run(value, func(t *testing.T) {
+			content := strings.Replace(
+				base,
+				"https://cdn.example.com/kirby/assets",
+				value,
+				1,
+			)
+			_, err := LoadFile(writeConfig(t, content))
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "object_storage.s3.public_base_url")
+		})
+	}
+
+	for _, value := range []string{
+		"http://localhost:9000/kirby",
+		"https://cdn.example.com/kirby/assets/",
+	} {
+		t.Run("valid "+value, func(t *testing.T) {
+			content := strings.Replace(
+				base,
+				"https://cdn.example.com/kirby/assets",
+				value,
+				1,
+			)
+			_, err := LoadFile(writeConfig(t, content))
+			require.NoError(t, err)
+		})
+	}
+}
+
 func TestResolvePathPrefersFlag(t *testing.T) {
 	path, err := ResolvePath("./flag.yaml", func(string) (string, bool) {
 		return "/environment.yaml", true
@@ -219,11 +319,14 @@ object_storage:
     directory: ./data/assets
   s3:
     endpoint: minio:9000
+    presign_endpoint: files.example.com
     region: us-east-1
     bucket: kirby
     access_key: access-secret
     secret_key: object-secret
     use_ssl: false
+    presign_use_ssl: true
+    public_base_url: "https://cdn.example.com/kirby/assets"
 log:
   level: info
   format: json

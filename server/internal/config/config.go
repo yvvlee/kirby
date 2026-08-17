@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -165,12 +166,15 @@ type LocalConfig struct {
 
 // S3Config configures an S3-compatible shared object store.
 type S3Config struct {
-	Endpoint  string `yaml:"endpoint"`
-	Region    string `yaml:"region"`
-	Bucket    string `yaml:"bucket"`
-	AccessKey Secret `yaml:"access_key"`
-	SecretKey Secret `yaml:"secret_key"`
-	UseSSL    bool   `yaml:"use_ssl"`
+	Endpoint        string `yaml:"endpoint"`
+	PresignEndpoint string `yaml:"presign_endpoint"`
+	Region          string `yaml:"region"`
+	Bucket          string `yaml:"bucket"`
+	AccessKey       Secret `yaml:"access_key"`
+	SecretKey       Secret `yaml:"secret_key"`
+	UseSSL          bool   `yaml:"use_ssl"`
+	PresignUseSSL   *bool  `yaml:"presign_use_ssl"`
+	PublicBaseURL   string `yaml:"public_base_url"`
 }
 
 // LogConfig controls structured application logging.
@@ -350,19 +354,82 @@ func (c ObjectStorageConfig) validate() error {
 		}
 		return nil
 	case "s3":
-		if strings.TrimSpace(c.S3.Endpoint) == "" {
-			return fmt.Errorf("object_storage.s3.endpoint is required")
-		}
-		if strings.TrimSpace(c.S3.Bucket) == "" {
-			return fmt.Errorf("object_storage.s3.bucket is required")
-		}
-		if c.S3.AccessKey.Empty() || c.S3.SecretKey.Empty() {
-			return fmt.Errorf("object_storage.s3 access_key and secret_key are required")
-		}
-		return nil
+		return c.S3.Validate()
 	default:
 		return fmt.Errorf("object_storage.driver must be %q or %q", "local", "s3")
 	}
+}
+
+// Validate rejects S3 settings that cannot safely serve both the Server and a
+// browser. Endpoint is internal; PresignEndpoint and PublicBaseURL are public.
+func (c S3Config) Validate() error {
+	if err := validateEndpoint("object_storage.s3.endpoint", c.Endpoint); err != nil {
+		return err
+	}
+	if err := validateEndpoint("object_storage.s3.presign_endpoint", c.PresignEndpoint); err != nil {
+		return err
+	}
+	if strings.TrimSpace(c.Bucket) == "" {
+		return fmt.Errorf("object_storage.s3.bucket is required")
+	}
+	if c.AccessKey.Empty() || c.SecretKey.Empty() {
+		return fmt.Errorf("object_storage.s3 access_key and secret_key are required")
+	}
+	if c.PresignUseSSL == nil {
+		return fmt.Errorf("object_storage.s3.presign_use_ssl is required")
+	}
+	return validatePublicBaseURL(c.PublicBaseURL)
+}
+
+func validateEndpoint(name, endpoint string) error {
+	if strings.TrimSpace(endpoint) != endpoint || endpoint == "" || strings.Contains(endpoint, "://") || strings.ContainsAny(endpoint, "/?#@\\*") {
+		return fmt.Errorf("%s must be a host with optional port and no scheme or path", name)
+	}
+	parsed, err := url.Parse("http://" + endpoint)
+	if err != nil || parsed.Host != endpoint || parsed.Hostname() == "" || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.User != nil || strings.HasSuffix(parsed.Host, ":") {
+		return fmt.Errorf("%s must be a host with optional port and no scheme or path", name)
+	}
+	if port := parsed.Port(); port != "" {
+		value, err := strconv.Atoi(port)
+		if err != nil || value < 1 || value > 65535 {
+			return fmt.Errorf("%s port must be between 1 and 65535", name)
+		}
+	}
+	return nil
+}
+
+func validatePublicBaseURL(value string) error {
+	const name = "object_storage.s3.public_base_url"
+	if strings.TrimSpace(value) != value || value == "" || strings.ContainsAny(value, "\\*\r\n\t") {
+		return fmt.Errorf("%s is required", name)
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.Hostname() == "" {
+		return fmt.Errorf("%s must be an absolute HTTP or HTTPS URL", name)
+	}
+	if parsed.User != nil {
+		return fmt.Errorf("%s cannot contain user information", name)
+	}
+	if parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" {
+		return fmt.Errorf("%s cannot contain a query or fragment", name)
+	}
+	if parsed.RawPath != "" || strings.Contains(parsed.Path, "//") {
+		return fmt.Errorf("%s path must be canonical", name)
+	}
+	trimmedPath := strings.TrimSuffix(parsed.Path, "/")
+	if trimmedPath != "" && path.Clean(parsed.Path) != trimmedPath {
+		return fmt.Errorf("%s path must be canonical", name)
+	}
+	if strings.HasSuffix(parsed.Host, ":") {
+		return fmt.Errorf("%s port cannot be empty", name)
+	}
+	if port := parsed.Port(); port != "" {
+		portNumber, err := strconv.Atoi(port)
+		if err != nil || portNumber < 1 || portNumber > 65535 {
+			return fmt.Errorf("%s port must be between 1 and 65535", name)
+		}
+	}
+	return nil
 }
 
 func (c LogConfig) validate() error {
