@@ -9,6 +9,7 @@ import Login from '@/views/Login.vue'
 import NotFound from '@/views/NotFound.vue'
 
 import { installRouterGuards } from './guards'
+import configCenterRoutes from './routes/config-center'
 import systemRoutes from './routes/system'
 
 Vue.use(Router)
@@ -38,6 +39,7 @@ export function createRouter(storeInstance = store, options = {}) {
             name: 'home',
             component: HomeView,
           },
+          ...configCenterRoutes,
           ...systemRoutes,
         ],
       },

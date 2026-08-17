@@ -10,6 +10,12 @@
 
       <div class="app-shell__actions">
         <router-link
+          class="app-shell__projects-link"
+          :to="{ name: 'project-list' }"
+        >
+          项目
+        </router-link>
+        <router-link
           v-if="showAdministration"
           class="app-shell__admin-link"
           :to="{ name: 'system-home' }"
@@ -90,6 +96,9 @@ export default {
     async switchEnvironment(environmentId) {
       try {
         await this.$store.dispatch('environment/select', environmentId)
+        if (this.$route.name !== 'project-list') {
+          await this.$router.replace({ name: 'project-list' })
+        }
       } catch (error) {
         this.$message.error(error.message)
       }
@@ -144,7 +153,8 @@ export default {
   font-size: 14px;
 }
 
-.app-shell__admin-link {
+.app-shell__admin-link,
+.app-shell__projects-link {
   color: #2563eb;
   font-size: 14px;
   font-weight: 600;
