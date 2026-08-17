@@ -60,6 +60,54 @@ func TestLoadRejectsSnapshotFromDifferentConfigBeforeWriting(t *testing.T) {
 	assert.Equal(t, []string{"snapshot.find"}, order)
 }
 
+func TestWriteOnlyRoleCannotLoadSnapshotContent(t *testing.T) {
+	order := make([]string, 0)
+	logicLayer, err := New(&configRepositoryFake{order: &order}, &structureRepositoryFake{order: &order}, &enumRepositoryFake{order: &order}, &snapshotRepositoryFake{order: &order}, writeOnlyAuthorizer{}, &auditRepositoryFake{order: &order}, transactorFake{})
+	require.NoError(t, err)
+
+	_, err = logicLayer.Load(context.Background(), permission.Actor{UserID: 9}, 1, 7, 11)
+	assert.ErrorIs(t, err, permission.ErrForbidden)
+	assert.Empty(t, order)
+}
+
+func TestDeleteRejectsCurrentSnapshot(t *testing.T) {
+	order := make([]string, 0)
+	item := &model.Snapshot{Meta: model.Meta{ID: 11, Version: 1}, ProjectID: 3, ConfigID: 7, Status: model.SnapshotStatusUnreleased, IsUsing: true, TagsJSON: "[]"}
+	logicLayer, err := New(&configRepositoryFake{order: &order, item: &model.Config{Meta: model.Meta{ID: 7}, ProjectID: 3}}, &structureRepositoryFake{order: &order}, &enumRepositoryFake{order: &order}, &snapshotRepositoryFake{order: &order, item: item}, authorizerFake{}, &auditRepositoryFake{order: &order}, transactorFake{})
+	require.NoError(t, err)
+
+	err = logicLayer.Delete(context.Background(), permission.Actor{UserID: 9}, 1, 11)
+	assert.ErrorIs(t, err, entity.ErrConflict)
+	assert.Equal(t, []string{"snapshot.find", "config.lock", "snapshot.lock"}, order)
+}
+
+func TestLoadAutoSavesValidDraftWhenCurrentSnapshotIsMissing(t *testing.T) {
+	typeJSON, err := converter.EncodeFieldType(&commonv1.Field_Type{Kind: &commonv1.Field_Type_BaseType{BaseType: commonv1.Field_STRING}})
+	require.NoError(t, err)
+	currentConfig := &model.Config{Meta: model.Meta{ID: 7, Version: 2}, ProjectID: 3, Key: "message", TypeJSON: typeJSON, Value: `"draft"`}
+	targetContent, err := entity.EncodeConfigSnapshot(&entity.ConfigSnapshot{
+		Config: &commonv1.Config{Id: 7, ProjectId: 3, Key: "message", Type: &commonv1.Field_Type{Kind: &commonv1.Field_Type_BaseType{BaseType: commonv1.Field_STRING}}, Value: `"old"`},
+		Tree:   &commonv1.TreeNode{Value: &commonv1.Field{Key: "message", Name: "配置值", Type: &commonv1.Field_Type{Kind: &commonv1.Field_Type_BaseType{BaseType: commonv1.Field_STRING}}}},
+	})
+	require.NoError(t, err)
+	order := make([]string, 0)
+	snapshots := &snapshotRepositoryFake{order: &order, item: &model.Snapshot{Meta: model.Meta{ID: 11, Version: 1}, ProjectID: 3, ConfigID: 7, ConfigKey: "message", Content: targetContent, Status: model.SnapshotStatusUnreleased, TagsJSON: "[]"}}
+	audits := &auditRepositoryFake{order: &order}
+	logicLayer, err := New(&configRepositoryFake{order: &order, item: currentConfig}, &structureRepositoryFake{order: &order}, &enumRepositoryFake{order: &order}, snapshots, authorizerFake{}, audits, transactorFake{})
+	require.NoError(t, err)
+
+	_, err = logicLayer.Load(context.Background(), permission.Actor{UserID: 9}, 1, 7, 11)
+	require.NoError(t, err)
+	require.Len(t, snapshots.createdItems, 1)
+	autoSaved, err := entity.DecodeConfigSnapshot(snapshots.createdItems[0].Content)
+	require.NoError(t, err)
+	assert.Equal(t, `"draft"`, autoSaved.Config.Value)
+	require.Len(t, audits.items, 2)
+	assert.Equal(t, "snapshot.autosave", audits.items[0].Action)
+	assert.Equal(t, "snapshot.load", audits.items[1].Action)
+	assert.Nil(t, audits.items[0].DetailsJSON)
+}
+
 type transactorFake struct{}
 
 func (transactorFake) WithTx(ctx context.Context, fn func(*xorm.Session) error) error { return fn(nil) }
@@ -68,14 +116,30 @@ type authorizerFake struct{}
 
 func (authorizerFake) Require(context.Context, int64, int64, ...string) error { return nil }
 
+type writeOnlyAuthorizer struct{}
+
+func (writeOnlyAuthorizer) Require(_ context.Context, _, _ int64, required ...string) error {
+	allowed := map[string]struct{}{
+		permission.SnapshotWrite: {}, permission.ConfigWrite: {}, permission.StructureWrite: {}, permission.EnumWrite: {},
+	}
+	for _, key := range required {
+		if _, ok := allowed[key]; !ok {
+			return permission.ErrForbidden
+		}
+	}
+	return nil
+}
+
 type auditRepositoryFake struct {
 	order *[]string
 	last  *model.AuditLog
+	items []*model.AuditLog
 }
 
 func (f *auditRepositoryFake) RecordForEnvironmentTx(_ context.Context, _ *xorm.Session, _ int64, item *model.AuditLog) error {
 	*f.order = append(*f.order, "audit")
 	f.last = item
+	f.items = append(f.items, item)
 	return nil
 }
 
@@ -131,16 +195,25 @@ func (f *enumRepositoryFake) ReconcileTx(context.Context, *xorm.Session, int64, 
 }
 
 type snapshotRepositoryFake struct {
-	order   *[]string
-	item    *model.Snapshot
-	created bool
+	order        *[]string
+	item         *model.Snapshot
+	current      *model.Snapshot
+	created      bool
+	createdItems []*model.Snapshot
 }
 
 func (f *snapshotRepositoryFake) CreateTx(_ context.Context, _ *xorm.Session, _, _, _ int64, item *model.Snapshot) error {
 	*f.order = append(*f.order, "snapshot.create")
 	f.created = true
-	item.ID, item.Version, item.Status = 11, 0, model.SnapshotStatusUnreleased
-	f.item = item
+	item.ID = int64(11 + len(f.createdItems))
+	if f.item != nil {
+		item.ID = int64(100 + len(f.createdItems))
+	}
+	item.Version, item.Status = 0, model.SnapshotStatusUnreleased
+	f.createdItems = append(f.createdItems, item)
+	if f.item == nil {
+		f.item = item
+	}
 	return nil
 }
 func (f *snapshotRepositoryFake) FindByID(context.Context, int64, int64) (*model.Snapshot, error) {
@@ -161,12 +234,18 @@ func (f *snapshotRepositoryFake) FindCurrentForConfig(context.Context, int64, in
 	return nil, base.ErrNotFound
 }
 func (f *snapshotRepositoryFake) FindCurrentForConfigTx(context.Context, *xorm.Session, int64, int64) (*model.Snapshot, error) {
-	return nil, base.ErrNotFound
+	*f.order = append(*f.order, "snapshot.current.find")
+	if f.current == nil {
+		return nil, base.ErrNotFound
+	}
+	clone := *f.current
+	return &clone, nil
 }
 func (f *snapshotRepositoryFake) DeleteTx(context.Context, *xorm.Session, int64, int64, int64) error {
 	return nil
 }
 func (f *snapshotRepositoryFake) LockByID(context.Context, *xorm.Session, int64, int64) (*model.Snapshot, error) {
+	*f.order = append(*f.order, "snapshot.lock")
 	if f.item == nil {
 		return nil, base.ErrNotFound
 	}

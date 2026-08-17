@@ -25,6 +25,7 @@ type SnapshotRepository interface {
 	FindReleasedForConfigTx(context.Context, *xorm.Session, int64, int64) (*model.Snapshot, error)
 	FindCurrentForConfig(context.Context, int64, int64) (*model.Snapshot, error)
 	FindCurrentForConfigTx(context.Context, *xorm.Session, int64, int64) (*model.Snapshot, error)
+	FindAnyForConfigTx(context.Context, *xorm.Session, int64, int64) (*model.Snapshot, error)
 	ListReleasedConfigIDs(context.Context, int64, int64) ([]int64, error)
 	Delete(context.Context, int64, int64, int64) error
 	DeleteTx(context.Context, *xorm.Session, int64, int64, int64) error
@@ -187,6 +188,10 @@ func (r *SnapshotRepositoryImpl) FindReleasedForConfigTx(ctx context.Context, tx
 
 func (r *SnapshotRepositoryImpl) FindCurrentForConfigTx(ctx context.Context, tx *xorm.Session, environmentID, configID int64) (*model.Snapshot, error) {
 	return r.findForConfigTx(ctx, tx, environmentID, configID, "s.is_using = TRUE", nil, "current snapshot")
+}
+
+func (r *SnapshotRepositoryImpl) FindAnyForConfigTx(ctx context.Context, tx *xorm.Session, environmentID, configID int64) (*model.Snapshot, error) {
+	return r.findForConfigTx(ctx, tx, environmentID, configID, "1 = 1", nil, "snapshot")
 }
 
 func (r *SnapshotRepositoryImpl) findForConfig(ctx context.Context, environmentID, configID int64, condition string, argument any, resource string) (*model.Snapshot, error) {

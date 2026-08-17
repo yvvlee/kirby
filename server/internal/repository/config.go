@@ -67,7 +67,7 @@ func (r *ConfigRepositoryImpl) Create(ctx context.Context, environmentID, projec
 	result, err := base.Execute(ctx, r.engine, "config", insertConfigSQL,
 		configCreateArgs(environmentID, projectID, config)...)
 	if err != nil {
-		return err
+		return classifyKeyWriteError("config", err)
 	}
 	config.ID, err = result.LastInsertId()
 	if err != nil {
@@ -86,11 +86,89 @@ func (r *ConfigRepositoryImpl) CreateTx(ctx context.Context, tx *xorm.Session, e
 	if config.ProjectID != 0 && config.ProjectID != projectID {
 		return base.InvalidArgument("config.project_id does not match project_id")
 	}
+	if tx == nil {
+		return base.InvalidArgument("transaction session is nil")
+	}
 	config.ProjectID = projectID
+	var project struct {
+		ID int64 `xorm:"id"`
+	}
+	if err := base.LockOne(ctx, tx, "project", `
+SELECT p.id
+FROM projects AS p
+WHERE p.environment_id = ? AND p.id = ? AND p.deleted_at IS NULL
+LIMIT 1
+FOR UPDATE`, []any{environmentID, projectID}, &project); err != nil {
+		return err
+	}
+	var existing model.Config
+	found, err := tx.Context(ctx).SQL(`
+SELECT c.*
+FROM configs AS c
+WHERE c.project_id = ? AND c.`+"`key`"+` = ?
+LIMIT 1
+FOR UPDATE`, projectID, config.Key).Get(&existing)
+	if err != nil {
+		return base.Wrap("lock config key", err)
+	}
+	if found {
+		if existing.DeletedAt.IsZero() {
+			return keyConflict("config")
+		}
+		lockedStructures := make([]struct {
+			ID int64 `xorm:"id"`
+		}, 0)
+		if err := tx.Context(ctx).SQL(`
+SELECT s.id
+FROM structures AS s
+WHERE s.config_id = ?
+ORDER BY s.id ASC
+FOR UPDATE`, existing.ID).Find(&lockedStructures); err != nil {
+			return base.Wrap("lock structures before restoring config", err)
+		}
+		lockedEnums := make([]struct {
+			ID int64 `xorm:"id"`
+		}, 0)
+		if err := tx.Context(ctx).SQL(`
+SELECT e.id
+FROM config_enums AS e
+WHERE e.config_id = ?
+ORDER BY e.id ASC
+FOR UPDATE`, existing.ID).Find(&lockedEnums); err != nil {
+			return base.Wrap("lock config enums before restoring config", err)
+		}
+		if _, err := tx.Context(ctx).Exec(`
+UPDATE structures
+SET deleted_at = UTC_TIMESTAMP(6), updated_by = ?,
+    updated_at = UTC_TIMESTAMP(6), version = version + 1
+WHERE config_id = ? AND deleted_at IS NULL`, config.UpdatedBy, existing.ID); err != nil {
+			return base.Wrap("reset structures before restoring config", err)
+		}
+		if _, err := tx.Context(ctx).Exec(`
+UPDATE config_enums
+SET deleted_at = UTC_TIMESTAMP(6), updated_by = ?,
+    updated_at = UTC_TIMESTAMP(6), version = version + 1
+WHERE config_id = ? AND deleted_at IS NULL`, config.UpdatedBy, existing.ID); err != nil {
+			return base.Wrap("reset config enums before restoring config", err)
+		}
+		_, err := base.ExecuteTx(ctx, tx, "restore config", `
+UPDATE configs
+SET description = ?, is_array = ?, type_json = ?, value = ?, runtime_version = ?,
+    created_by = ?, updated_by = ?, created_at = UTC_TIMESTAMP(6),
+    updated_at = UTC_TIMESTAMP(6), version = version + 1, deleted_at = NULL
+WHERE id = ? AND project_id = ? AND deleted_at IS NOT NULL`,
+			config.Description, config.IsArray, config.TypeJSON, config.Value, config.RuntimeVersion,
+			config.CreatedBy, config.UpdatedBy, existing.ID, projectID)
+		if err != nil {
+			return classifyKeyWriteError("config", err)
+		}
+		config.ID, config.Version = existing.ID, existing.Version+1
+		return nil
+	}
 	result, err := base.ExecuteTx(ctx, tx, "config", insertConfigSQL,
 		configCreateArgs(environmentID, projectID, config)...)
 	if err != nil {
-		return err
+		return classifyKeyWriteError("config", err)
 	}
 	config.ID, err = result.LastInsertId()
 	if err != nil {

@@ -65,6 +65,37 @@ func TestUpdateValueRevalidatesConcurrentEnumChangeInsideTransaction(t *testing.
 	assert.Equal(t, []string{"config.lock", "structure.lock", "enum.lock"}, order)
 }
 
+func TestWriteOnlyRoleCanCreateEmptyConfigButCannotReceiveUpdatedConfig(t *testing.T) {
+	order := make([]string, 0)
+	configs := &configRepositoryFake{order: &order}
+	logicLayer, err := New(configs, &structureRepositoryFake{order: &order}, &enumRepositoryFake{order: &order}, snapshotRepositoryFake{}, writeOnlyAuthorizer{}, &auditRepositoryFake{order: &order}, transactorFake{})
+	require.NoError(t, err)
+
+	created, err := logicLayer.Create(context.Background(), permission.Actor{UserID: 9}, 1, 2, "message", "")
+	require.NoError(t, err, "create returns only the known empty initial value")
+	assert.Equal(t, `""`, created.Value)
+
+	order = order[:0]
+	_, err = logicLayer.Update(context.Background(), permission.Actor{UserID: 9}, 1, created.ID, "", &commonv1.Field_Type{Kind: &commonv1.Field_Type_BaseType{BaseType: commonv1.Field_STRING}}, false, 0)
+	assert.ErrorIs(t, err, permission.ErrForbidden)
+	assert.Empty(t, order)
+	_, err = logicLayer.UpdateValue(context.Background(), permission.Actor{UserID: 9}, 1, created.ID, `"secret"`, 0)
+	assert.ErrorIs(t, err, permission.ErrForbidden)
+	assert.Empty(t, order)
+}
+
+func TestDeleteRejectsConfigWithAnySnapshot(t *testing.T) {
+	order := make([]string, 0)
+	configs := &configRepositoryFake{order: &order, item: &model.Config{Meta: model.Meta{ID: 7}, ProjectID: 2}}
+	snapshots := snapshotRepositoryFake{order: &order, any: &model.Snapshot{Meta: model.Meta{ID: 11}, ConfigID: 7, Status: model.SnapshotStatusUnreleased}}
+	logicLayer, err := New(configs, &structureRepositoryFake{order: &order}, &enumRepositoryFake{order: &order}, snapshots, authorizerFake{}, &auditRepositoryFake{order: &order}, transactorFake{})
+	require.NoError(t, err)
+
+	err = logicLayer.Delete(context.Background(), permission.Actor{UserID: 9}, 1, 7)
+	assert.ErrorIs(t, err, entity.ErrConflict)
+	assert.Equal(t, []string{"config.lock", "snapshot.any"}, order)
+}
+
 type transactorFake struct{}
 
 func (transactorFake) WithTx(ctx context.Context, fn func(*xorm.Session) error) error { return fn(nil) }
@@ -72,6 +103,17 @@ func (transactorFake) WithTx(ctx context.Context, fn func(*xorm.Session) error) 
 type authorizerFake struct{}
 
 func (authorizerFake) Require(context.Context, int64, int64, ...string) error { return nil }
+
+type writeOnlyAuthorizer struct{}
+
+func (writeOnlyAuthorizer) Require(_ context.Context, _, _ int64, required ...string) error {
+	for _, key := range required {
+		if key != permission.ConfigWrite {
+			return permission.ErrForbidden
+		}
+	}
+	return nil
+}
 
 type auditRepositoryFake struct{ order *[]string }
 
@@ -85,7 +127,9 @@ type configRepositoryFake struct {
 	item  *model.Config
 }
 
-func (f *configRepositoryFake) CreateTx(context.Context, *xorm.Session, int64, int64, *model.Config) error {
+func (f *configRepositoryFake) CreateTx(_ context.Context, _ *xorm.Session, _, _ int64, item *model.Config) error {
+	item.ID = 7
+	f.item = item
 	return nil
 }
 func (f *configRepositoryFake) FindByID(context.Context, int64, int64) (*model.Config, error) {
@@ -109,6 +153,7 @@ func (f *configRepositoryFake) UpdateValueTx(_ context.Context, _ *xorm.Session,
 	return nil
 }
 func (f *configRepositoryFake) DeleteTx(context.Context, *xorm.Session, int64, int64, int64) error {
+	*f.order = append(*f.order, "config.delete")
 	return nil
 }
 func (f *configRepositoryFake) LockByID(context.Context, *xorm.Session, int64, int64) (*model.Config, error) {
@@ -140,13 +185,25 @@ func (f *enumRepositoryFake) ListForConfigTx(context.Context, *xorm.Session, int
 	return f.items, nil
 }
 
-type snapshotRepositoryFake struct{}
+type snapshotRepositoryFake struct {
+	order *[]string
+	any   *model.Snapshot
+}
 
 func (snapshotRepositoryFake) FindReleasedForConfig(context.Context, int64, int64) (*model.Snapshot, error) {
 	return nil, base.ErrNotFound
 }
 func (snapshotRepositoryFake) FindReleasedForConfigTx(context.Context, *xorm.Session, int64, int64) (*model.Snapshot, error) {
 	return nil, base.ErrNotFound
+}
+func (f snapshotRepositoryFake) FindAnyForConfigTx(context.Context, *xorm.Session, int64, int64) (*model.Snapshot, error) {
+	if f.order != nil {
+		*f.order = append(*f.order, "snapshot.any")
+	}
+	if f.any == nil {
+		return nil, base.ErrNotFound
+	}
+	return f.any, nil
 }
 func (snapshotRepositoryFake) ListReleasedConfigIDs(context.Context, int64, int64) ([]int64, error) {
 	return nil, nil

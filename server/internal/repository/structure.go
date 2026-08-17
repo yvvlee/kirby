@@ -45,16 +45,22 @@ func (r *StructureRepositoryImpl) ListForConfigTx(ctx context.Context, tx *xorm.
 	if tx == nil {
 		return nil, base.InvalidArgument("transaction session is nil")
 	}
-	items := make([]model.Structure, 0)
+	locked := make([]model.Structure, 0)
 	if err := tx.Context(ctx).SQL(`
 SELECT s.*
 FROM structures AS s
 INNER JOIN configs AS c ON c.id = s.config_id AND c.deleted_at IS NULL
 INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
-WHERE p.environment_id = ? AND c.id = ? AND s.deleted_at IS NULL
+WHERE p.environment_id = ? AND c.id = ?
 ORDER BY s.id ASC
-FOR UPDATE`, environmentID, configID).Find(&items); err != nil {
+FOR UPDATE`, environmentID, configID).Find(&locked); err != nil {
 		return nil, base.Wrap("lock structures for config", err)
+	}
+	items := make([]model.Structure, 0, len(locked))
+	for index := range locked {
+		if locked[index].DeletedAt.IsZero() {
+			items = append(items, locked[index])
+		}
 	}
 	return items, nil
 }
@@ -81,7 +87,7 @@ func (r *StructureRepositoryImpl) Create(ctx context.Context, environmentID, con
 	result, err := base.Execute(ctx, r.engine, "structure", insertStructureSQL,
 		structureCreateArgs(environmentID, configID, structure)...)
 	if err != nil {
-		return err
+		return classifyKeyWriteError("structure", err)
 	}
 	structure.ID, err = result.LastInsertId()
 	if err != nil {
@@ -100,11 +106,45 @@ func (r *StructureRepositoryImpl) CreateTx(ctx context.Context, tx *xorm.Session
 	if structure.ConfigID != 0 && structure.ConfigID != configID {
 		return base.InvalidArgument("structure.config_id does not match config_id")
 	}
+	if tx == nil {
+		return base.InvalidArgument("transaction session is nil")
+	}
 	structure.ConfigID = configID
+	if err := lockConfigParent(ctx, tx, environmentID, configID); err != nil {
+		return err
+	}
+	var existing model.Structure
+	found, err := tx.Context(ctx).SQL(`
+SELECT s.*
+FROM structures AS s
+WHERE s.config_id = ? AND s.`+"`key`"+` = ?
+LIMIT 1
+FOR UPDATE`, configID, structure.Key).Get(&existing)
+	if err != nil {
+		return base.Wrap("lock structure key", err)
+	}
+	if found {
+		if existing.DeletedAt.IsZero() {
+			return keyConflict("structure")
+		}
+		_, err := base.ExecuteTx(ctx, tx, "restore structure", `
+UPDATE structures
+SET name = ?, description = ?, fields_json = ?, created_by = ?, updated_by = ?,
+    created_at = UTC_TIMESTAMP(6), updated_at = UTC_TIMESTAMP(6),
+    version = version + 1, deleted_at = NULL
+WHERE id = ? AND config_id = ? AND deleted_at IS NOT NULL`,
+			structure.Name, structure.Description, structure.FieldsJSON,
+			structure.CreatedBy, structure.UpdatedBy, existing.ID, configID)
+		if err != nil {
+			return classifyKeyWriteError("structure", err)
+		}
+		structure.ID, structure.Version = existing.ID, existing.Version+1
+		return nil
+	}
 	result, err := base.ExecuteTx(ctx, tx, "structure", insertStructureSQL,
 		structureCreateArgs(environmentID, configID, structure)...)
 	if err != nil {
-		return err
+		return classifyKeyWriteError("structure", err)
 	}
 	structure.ID, err = result.LastInsertId()
 	if err != nil {

@@ -5,8 +5,10 @@ import (
 	"errors"
 	"regexp"
 	"testing"
+	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/go-sql-driver/mysql"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"xorm.io/xorm"
@@ -70,6 +72,172 @@ func TestConfigMetadataUpdateTxNeverWritesValue(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, tx.Commit())
 	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestConfigCreateTxLocksProjectThenRestoresSoftDeletedKey(t *testing.T) {
+	engine, mock := newRepositoryMockEngine(t)
+	mock.ExpectBegin()
+	tx := engine.NewSession()
+	t.Cleanup(func() { _ = tx.Close() })
+	require.NoError(t, tx.Begin())
+	mock.ExpectQuery(`(?s)SELECT p\.id.*p\.environment_id = \?.*FOR UPDATE`).
+		WithArgs(int64(5), int64(3)).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(3))
+	mock.ExpectQuery(`(?s)SELECT c\.\*.*c\.project_id = \?.*c\.`+"`key`"+` = \?.*FOR UPDATE`).
+		WithArgs(int64(3), "message").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "project_id", "key", "version", "deleted_at"}).
+			AddRow(7, 3, "message", 4, time.Now().UTC()))
+	mock.ExpectQuery(`(?s)SELECT s\.id.*s\.config_id = \?.*ORDER BY s\.id ASC.*FOR UPDATE`).
+		WithArgs(int64(7)).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(11))
+	mock.ExpectQuery(`(?s)SELECT e\.id.*e\.config_id = \?.*ORDER BY e\.id ASC.*FOR UPDATE`).
+		WithArgs(int64(7)).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(12))
+	mock.ExpectExec(`(?s)UPDATE structures\s+SET deleted_at = UTC_TIMESTAMP\(6\).*WHERE config_id = \? AND deleted_at IS NULL`).
+		WithArgs(int64(9), int64(7)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(`(?s)UPDATE config_enums\s+SET deleted_at = UTC_TIMESTAMP\(6\).*WHERE config_id = \? AND deleted_at IS NULL`).
+		WithArgs(int64(9), int64(7)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(`(?s)UPDATE configs\s+SET description = \?.*deleted_at = NULL`).
+		WithArgs("new", false, `{"baseType":"STRING"}`, `""`, int64(0), int64(9), int64(9), int64(7), int64(3)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+	item := &model.Config{ProjectID: 3, Key: "message", Description: "new", TypeJSON: `{"baseType":"STRING"}`, Value: `""`, Meta: model.Meta{CreatedBy: 9, UpdatedBy: 9}}
+
+	err := NewConfigRepository(engine).CreateTx(context.Background(), tx, 5, 3, item)
+
+	require.NoError(t, err)
+	assert.Equal(t, int64(7), item.ID)
+	assert.Equal(t, int64(5), item.Version)
+	require.NoError(t, tx.Commit())
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestConfigCreateTxRejectsActiveKey(t *testing.T) {
+	engine, mock := newRepositoryMockEngine(t)
+	mock.ExpectBegin()
+	tx := engine.NewSession()
+	t.Cleanup(func() { _ = tx.Close() })
+	require.NoError(t, tx.Begin())
+	mock.ExpectQuery(`(?s)SELECT p\.id.*FOR UPDATE`).WithArgs(int64(5), int64(3)).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(3))
+	mock.ExpectQuery(`(?s)SELECT c\.\*.*c\.project_id = \?.*FOR UPDATE`).WithArgs(int64(3), "message").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "project_id", "key", "deleted_at"}).AddRow(7, 3, "message", nil))
+	mock.ExpectRollback()
+
+	err := NewConfigRepository(engine).CreateTx(context.Background(), tx, 5, 3, &model.Config{ProjectID: 3, Key: "message"})
+
+	assert.ErrorIs(t, err, ErrKeyConflict)
+	require.NoError(t, tx.Rollback())
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestConfigCreateTxClassifiesMySQLDuplicateAsConflict(t *testing.T) {
+	engine, mock := newRepositoryMockEngine(t)
+	mock.ExpectBegin()
+	tx := engine.NewSession()
+	t.Cleanup(func() { _ = tx.Close() })
+	require.NoError(t, tx.Begin())
+	mock.ExpectQuery(`(?s)SELECT p\.id.*FOR UPDATE`).WithArgs(int64(5), int64(3)).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(3))
+	mock.ExpectQuery(`(?s)SELECT c\.\*.*c\.project_id = \?.*FOR UPDATE`).WithArgs(int64(3), "message").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+	mock.ExpectExec(`(?s)INSERT INTO configs`).
+		WillReturnError(&mysql.MySQLError{Number: 1062, Message: "duplicate"})
+	mock.ExpectRollback()
+
+	err := NewConfigRepository(engine).CreateTx(context.Background(), tx, 5, 3, &model.Config{ProjectID: 3, Key: "message"})
+
+	assert.ErrorIs(t, err, ErrKeyConflict)
+	require.NoError(t, tx.Rollback())
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestStructureCreateTxRestoresSoftDeletedKeyAndRejectsActiveKey(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		deletedAt any
+		conflict  bool
+	}{
+		{name: "restore", deletedAt: time.Now().UTC()},
+		{name: "active", deletedAt: nil, conflict: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			engine, mock := newRepositoryMockEngine(t)
+			mock.ExpectBegin()
+			tx := engine.NewSession()
+			t.Cleanup(func() { _ = tx.Close() })
+			require.NoError(t, tx.Begin())
+			mock.ExpectQuery(`(?s)SELECT c\.id.*p\.environment_id = \?.*FOR UPDATE`).WithArgs(int64(5), int64(7)).
+				WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(7))
+			mock.ExpectQuery(`(?s)SELECT s\.\*.*s\.config_id = \?.*FOR UPDATE`).WithArgs(int64(7), "User").
+				WillReturnRows(sqlmock.NewRows([]string{"id", "config_id", "key", "version", "deleted_at"}).AddRow(8, 7, "User", 2, test.deletedAt))
+			if test.conflict {
+				mock.ExpectRollback()
+			} else {
+				mock.ExpectExec(`(?s)UPDATE structures\s+SET name = \?.*deleted_at = NULL`).
+					WithArgs("User", "new", "[]", int64(9), int64(9), int64(8), int64(7)).
+					WillReturnResult(sqlmock.NewResult(0, 1))
+				mock.ExpectCommit()
+			}
+			item := &model.Structure{ConfigID: 7, Key: "User", Name: "User", Description: "new", FieldsJSON: "[]", Meta: model.Meta{CreatedBy: 9, UpdatedBy: 9}}
+			err := NewStructureRepository(engine).CreateTx(context.Background(), tx, 5, 7, item)
+			if test.conflict {
+				assert.ErrorIs(t, err, ErrKeyConflict)
+				require.NoError(t, tx.Rollback())
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, int64(8), item.ID)
+				assert.Equal(t, int64(3), item.Version)
+				require.NoError(t, tx.Commit())
+			}
+			require.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
+func TestConfigEnumCreateTxRestoresSoftDeletedKeyAndRejectsActiveKey(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		deletedAt any
+		conflict  bool
+	}{
+		{name: "restore", deletedAt: time.Now().UTC()},
+		{name: "active", deletedAt: nil, conflict: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			engine, mock := newRepositoryMockEngine(t)
+			mock.ExpectBegin()
+			tx := engine.NewSession()
+			t.Cleanup(func() { _ = tx.Close() })
+			require.NoError(t, tx.Begin())
+			mock.ExpectQuery(`(?s)SELECT c\.id.*p\.environment_id = \?.*FOR UPDATE`).WithArgs(int64(5), int64(7)).
+				WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(7))
+			mock.ExpectQuery(`(?s)SELECT e\.\*.*e\.config_id = \?.*FOR UPDATE`).WithArgs(int64(7), "Status").
+				WillReturnRows(sqlmock.NewRows([]string{"id", "config_id", "key", "version", "deleted_at"}).AddRow(8, 7, "Status", 2, test.deletedAt))
+			if test.conflict {
+				mock.ExpectRollback()
+			} else {
+				mock.ExpectExec(`(?s)UPDATE config_enums\s+SET name = \?.*deleted_at = NULL`).
+					WithArgs("Status", "new", `[{"label":"Active","value":"ACTIVE"}]`, int64(9), int64(9), int64(8), int64(7)).
+					WillReturnResult(sqlmock.NewResult(0, 1))
+				mock.ExpectCommit()
+			}
+			item := &model.ConfigEnum{ConfigID: 7, Key: "Status", Name: "Status", Description: "new", ValuesJSON: `[{"label":"Active","value":"ACTIVE"}]`, Meta: model.Meta{CreatedBy: 9, UpdatedBy: 9}}
+			err := NewConfigEnumRepository(engine).CreateTx(context.Background(), tx, 5, 7, item)
+			if test.conflict {
+				assert.ErrorIs(t, err, ErrKeyConflict)
+				require.NoError(t, tx.Rollback())
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, int64(8), item.ID)
+				assert.Equal(t, int64(3), item.Version)
+				require.NoError(t, tx.Commit())
+			}
+			require.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
 }
 
 func TestNestedCreateUsesEnvironmentInInsertQuery(t *testing.T) {

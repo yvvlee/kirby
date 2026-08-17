@@ -142,6 +142,9 @@ func (l *Logic) Delete(ctx context.Context, actor permission.Actor, environmentI
 		if locked.ConfigID != found.ConfigID {
 			return base.Missing("snapshot")
 		}
+		if locked.IsUsing {
+			return entity.Conflict("current snapshot cannot be deleted")
+		}
 		if locked.Status == model.SnapshotStatusReleased {
 			return entity.Conflict("released snapshot cannot be deleted")
 		}
@@ -160,7 +163,10 @@ func (l *Logic) Get(ctx context.Context, actor permission.Actor, environmentID, 
 }
 
 func (l *Logic) Load(ctx context.Context, actor permission.Actor, environmentID, configID, snapshotID int64) (*model.Snapshot, error) {
-	if err := l.permissions.Require(ctx, actor.UserID, environmentID, permission.SnapshotWrite, permission.ConfigWrite, permission.StructureWrite, permission.EnumWrite); err != nil {
+	if err := l.permissions.Require(ctx, actor.UserID, environmentID,
+		permission.SnapshotWrite, permission.ConfigWrite, permission.StructureWrite, permission.EnumWrite,
+		permission.SnapshotRead, permission.ConfigRead, permission.StructureRead, permission.EnumRead,
+	); err != nil {
 		return nil, err
 	}
 	found, err := l.snapshots.FindByID(ctx, environmentID, snapshotID)
@@ -187,7 +193,7 @@ func (l *Logic) Load(ctx context.Context, actor permission.Actor, environmentID,
 		if err != nil && !errors.Is(err, base.ErrNotFound) {
 			return err
 		}
-		if err == nil && using.Content != currentContent {
+		if errors.Is(err, base.ErrNotFound) || using.Content != currentContent {
 			autoSaved := &model.Snapshot{
 				ProjectID: current.ProjectID, ConfigID: configID, ConfigKey: current.Key,
 				Description: "AutoSave-" + time.Now().UTC().Format("20060102T150405.000000000Z"),

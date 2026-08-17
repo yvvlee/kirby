@@ -44,16 +44,22 @@ func (r *ConfigEnumRepositoryImpl) ListForConfigTx(ctx context.Context, tx *xorm
 	if tx == nil {
 		return nil, base.InvalidArgument("transaction session is nil")
 	}
-	items := make([]model.ConfigEnum, 0)
+	locked := make([]model.ConfigEnum, 0)
 	if err := tx.Context(ctx).SQL(`
 SELECT e.*
 FROM config_enums AS e
 INNER JOIN configs AS c ON c.id = e.config_id AND c.deleted_at IS NULL
 INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
-WHERE p.environment_id = ? AND c.id = ? AND e.deleted_at IS NULL
+WHERE p.environment_id = ? AND c.id = ?
 ORDER BY e.id ASC
-FOR UPDATE`, environmentID, configID).Find(&items); err != nil {
+FOR UPDATE`, environmentID, configID).Find(&locked); err != nil {
 		return nil, base.Wrap("lock config enums for config", err)
+	}
+	items := make([]model.ConfigEnum, 0, len(locked))
+	for index := range locked {
+		if locked[index].DeletedAt.IsZero() {
+			items = append(items, locked[index])
+		}
 	}
 	return items, nil
 }
@@ -80,7 +86,7 @@ func (r *ConfigEnumRepositoryImpl) Create(ctx context.Context, environmentID, co
 	result, err := base.Execute(ctx, r.engine, "config enum", insertConfigEnumSQL,
 		configEnumCreateArgs(environmentID, configID, enum)...)
 	if err != nil {
-		return err
+		return classifyKeyWriteError("config enum", err)
 	}
 	enum.ID, err = result.LastInsertId()
 	if err != nil {
@@ -99,11 +105,45 @@ func (r *ConfigEnumRepositoryImpl) CreateTx(ctx context.Context, tx *xorm.Sessio
 	if enum.ConfigID != 0 && enum.ConfigID != configID {
 		return base.InvalidArgument("config_enum.config_id does not match config_id")
 	}
+	if tx == nil {
+		return base.InvalidArgument("transaction session is nil")
+	}
 	enum.ConfigID = configID
+	if err := lockConfigParent(ctx, tx, environmentID, configID); err != nil {
+		return err
+	}
+	var existing model.ConfigEnum
+	found, err := tx.Context(ctx).SQL(`
+SELECT e.*
+FROM config_enums AS e
+WHERE e.config_id = ? AND e.`+"`key`"+` = ?
+LIMIT 1
+FOR UPDATE`, configID, enum.Key).Get(&existing)
+	if err != nil {
+		return base.Wrap("lock config enum key", err)
+	}
+	if found {
+		if existing.DeletedAt.IsZero() {
+			return keyConflict("config enum")
+		}
+		_, err := base.ExecuteTx(ctx, tx, "restore config enum", `
+UPDATE config_enums
+SET name = ?, description = ?, values_json = ?, created_by = ?, updated_by = ?,
+    created_at = UTC_TIMESTAMP(6), updated_at = UTC_TIMESTAMP(6),
+    version = version + 1, deleted_at = NULL
+WHERE id = ? AND config_id = ? AND deleted_at IS NOT NULL`,
+			enum.Name, enum.Description, enum.ValuesJSON,
+			enum.CreatedBy, enum.UpdatedBy, existing.ID, configID)
+		if err != nil {
+			return classifyKeyWriteError("config enum", err)
+		}
+		enum.ID, enum.Version = existing.ID, existing.Version+1
+		return nil
+	}
 	result, err := base.ExecuteTx(ctx, tx, "config enum", insertConfigEnumSQL,
 		configEnumCreateArgs(environmentID, configID, enum)...)
 	if err != nil {
-		return err
+		return classifyKeyWriteError("config enum", err)
 	}
 	enum.ID, err = result.LastInsertId()
 	if err != nil {

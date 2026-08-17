@@ -39,7 +39,7 @@ type EnumRepository interface {
 
 type SnapshotRepository interface {
 	FindReleasedForConfig(context.Context, int64, int64) (*model.Snapshot, error)
-	FindReleasedForConfigTx(context.Context, *xorm.Session, int64, int64) (*model.Snapshot, error)
+	FindAnyForConfigTx(context.Context, *xorm.Session, int64, int64) (*model.Snapshot, error)
 	ListReleasedConfigIDs(context.Context, int64, int64) ([]int64, error)
 }
 
@@ -86,11 +86,14 @@ func (l *Logic) Create(ctx context.Context, actor permission.Actor, environmentI
 	if err != nil {
 		return nil, err
 	}
-	return l.configs.FindByID(ctx, environmentID, item.ID)
+	// A write-only role may create a config because the returned value is the
+	// known empty initial value. Do not re-read after commit and accidentally
+	// expose a value changed concurrently by a reader/editor.
+	return item, nil
 }
 
 func (l *Logic) Update(ctx context.Context, actor permission.Actor, environmentID, configID int64, description string, fieldType *commonv1.Field_Type, isArray bool, version int64) (*model.Config, error) {
-	if err := l.permissions.Require(ctx, actor.UserID, environmentID, permission.ConfigWrite); err != nil {
+	if err := l.permissions.Require(ctx, actor.UserID, environmentID, permission.ConfigWrite, permission.ConfigRead); err != nil {
 		return nil, err
 	}
 	typeJSON, err := converter.EncodeFieldType(fieldType)
@@ -123,7 +126,7 @@ func (l *Logic) Update(ctx context.Context, actor permission.Actor, environmentI
 }
 
 func (l *Logic) UpdateValue(ctx context.Context, actor permission.Actor, environmentID, configID int64, value string, version int64) (*model.Config, error) {
-	if err := l.permissions.Require(ctx, actor.UserID, environmentID, permission.ConfigWrite); err != nil {
+	if err := l.permissions.Require(ctx, actor.UserID, environmentID, permission.ConfigWrite, permission.ConfigRead); err != nil {
 		return nil, err
 	}
 	err := l.transactions.WithTx(ctx, func(tx *xorm.Session) error {
@@ -194,8 +197,8 @@ func (l *Logic) Delete(ctx context.Context, actor permission.Actor, environmentI
 		if _, err := l.configs.LockByID(ctx, tx, environmentID, configID); err != nil {
 			return err
 		}
-		if _, err := l.snapshots.FindReleasedForConfigTx(ctx, tx, environmentID, configID); err == nil {
-			return entity.Conflict("released config cannot be deleted")
+		if _, err := l.snapshots.FindAnyForConfigTx(ctx, tx, environmentID, configID); err == nil {
+			return entity.Conflict("config with snapshots cannot be deleted")
 		} else if !errors.Is(err, base.ErrNotFound) {
 			return err
 		}
