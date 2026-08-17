@@ -16,8 +16,8 @@ import (
 const redacted = "[REDACTED]"
 
 var (
-	jsonSecretPattern = regexp.MustCompile(`(?i)("(?:password|passwd|authorization|cookie|access_token|refresh_token|jwt|api_key_pepper|api_key|secret|signature)"\s*:\s*")[^"]*(")`)
-	keyValuePattern   = regexp.MustCompile(`(?i)(\b(?:password|passwd|authorization|cookie|access_token|refresh_token|jwt|api_key_pepper|api_key|secret|signature)\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,&]+)`)
+	jsonSecretPattern = regexp.MustCompile(`(?i)("(?:password|passwd|authorization|cookie|access_token|refresh_token|jwt|api_key_pepper|api_key|access_key|secret_key|client_secret|signing_key|dsn|secret|signature)"\s*:\s*")[^"]*(")`)
+	keyValuePattern   = regexp.MustCompile(`(?i)(\b(?:password|passwd|authorization|cookie|access_token|refresh_token|jwt|api_key_pepper|api_key|access_key|secret_key|client_secret|signing_key|dsn|secret|signature)\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,&]+)`)
 	bearerPattern     = regexp.MustCompile(`(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+`)
 	jwtPattern        = regexp.MustCompile(`\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b`)
 	signedURLPattern  = regexp.MustCompile(`(?i)(X-Amz-(?:Signature|Credential|Security-Token)=)[^&\s]+`)
@@ -114,6 +114,11 @@ func sanitizeAttr(attr slog.Attr) slog.Attr {
 	}
 	if attr.Value.Kind() == slog.KindString {
 		return slog.String(attr.Key, sanitizeText(attr.Value.String()))
+	}
+	if attr.Value.Kind() == slog.KindAny {
+		if err, ok := attr.Value.Any().(error); ok {
+			return slog.String(attr.Key, sanitizeText(err.Error()))
+		}
 	}
 	return attr
 }

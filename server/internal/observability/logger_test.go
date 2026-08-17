@@ -2,6 +2,7 @@ package observability
 
 import (
 	"bytes"
+	"errors"
 	"log/slog"
 	"testing"
 
@@ -51,6 +52,21 @@ func TestLoggerRedactsJWTAndConfiguredSecret(t *testing.T) {
 	assert.NotContains(t, logged, jwt)
 	assert.NotContains(t, logged, "configured-secret")
 	assert.NotContains(t, logged, "user:password")
+	assert.Contains(t, logged, redacted)
+}
+
+func TestLoggerSanitizesErrorAttributes(t *testing.T) {
+	var output bytes.Buffer
+	logger, err := NewLogger(&output, config.LogConfig{Level: "info", Format: "json"})
+	require.NoError(t, err)
+	leakingError := errors.New("connect failed dsn=mysql-user:mysql-password@tcp(db)/kirby access_key=object-access secret_key=object-secret")
+
+	logger.Error("dependency failed", "error", leakingError)
+
+	logged := output.String()
+	for _, secret := range []string{"mysql-user", "mysql-password", "object-access", "object-secret"} {
+		assert.NotContains(t, logged, secret)
+	}
 	assert.Contains(t, logged, redacted)
 }
 

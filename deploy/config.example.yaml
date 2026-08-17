@@ -30,11 +30,11 @@ jwt:
   access_ttl: 15m
   refresh_ttl: 168h
   keys:
-    change-me-primary: "CHANGE_ME_WITH_AT_LEAST_32_RANDOM_BYTES"
+    change-me-primary: "CHANGE_ME_JWT_KEY"
 
 # Every server instance must use the same API key pepper and origin list.
 security:
-  api_key_pepper: "CHANGE_ME_WITH_AT_LEAST_32_RANDOM_BYTES"
+  api_key_pepper: "CHANGE_ME_API_KEY_PEPPER"
   allowed_origins:
     - "https://kirby.example.invalid"
 

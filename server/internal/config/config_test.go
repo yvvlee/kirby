@@ -21,12 +21,18 @@ func TestLoadFileStrictAndComplete(t *testing.T) {
 	assert.Equal(t, "mysql-secret", cfg.MySQL.DSN.Value())
 }
 
-func TestExampleConfigurationIsValid(t *testing.T) {
-	cfg, err := LoadFile(filepath.Join("..", "..", "..", "deploy", "config.example.yaml"))
-	require.NoError(t, err)
-	assert.Equal(t, ModeMulti, cfg.Mode)
-	assert.Equal(t, "redis", cfg.Cache.Driver)
-	assert.Equal(t, "s3", cfg.ObjectStorage.Driver)
+func TestExampleConfigurationRejectsPlaceholderSecrets(t *testing.T) {
+	path := filepath.Join("..", "..", "..", "deploy", "config.example.yaml")
+	_, err := LoadFile(path)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "active JWT signing key must contain at least 32 bytes")
+
+	content, readErr := os.ReadFile(path)
+	require.NoError(t, readErr)
+	withValidJWT := strings.Replace(string(content), "CHANGE_ME_JWT_KEY", "01234567890123456789012345678901", 1)
+	_, err = LoadFile(writeConfig(t, withValidJWT))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "security.api_key_pepper must contain at least 32 bytes")
 }
 
 func TestLoadFileRejectsUnknownField(t *testing.T) {
