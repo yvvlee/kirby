@@ -11,7 +11,7 @@ func (msg *LoginRequest) MarshalJSON() ([]byte, error) {
 	return protojson.MarshalOptions{
 		UseEnumNumbers:  false,
 		EmitUnpopulated: true,
-		UseProtoNames:   false,
+		UseProtoNames:   true,
 	}.Marshal(msg)
 }
 
@@ -27,7 +27,7 @@ func (msg *LoginReply) MarshalJSON() ([]byte, error) {
 	return protojson.MarshalOptions{
 		UseEnumNumbers:  false,
 		EmitUnpopulated: true,
-		UseProtoNames:   false,
+		UseProtoNames:   true,
 	}.Marshal(msg)
 }
 
@@ -43,7 +43,7 @@ func (msg *MeReply) MarshalJSON() ([]byte, error) {
 	return protojson.MarshalOptions{
 		UseEnumNumbers:  false,
 		EmitUnpopulated: true,
-		UseProtoNames:   false,
+		UseProtoNames:   true,
 	}.Marshal(msg)
 }
 

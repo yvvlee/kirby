@@ -11,7 +11,7 @@ func (msg *EnvironmentIDRequest) MarshalJSON() ([]byte, error) {
 	return protojson.MarshalOptions{
 		UseEnumNumbers:  false,
 		EmitUnpopulated: true,
-		UseProtoNames:   false,
+		UseProtoNames:   true,
 	}.Marshal(msg)
 }
 
@@ -27,7 +27,7 @@ func (msg *CreateEnvironmentRequest) MarshalJSON() ([]byte, error) {
 	return protojson.MarshalOptions{
 		UseEnumNumbers:  false,
 		EmitUnpopulated: true,
-		UseProtoNames:   false,
+		UseProtoNames:   true,
 	}.Marshal(msg)
 }
 
@@ -43,7 +43,7 @@ func (msg *UpdateEnvironmentRequest) MarshalJSON() ([]byte, error) {
 	return protojson.MarshalOptions{
 		UseEnumNumbers:  false,
 		EmitUnpopulated: true,
-		UseProtoNames:   false,
+		UseProtoNames:   true,
 	}.Marshal(msg)
 }
 
@@ -59,7 +59,7 @@ func (msg *EnvironmentReply) MarshalJSON() ([]byte, error) {
 	return protojson.MarshalOptions{
 		UseEnumNumbers:  false,
 		EmitUnpopulated: true,
-		UseProtoNames:   false,
+		UseProtoNames:   true,
 	}.Marshal(msg)
 }
 
@@ -75,7 +75,7 @@ func (msg *ListEnvironmentsReply) MarshalJSON() ([]byte, error) {
 	return protojson.MarshalOptions{
 		UseEnumNumbers:  false,
 		EmitUnpopulated: true,
-		UseProtoNames:   false,
+		UseProtoNames:   true,
 	}.Marshal(msg)
 }
 
@@ -91,7 +91,7 @@ func (msg *MyPermissionsReply) MarshalJSON() ([]byte, error) {
 	return protojson.MarshalOptions{
 		UseEnumNumbers:  false,
 		EmitUnpopulated: true,
-		UseProtoNames:   false,
+		UseProtoNames:   true,
 	}.Marshal(msg)
 }
 
@@ -107,7 +107,7 @@ func (msg *ListEnvironmentUsersReply) MarshalJSON() ([]byte, error) {
 	return protojson.MarshalOptions{
 		UseEnumNumbers:  false,
 		EmitUnpopulated: true,
-		UseProtoNames:   false,
+		UseProtoNames:   true,
 	}.Marshal(msg)
 }
 
@@ -123,7 +123,7 @@ func (msg *UpdateEnvironmentUserRolesRequest) MarshalJSON() ([]byte, error) {
 	return protojson.MarshalOptions{
 		UseEnumNumbers:  false,
 		EmitUnpopulated: true,
-		UseProtoNames:   false,
+		UseProtoNames:   true,
 	}.Marshal(msg)
 }
 

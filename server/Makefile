@@ -51,7 +51,7 @@ generate: tools
 		--go-http_out=paths=source_relative:gen \
 		--validate_out=paths=source_relative,lang=go:gen \
 		--go-json_out=paths=source_relative:gen \
-		--go-json_opt=EmitUnpopulated=true,DiscardUnknown=true \
+		--go-json_opt=UseProtoNames=true,EmitUnpopulated=true,DiscardUnknown=true \
 		$(MANAGEMENT_PROTO_FILES)
 	PATH="$(TOOLS_BIN):$$PATH" protoc --fatal_warnings $(PROTO_INCLUDES) \
 		--go_out=paths=source_relative:gen \
@@ -59,7 +59,7 @@ generate: tools
 		--go-grpc_out=paths=source_relative:gen \
 		--validate_out=paths=source_relative,lang=go:gen \
 		--go-json_out=paths=source_relative:gen \
-		--go-json_opt=EmitUnpopulated=true,DiscardUnknown=true \
+		--go-json_opt=UseProtoNames=true,EmitUnpopulated=true,DiscardUnknown=true \
 		$(RUNTIME_PROTO_FILES)
 	PATH="$(TOOLS_BIN):$$PATH" protoc --fatal_warnings $(PROTO_INCLUDES) \
 		--go-errors_out=paths=source_relative:gen \

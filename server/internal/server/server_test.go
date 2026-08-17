@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
@@ -14,12 +15,19 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	adminv1 "github.com/yvvlee/kirby/server/gen/kirby/admin/v1"
 	runtimev1 "github.com/yvvlee/kirby/server/gen/kirby/runtime/v1"
 	"github.com/yvvlee/kirby/server/internal/provider"
 )
 
 type testRuntimeService struct {
 	runtimev1.UnimplementedApiServer
+}
+
+func TestGeneratedJSONUsesPublicSnakeCaseContract(t *testing.T) {
+	encoded, err := json.Marshal(&adminv1.LoginReply{AccessToken: "token", ExpiresIn: 60})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"access_token":"token","expires_in":60,"user":null}`, string(encoded))
 }
 
 func TestRegisterHTTPIncludesEveryBoundary(t *testing.T) {
