@@ -27,6 +27,7 @@ func newRootCommand(stdout, stderr io.Writer) *cobra.Command {
 	command.SetErr(stderr)
 	command.SetVersionTemplate(fmt.Sprintf("kirby %s\n", version.String()))
 	command.AddCommand(newServeCommand())
+	command.AddCommand(newCreateAdminCommand())
 
 	return command
 }
