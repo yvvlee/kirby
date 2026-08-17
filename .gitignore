@@ -1,0 +1,32 @@
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+*.local.yaml
+*.local.yml
+config.yaml
+
+# Go
+server/bin/
+server/coverage.out
+server/vendor/
+
+# Web
+web/node_modules/
+web/dist/
+web/coverage/
+web/playwright-report/
+web/test-results/
+
+# Generated test and release output
+tmp/
+dist/*
+!dist/sbom/
+!dist/sbom/**
+*.log
+
+# Editors and operating systems
+.DS_Store
+.idea/
+.vscode/
+*.swp
