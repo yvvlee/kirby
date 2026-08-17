@@ -1,0 +1,255 @@
+name: kirby
+
+x-default-security: &default-security
+  read_only: true
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+
+x-server: &server
+  <<: *default-security
+  image: kirby-server:local
+  build:
+    context: ..
+    dockerfile: server/Dockerfile
+  command:
+    - serve
+    - --config
+    - /etc/kirby/config.yaml
+  volumes:
+    - type: bind
+      source: ${KIRBY_CONFIG_PATH:-./config.compose.yaml}
+      target: /etc/kirby/config.yaml
+      read_only: true
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,size=16m,mode=1777
+  depends_on:
+    mysql:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+    minio:
+      condition: service_healthy
+  healthcheck:
+    test: ["CMD", "/kirby", "healthcheck"]
+    interval: 5s
+    timeout: 4s
+    retries: 12
+    start_period: 10s
+  restart: unless-stopped
+  cpus: 1.0
+  mem_limit: 512m
+  pids_limit: 256
+  networks:
+    kirby-internal: {}
+
+services:
+  mysql:
+    <<: *default-security
+    image: mysql:8.4.6@sha256:869218921e61d6c3c89820955d63cca42971f0e3e6c1e2792247bbd944ebc6e9
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
+    environment:
+      MYSQL_DATABASE: kirby
+      MYSQL_USER: kirby
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-CHANGE_ME_MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-CHANGE_ME_MYSQL_ROOT_PASSWORD}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m,mode=1777
+      - /var/run/mysqld:rw,noexec,nosuid,size=16m,mode=0755
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_PASSWORD mysqladmin ping --silent --host=127.0.0.1 --user=$$MYSQL_USER"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+    restart: unless-stopped
+    cpus: 1.5
+    mem_limit: 1g
+    pids_limit: 256
+    networks:
+      kirby-internal: {}
+
+  redis:
+    <<: *default-security
+    image: redis:7.4.5-alpine3.21@sha256:bb186d083732f669da90be8b0f975a37812b15e913465bb14d845db72a4e3e08
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-CHANGE_ME_REDIS_PASSWORD}
+    entrypoint:
+      - /bin/sh
+      - -ec
+    command:
+      - exec docker-entrypoint.sh redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"
+    volumes:
+      - redis-data:/data
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m,mode=1777
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$$REDIS_PASSWORD redis-cli -h 127.0.0.1 ping | grep -qx PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    restart: unless-stopped
+    cpus: 0.5
+    mem_limit: 256m
+    pids_limit: 128
+    networks:
+      kirby-internal: {}
+
+  minio:
+    <<: *default-security
+    image: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z@sha256:a1ea29fa28355559ef137d71fc570e508a214ec84ff8083e39bc5428980b015e
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-CHANGE_ME_MINIO_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-CHANGE_ME_MINIO_PASSWORD}
+    command:
+      - server
+      - /data
+      - --address
+      - :9000
+    volumes:
+      - minio-data:/data
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m,mode=1777
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    restart: unless-stopped
+    cpus: 1.0
+    mem_limit: 512m
+    pids_limit: 256
+    networks:
+      kirby-internal: {}
+
+  minio-init:
+    <<: *default-security
+    profiles: ["init"]
+    image: quay.io/minio/mc:RELEASE.2025-04-16T18-13-26Z@sha256:aead63c77f9db9107f1696fb08ecb0faeda23729cde94b0f663edf4fe09728e3
+    environment:
+      MC_CONFIG_DIR: /tmp/mc
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-CHANGE_ME_MINIO_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-CHANGE_ME_MINIO_PASSWORD}
+      MINIO_BUCKET: kirby
+    entrypoint:
+      - /bin/sh
+      - -ec
+    command:
+      - |
+        mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
+        mc mb --ignore-existing "local/$$MINIO_BUCKET"
+        mc anonymous set-json /policies/public-read.json "local/$$MINIO_BUCKET"
+        mc ilm import "local/$$MINIO_BUCKET" < /policies/upload-lifecycle.json
+    volumes:
+      - type: bind
+        source: ./s3-public-read-policy.json
+        target: /policies/public-read.json
+        read_only: true
+      - type: bind
+        source: ./s3-upload-lifecycle.json
+        target: /policies/upload-lifecycle.json
+        read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m,mode=1777
+    depends_on:
+      minio:
+        condition: service_healthy
+    restart: "no"
+    cpus: 0.25
+    mem_limit: 128m
+    pids_limit: 64
+    networks:
+      kirby-internal: {}
+
+  server-1:
+    <<: *server
+
+  server-2:
+    <<: *server
+
+  web:
+    <<: *default-security
+    image: kirby-web:local
+    build:
+      context: ..
+      dockerfile: web/Dockerfile
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m,mode=1777
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:8080/"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+    restart: unless-stopped
+    cpus: 0.5
+    mem_limit: 128m
+    pids_limit: 128
+    networks:
+      kirby-internal: {}
+
+  nginx:
+    <<: *default-security
+    image: nginx:1.28.0-alpine3.21-slim@sha256:ce2bd4775ed6859d35f47d65401ee9f35f1dd00b32ed05f0ce38b68aa1830195
+    user: "65532:65532"
+    entrypoint: ["nginx", "-g", "daemon off;"]
+    ports:
+      - "127.0.0.1:${KIRBY_HTTP_PORT:-8000}:8000"
+      - "127.0.0.1:${KIRBY_GRPC_PORT:-9000}:9000"
+    volumes:
+      - type: bind
+        source: ./nginx/nginx.conf
+        target: /etc/nginx/nginx.conf
+        read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m,mode=1777
+    depends_on:
+      server-1:
+        condition: service_healthy
+      server-2:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:8000/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+    restart: unless-stopped
+    cpus: 0.5
+    mem_limit: 128m
+    pids_limit: 128
+    networks:
+      kirby-internal:
+        ipv4_address: 172.30.0.10
+
+volumes:
+  mysql-data:
+  redis-data:
+  minio-data:
+
+networks:
+  kirby-internal:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24

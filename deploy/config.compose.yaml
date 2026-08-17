@@ -1,0 +1,60 @@
+# Copy this template to config.compose.local.yaml and replace every CHANGE_ME
+# value. Point KIRBY_CONFIG_PATH in deploy/.env at that ignored file.
+mode: multi
+
+http:
+  address: ":8080"
+  timeout: 2m
+
+grpc:
+  address: ":9090"
+  timeout: 10s
+
+mysql:
+  dsn: CHANGE_ME_MYSQL_USER:CHANGE_ME_MYSQL_PASSWORD@tcp(mysql:3306)/kirby?charset=utf8mb4&parseTime=true&loc=UTC
+  max_open_conns: 50
+  max_idle_conns: 10
+  conn_max_lifetime: 5m
+
+cache:
+  driver: redis
+  redis:
+    address: redis:6379
+    username: ""
+    password: CHANGE_ME_REDIS_PASSWORD
+    db: 0
+    key_prefix: "kirby:"
+
+jwt:
+  issuer: kirby
+  active_kid: primary
+  access_ttl: 15m
+  refresh_ttl: 168h
+  keys:
+    primary: CHANGE_ME_AT_LEAST_32_RANDOM_BYTES
+
+security:
+  api_key_pepper: CHANGE_ME_AT_LEAST_32_RANDOM_BYTES
+  allowed_origins:
+    - http://localhost:8000
+  trusted_proxies:
+    - 172.30.0.10/32
+
+object_storage:
+  driver: s3
+  local:
+    directory: ""
+  s3:
+    endpoint: minio:9000
+    presign_endpoint: localhost:8000
+    region: us-east-1
+    bucket: kirby
+    access_key: CHANGE_ME_MINIO_USER
+    secret_key: CHANGE_ME_MINIO_PASSWORD
+    use_ssl: false
+    presign_use_ssl: false
+    public_base_url: http://localhost:8000/kirby
+
+log:
+  level: info
+  format: json
