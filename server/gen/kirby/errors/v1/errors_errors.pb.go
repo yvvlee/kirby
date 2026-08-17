@@ -53,11 +53,11 @@ func IsNoneRecordUpdated(err error) bool {
 		return false
 	}
 	e := errors1.FromError(err)
-	return e.Reason == Error_NoneRecordUpdated.String() && e.Code == 202
+	return e.Reason == Error_NoneRecordUpdated.String() && e.Code == 409
 }
 
 func ErrorNoneRecordUpdated(format string, args ...interface{}) error {
-	return errors.WithStack(errors1.New(202, Error_NoneRecordUpdated.String(), fmt.Sprintf(format, args...)))
+	return errors.WithStack(errors1.New(409, Error_NoneRecordUpdated.String(), fmt.Sprintf(format, args...)))
 }
 
 func IsInvalidParam(err error) bool {
@@ -89,11 +89,11 @@ func IsInvalidOperation(err error) bool {
 		return false
 	}
 	e := errors1.FromError(err)
-	return e.Reason == Error_InvalidOperation.String() && e.Code == 404
+	return e.Reason == Error_InvalidOperation.String() && e.Code == 409
 }
 
 func ErrorInvalidOperation(format string, args ...interface{}) error {
-	return errors.WithStack(errors1.New(404, Error_InvalidOperation.String(), fmt.Sprintf(format, args...)))
+	return errors.WithStack(errors1.New(409, Error_InvalidOperation.String(), fmt.Sprintf(format, args...)))
 }
 
 func IsBadRequest(err error) bool {

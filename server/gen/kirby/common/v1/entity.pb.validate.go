@@ -1837,6 +1837,8 @@ func (m *ProjectApiKey) validate(all bool) error {
 
 	// no validation rules for CreatedAt
 
+	// no validation rules for SecretSuffix
+
 	if m.LastUsedAt != nil {
 		// no validation rules for LastUsedAt
 	}

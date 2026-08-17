@@ -1562,14 +1562,17 @@ func (x *SimpleSnapshot) GetVersion() uint32 {
 }
 
 type ProjectApiKey struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	PublicId      string                 `protobuf:"bytes,2,opt,name=public_id,json=publicId,proto3" json:"public_id,omitempty"`
-	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
-	CreatedBy     string                 `protobuf:"bytes,4,opt,name=created_by,json=createdBy,proto3" json:"created_by,omitempty"`
-	CreatedAt     string                 `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	LastUsedAt    *string                `protobuf:"bytes,6,opt,name=last_used_at,json=lastUsedAt,proto3,oneof" json:"last_used_at,omitempty"`
-	RevokedAt     *string                `protobuf:"bytes,7,opt,name=revoked_at,json=revokedAt,proto3,oneof" json:"revoked_at,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Id         int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	PublicId   string                 `protobuf:"bytes,2,opt,name=public_id,json=publicId,proto3" json:"public_id,omitempty"`
+	Name       string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	CreatedBy  string                 `protobuf:"bytes,4,opt,name=created_by,json=createdBy,proto3" json:"created_by,omitempty"`
+	CreatedAt  string                 `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	LastUsedAt *string                `protobuf:"bytes,6,opt,name=last_used_at,json=lastUsedAt,proto3,oneof" json:"last_used_at,omitempty"`
+	RevokedAt  *string                `protobuf:"bytes,7,opt,name=revoked_at,json=revokedAt,proto3,oneof" json:"revoked_at,omitempty"`
+	// Only the trailing characters are stored and returned for identification.
+	// This value is not the secret and cannot be used to authenticate.
+	SecretSuffix  string `protobuf:"bytes,8,opt,name=secret_suffix,json=secretSuffix,proto3" json:"secret_suffix,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1649,6 +1652,13 @@ func (x *ProjectApiKey) GetLastUsedAt() string {
 func (x *ProjectApiKey) GetRevokedAt() string {
 	if x != nil && x.RevokedAt != nil {
 		return *x.RevokedAt
+	}
+	return ""
+}
+
+func (x *ProjectApiKey) GetSecretSuffix() string {
+	if x != nil {
+		return x.SecretSuffix
 	}
 	return ""
 }
@@ -2023,7 +2033,7 @@ const file_kirby_common_v1_entity_proto_rawDesc = "" +
 	"created_at\x185 \x01(\tR\tcreatedAt\x12\x1d\n" +
 	"\n" +
 	"updated_at\x186 \x01(\tR\tupdatedAt\x12\x18\n" +
-	"\aversion\x187 \x01(\rR\aversion\"\xf9\x01\n" +
+	"\aversion\x187 \x01(\rR\aversion\"\x9e\x02\n" +
 	"\rProjectApiKey\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x1b\n" +
 	"\tpublic_id\x18\x02 \x01(\tR\bpublicId\x12\x12\n" +
@@ -2035,7 +2045,8 @@ const file_kirby_common_v1_entity_proto_rawDesc = "" +
 	"\flast_used_at\x18\x06 \x01(\tH\x00R\n" +
 	"lastUsedAt\x88\x01\x01\x12\"\n" +
 	"\n" +
-	"revoked_at\x18\a \x01(\tH\x01R\trevokedAt\x88\x01\x01B\x0f\n" +
+	"revoked_at\x18\a \x01(\tH\x01R\trevokedAt\x88\x01\x01\x12#\n" +
+	"\rsecret_suffix\x18\b \x01(\tR\fsecretSuffixB\x0f\n" +
 	"\r_last_used_atB\r\n" +
 	"\v_revoked_at\"o\n" +
 	"\x05Asset\x12\x1d\n" +
