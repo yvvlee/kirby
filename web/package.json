@@ -1,0 +1,43 @@
+{
+  "name": "@kirby/web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Kirby configuration platform web application",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "lint": "eslint --ext .js,.vue src vite.config.js",
+    "test": "vitest --passWithNoTests"
+  },
+  "dependencies": {
+    "@formily/core": "2.3.7",
+    "@formily/element": "2.3.7",
+    "@formily/json-schema": "2.3.7",
+    "@formily/reactive": "2.3.7",
+    "@formily/vue": "2.3.7",
+    "axios": "1.19.0",
+    "element-ui": "2.15.14",
+    "monaco-editor": "0.56.0",
+    "vue": "2.7.16",
+    "vue-router": "3.6.5",
+    "vuex": "3.6.2"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1",
+    "@vitejs/plugin-vue2": "2.3.4",
+    "@vue/test-utils": "1.3.6",
+    "eslint": "8.57.1",
+    "eslint-plugin-vue": "9.33.0",
+    "jsdom": "22.1.0",
+    "sass": "1.102.0",
+    "vite": "7.3.6",
+    "vitest": "3.2.7",
+    "vue-template-compiler": "2.7.16"
+  }
+}
