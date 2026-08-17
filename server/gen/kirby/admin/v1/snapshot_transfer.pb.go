@@ -24,6 +24,55 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type ImportConflictStrategy int32
+
+const (
+	ImportConflictStrategy_UNSPECIFIED ImportConflictStrategy = 0
+	ImportConflictStrategy_FAIL        ImportConflictStrategy = 1
+	ImportConflictStrategy_REPLACE     ImportConflictStrategy = 2
+)
+
+// Enum value maps for ImportConflictStrategy.
+var (
+	ImportConflictStrategy_name = map[int32]string{
+		0: "UNSPECIFIED",
+		1: "FAIL",
+		2: "REPLACE",
+	}
+	ImportConflictStrategy_value = map[string]int32{
+		"UNSPECIFIED": 0,
+		"FAIL":        1,
+		"REPLACE":     2,
+	}
+)
+
+func (x ImportConflictStrategy) Enum() *ImportConflictStrategy {
+	p := new(ImportConflictStrategy)
+	*p = x
+	return p
+}
+
+func (x ImportConflictStrategy) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ImportConflictStrategy) Descriptor() protoreflect.EnumDescriptor {
+	return file_kirby_admin_v1_snapshot_transfer_proto_enumTypes[0].Descriptor()
+}
+
+func (ImportConflictStrategy) Type() protoreflect.EnumType {
+	return &file_kirby_admin_v1_snapshot_transfer_proto_enumTypes[0]
+}
+
+func (x ImportConflictStrategy) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ImportConflictStrategy.Descriptor instead.
+func (ImportConflictStrategy) EnumDescriptor() ([]byte, []int) {
+	return file_kirby_admin_v1_snapshot_transfer_proto_rawDescGZIP(), []int{0}
+}
+
 type ExportSnapshotRequest struct {
 	state               protoimpl.MessageState `protogen:"open.v1"`
 	SourceEnvironmentId int64                  `protobuf:"varint,1,opt,name=source_environment_id,json=sourceEnvironmentId,proto3" json:"source_environment_id,omitempty"`
@@ -138,8 +187,12 @@ type ImportSnapshotRequest struct {
 	Description         string                 `protobuf:"bytes,6,opt,name=description,proto3" json:"description,omitempty"`
 	Tags                []v1.Snapshot_Tag      `protobuf:"varint,7,rep,packed,name=tags,proto3,enum=kirby.common.v1.Snapshot_Tag" json:"tags,omitempty"`
 	IdempotencyKey      string                 `protobuf:"bytes,8,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	// FAIL is required when creating a new target config. REPLACE is only valid
+	// when target_config_id is explicitly provided; the business layer must
+	// reject REPLACE without that target.
+	ConflictStrategy ImportConflictStrategy `protobuf:"varint,9,opt,name=conflict_strategy,json=conflictStrategy,proto3,enum=kirby.admin.v1.ImportConflictStrategy" json:"conflict_strategy,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *ImportSnapshotRequest) Reset() {
@@ -228,6 +281,13 @@ func (x *ImportSnapshotRequest) GetIdempotencyKey() string {
 	return ""
 }
 
+func (x *ImportSnapshotRequest) GetConflictStrategy() ImportConflictStrategy {
+	if x != nil {
+		return x.ConflictStrategy
+	}
+	return ImportConflictStrategy_UNSPECIFIED
+}
+
 type ImportSnapshotReply struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Snapshot      *v1.Snapshot           `protobuf:"bytes,1,opt,name=snapshot,proto3" json:"snapshot,omitempty"`
@@ -284,14 +344,14 @@ var File_kirby_admin_v1_snapshot_transfer_proto protoreflect.FileDescriptor
 
 const file_kirby_admin_v1_snapshot_transfer_proto_rawDesc = "" +
 	"\n" +
-	"&kirby/admin/v1/snapshot_transfer.proto\x12\x0ekirby.admin.v1\x1a\x1cgoogle/api/annotations.proto\x1a\x1ckirby/common/v1/entity.proto\x1a\x17validate/validate.proto\"~\n" +
+	"&kirby/admin/v1/snapshot_transfer.proto\x12\x0ekirby.admin.v1\x1a\x1cgoogle/api/annotations.proto\x1a\x1fgoogle/api/field_behavior.proto\x1a\x1ckirby/common/v1/entity.proto\x1a\x17validate/validate.proto\"~\n" +
 	"\x15ExportSnapshotRequest\x12;\n" +
 	"\x15source_environment_id\x18\x01 \x01(\x03B\a\xfaB\x04\"\x02 \x00R\x13sourceEnvironmentId\x12(\n" +
 	"\vsnapshot_id\x18\x02 \x01(\x03B\a\xfaB\x04\"\x02 \x00R\n" +
 	"snapshotId\"\x80\x01\n" +
 	"\x13ExportSnapshotReply\x122\n" +
 	"\x15source_environment_id\x18\x01 \x01(\x03R\x13sourceEnvironmentId\x125\n" +
-	"\bsnapshot\x18\x02 \x01(\v2\x19.kirby.common.v1.SnapshotR\bsnapshot\"\xe0\x03\n" +
+	"\bsnapshot\x18\x02 \x01(\v2\x19.kirby.common.v1.SnapshotR\bsnapshot\"\xc5\x04\n" +
 	"\x15ImportSnapshotRequest\x12;\n" +
 	"\x15target_environment_id\x18\x01 \x01(\x03B\a\xfaB\x04\"\x02 \x00R\x13targetEnvironmentId\x12;\n" +
 	"\x15source_environment_id\x18\x02 \x01(\x03B\a\xfaB\x04\"\x02 \x00R\x13sourceEnvironmentId\x125\n" +
@@ -302,11 +362,16 @@ const file_kirby_admin_v1_snapshot_transfer_proto_rawDesc = "" +
 	"\xfaB\ar\x05\x10\x02\x18\xff\x01R\vdescription\x121\n" +
 	"\x04tags\x18\a \x03(\x0e2\x1d.kirby.common.v1.Snapshot.TagR\x04tags\x123\n" +
 	"\x0fidempotency_key\x18\b \x01(\tB\n" +
-	"\xfaB\ar\x05\x10\x10\x18\x80\x01R\x0eidempotencyKeyB\x13\n" +
+	"\xfaB\ar\x05\x10\x10\x18\x80\x01R\x0eidempotencyKey\x12c\n" +
+	"\x11conflict_strategy\x18\t \x01(\x0e2&.kirby.admin.v1.ImportConflictStrategyB\x0e\xe2A\x01\x02\xfaB\a\x82\x01\x04\x10\x01 \x00R\x10conflictStrategyB\x13\n" +
 	"\x11_target_config_id\"h\n" +
 	"\x13ImportSnapshotReply\x125\n" +
 	"\bsnapshot\x18\x01 \x01(\v2\x19.kirby.common.v1.SnapshotR\bsnapshot\x12\x1a\n" +
-	"\breplayed\x18\x02 \x01(\bR\breplayed2\xf4\x02\n" +
+	"\breplayed\x18\x02 \x01(\bR\breplayed*@\n" +
+	"\x16ImportConflictStrategy\x12\x0f\n" +
+	"\vUNSPECIFIED\x10\x00\x12\b\n" +
+	"\x04FAIL\x10\x01\x12\v\n" +
+	"\aREPLACE\x10\x022\xf4\x02\n" +
 	"\x17SnapshotTransferService\x12\xb0\x01\n" +
 	"\x0eExportSnapshot\x12%.kirby.admin.v1.ExportSnapshotRequest\x1a#.kirby.admin.v1.ExportSnapshotReply\"R\x82\xd3\xe4\x93\x02L\x12J/admin/environments/{source_environment_id}/snapshots/{snapshot_id}/export\x12\xa5\x01\n" +
 	"\x0eImportSnapshot\x12%.kirby.admin.v1.ImportSnapshotRequest\x1a#.kirby.admin.v1.ImportSnapshotReply\"G\x82\xd3\xe4\x93\x02A:\x01*\"</admin/environments/{target_environment_id}/snapshot-importsB;Z9github.com/yvvlee/kirby/server/gen/kirby/admin/v1;adminv1b\x06proto3"
@@ -323,28 +388,31 @@ func file_kirby_admin_v1_snapshot_transfer_proto_rawDescGZIP() []byte {
 	return file_kirby_admin_v1_snapshot_transfer_proto_rawDescData
 }
 
+var file_kirby_admin_v1_snapshot_transfer_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
 var file_kirby_admin_v1_snapshot_transfer_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_kirby_admin_v1_snapshot_transfer_proto_goTypes = []any{
-	(*ExportSnapshotRequest)(nil), // 0: kirby.admin.v1.ExportSnapshotRequest
-	(*ExportSnapshotReply)(nil),   // 1: kirby.admin.v1.ExportSnapshotReply
-	(*ImportSnapshotRequest)(nil), // 2: kirby.admin.v1.ImportSnapshotRequest
-	(*ImportSnapshotReply)(nil),   // 3: kirby.admin.v1.ImportSnapshotReply
-	(*v1.Snapshot)(nil),           // 4: kirby.common.v1.Snapshot
-	(v1.Snapshot_Tag)(0),          // 5: kirby.common.v1.Snapshot.Tag
+	(ImportConflictStrategy)(0),   // 0: kirby.admin.v1.ImportConflictStrategy
+	(*ExportSnapshotRequest)(nil), // 1: kirby.admin.v1.ExportSnapshotRequest
+	(*ExportSnapshotReply)(nil),   // 2: kirby.admin.v1.ExportSnapshotReply
+	(*ImportSnapshotRequest)(nil), // 3: kirby.admin.v1.ImportSnapshotRequest
+	(*ImportSnapshotReply)(nil),   // 4: kirby.admin.v1.ImportSnapshotReply
+	(*v1.Snapshot)(nil),           // 5: kirby.common.v1.Snapshot
+	(v1.Snapshot_Tag)(0),          // 6: kirby.common.v1.Snapshot.Tag
 }
 var file_kirby_admin_v1_snapshot_transfer_proto_depIdxs = []int32{
-	4, // 0: kirby.admin.v1.ExportSnapshotReply.snapshot:type_name -> kirby.common.v1.Snapshot
-	5, // 1: kirby.admin.v1.ImportSnapshotRequest.tags:type_name -> kirby.common.v1.Snapshot.Tag
-	4, // 2: kirby.admin.v1.ImportSnapshotReply.snapshot:type_name -> kirby.common.v1.Snapshot
-	0, // 3: kirby.admin.v1.SnapshotTransferService.ExportSnapshot:input_type -> kirby.admin.v1.ExportSnapshotRequest
-	2, // 4: kirby.admin.v1.SnapshotTransferService.ImportSnapshot:input_type -> kirby.admin.v1.ImportSnapshotRequest
-	1, // 5: kirby.admin.v1.SnapshotTransferService.ExportSnapshot:output_type -> kirby.admin.v1.ExportSnapshotReply
-	3, // 6: kirby.admin.v1.SnapshotTransferService.ImportSnapshot:output_type -> kirby.admin.v1.ImportSnapshotReply
-	5, // [5:7] is the sub-list for method output_type
-	3, // [3:5] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	5, // 0: kirby.admin.v1.ExportSnapshotReply.snapshot:type_name -> kirby.common.v1.Snapshot
+	6, // 1: kirby.admin.v1.ImportSnapshotRequest.tags:type_name -> kirby.common.v1.Snapshot.Tag
+	0, // 2: kirby.admin.v1.ImportSnapshotRequest.conflict_strategy:type_name -> kirby.admin.v1.ImportConflictStrategy
+	5, // 3: kirby.admin.v1.ImportSnapshotReply.snapshot:type_name -> kirby.common.v1.Snapshot
+	1, // 4: kirby.admin.v1.SnapshotTransferService.ExportSnapshot:input_type -> kirby.admin.v1.ExportSnapshotRequest
+	3, // 5: kirby.admin.v1.SnapshotTransferService.ImportSnapshot:input_type -> kirby.admin.v1.ImportSnapshotRequest
+	2, // 6: kirby.admin.v1.SnapshotTransferService.ExportSnapshot:output_type -> kirby.admin.v1.ExportSnapshotReply
+	4, // 7: kirby.admin.v1.SnapshotTransferService.ImportSnapshot:output_type -> kirby.admin.v1.ImportSnapshotReply
+	6, // [6:8] is the sub-list for method output_type
+	4, // [4:6] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_kirby_admin_v1_snapshot_transfer_proto_init() }
@@ -358,13 +426,14 @@ func file_kirby_admin_v1_snapshot_transfer_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_kirby_admin_v1_snapshot_transfer_proto_rawDesc), len(file_kirby_admin_v1_snapshot_transfer_proto_rawDesc)),
-			NumEnums:      0,
+			NumEnums:      1,
 			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_kirby_admin_v1_snapshot_transfer_proto_goTypes,
 		DependencyIndexes: file_kirby_admin_v1_snapshot_transfer_proto_depIdxs,
+		EnumInfos:         file_kirby_admin_v1_snapshot_transfer_proto_enumTypes,
 		MessageInfos:      file_kirby_admin_v1_snapshot_transfer_proto_msgTypes,
 	}.Build()
 	File_kirby_admin_v1_snapshot_transfer_proto = out.File

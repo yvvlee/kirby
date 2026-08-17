@@ -384,6 +384,28 @@ func (m *ImportSnapshotRequest) validate(all bool) error {
 		errors = append(errors, err)
 	}
 
+	if _, ok := _ImportSnapshotRequest_ConflictStrategy_NotInLookup[m.GetConflictStrategy()]; ok {
+		err := ImportSnapshotRequestValidationError{
+			field:  "ConflictStrategy",
+			reason: "value must not be in list [UNSPECIFIED]",
+		}
+		if !all {
+			return err
+		}
+		errors = append(errors, err)
+	}
+
+	if _, ok := ImportConflictStrategy_name[int32(m.GetConflictStrategy())]; !ok {
+		err := ImportSnapshotRequestValidationError{
+			field:  "ConflictStrategy",
+			reason: "value must be one of the defined enum values",
+		}
+		if !all {
+			return err
+		}
+		errors = append(errors, err)
+	}
+
 	if m.TargetConfigId != nil {
 
 		if m.GetTargetConfigId() <= 0 {
@@ -478,6 +500,10 @@ var _ interface {
 	Cause() error
 	ErrorName() string
 } = ImportSnapshotRequestValidationError{}
+
+var _ImportSnapshotRequest_ConflictStrategy_NotInLookup = map[ImportConflictStrategy]struct{}{
+	0: {},
+}
 
 // Validate checks the field values on ImportSnapshotReply with the rules
 // defined in the proto definition for this message. If any rules are

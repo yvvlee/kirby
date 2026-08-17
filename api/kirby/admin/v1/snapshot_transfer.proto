@@ -3,10 +3,17 @@ syntax = "proto3";
 package kirby.admin.v1;
 
 import "google/api/annotations.proto";
+import "google/api/field_behavior.proto";
 import "kirby/common/v1/entity.proto";
 import "validate/validate.proto";
 
 option go_package = "github.com/yvvlee/kirby/server/gen/kirby/admin/v1;adminv1";
+
+enum ImportConflictStrategy {
+  UNSPECIFIED = 0;
+  FAIL = 1;
+  REPLACE = 2;
+}
 
 service SnapshotTransferService {
   rpc ExportSnapshot(ExportSnapshotRequest) returns (ExportSnapshotReply) {
@@ -41,6 +48,13 @@ message ImportSnapshotRequest {
   string description = 6 [(validate.rules).string = {min_len: 2, max_len: 255}];
   repeated kirby.common.v1.Snapshot.Tag tags = 7;
   string idempotency_key = 8 [(validate.rules).string = {min_len: 16, max_len: 128}];
+  // FAIL is required when creating a new target config. REPLACE is only valid
+  // when target_config_id is explicitly provided; the business layer must
+  // reject REPLACE without that target.
+  ImportConflictStrategy conflict_strategy = 9 [
+    (google.api.field_behavior) = REQUIRED,
+    (validate.rules).enum = {defined_only: true, not_in: [0]}
+  ];
 }
 
 message ImportSnapshotReply {
