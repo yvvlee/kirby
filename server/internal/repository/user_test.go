@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"regexp"
 	"testing"
 	"time"
 
@@ -134,5 +135,97 @@ func TestManagedUserListFailsWhenFixedLimitIsExceeded(t *testing.T) {
 	require.NoError(t, err)
 	_, err = repository.ListManagedUsers(context.Background())
 	require.ErrorIs(t, err, ErrUserListLimit)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestCreateAdminRevokesExistingSessionsForResetRestoreAndPromotion(t *testing.T) {
+	now := time.Now().UTC()
+	userColumns := []string{
+		"id", "username", "display_name", "password_hash", "enabled", "is_system_admin",
+		"created_by", "updated_by", "created_at", "updated_at", "version", "deleted_at",
+	}
+	tests := []struct {
+		name        string
+		enabled     bool
+		systemAdmin bool
+		deletedAt   any
+	}{
+		{name: "reset existing administrator", enabled: true, systemAdmin: true},
+		{name: "restore deleted administrator", enabled: false, systemAdmin: true, deletedAt: now.Add(-time.Hour)},
+		{name: "promote ordinary user", enabled: true, systemAdmin: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			engine, mock := newRepositoryMockEngine(t)
+			mock.ExpectBegin()
+			mock.ExpectQuery(`(?s)SELECT .* FROM ` + "`users`" + ` WHERE .*username.*FOR UPDATE`).
+				WithArgs("admin").
+				WillReturnRows(sqlmock.NewRows(userColumns).AddRow(
+					7, "admin", "Old name", "old-hash", test.enabled, test.systemAdmin,
+					1, 1, now, now, 3, test.deletedAt,
+				))
+			mock.ExpectExec(regexp.QuoteMeta(
+				"UPDATE users SET display_name = ?, password_hash = ?, enabled = TRUE, "+
+					"is_system_admin = TRUE, deleted_at = NULL, updated_at = ?, version = version + 1 WHERE id = ?",
+			)).
+				WithArgs("Administrator", "new-hash", sqlmock.AnyArg(), int64(7)).
+				WillReturnResult(sqlmock.NewResult(0, 1))
+			mock.ExpectExec(regexp.QuoteMeta(
+				"UPDATE refresh_tokens SET revoked_at = COALESCE(revoked_at, UTC_TIMESTAMP(6)), updated_at = UTC_TIMESTAMP(6) WHERE user_id = ?",
+			)).
+				WithArgs(int64(7)).
+				WillReturnResult(sqlmock.NewResult(0, 2))
+			mock.ExpectQuery(`(?s)SELECT .* FROM ` + "`users`" + ` WHERE ` + "`id`" + `=\? LIMIT 1`).
+				WithArgs(int64(7)).
+				WillReturnRows(sqlmock.NewRows(userColumns).AddRow(
+					7, "admin", "Administrator", "new-hash", true, true,
+					1, 1, now, now, 4, nil,
+				))
+			mock.ExpectCommit()
+
+			repository, err := NewUserRepository(engine)
+			require.NoError(t, err)
+			user, created, err := repository.CreateOrPromoteSystemAdmin(
+				context.Background(), "admin", "Administrator", "new-hash",
+			)
+			require.NoError(t, err)
+			require.False(t, created)
+			require.True(t, user.Enabled)
+			require.True(t, user.IsSystemAdmin)
+			require.Equal(t, "new-hash", user.PasswordHash)
+			require.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
+func TestCreateAdminRollsBackPasswordWhenSessionRevocationFails(t *testing.T) {
+	engine, mock := newRepositoryMockEngine(t)
+	now := time.Now().UTC()
+	userColumns := []string{
+		"id", "username", "display_name", "password_hash", "enabled", "is_system_admin",
+		"created_by", "updated_by", "created_at", "updated_at", "version", "deleted_at",
+	}
+	mock.ExpectBegin()
+	mock.ExpectQuery(`(?s)SELECT .* FROM ` + "`users`" + ` WHERE .*username.*FOR UPDATE`).
+		WithArgs("admin").
+		WillReturnRows(sqlmock.NewRows(userColumns).AddRow(
+			7, "admin", "Old name", "old-hash", true, true, 1, 1, now, now, 3, nil,
+		))
+	mock.ExpectExec(`(?s)UPDATE users SET display_name = \?, password_hash = \?.*WHERE id = \?`).
+		WithArgs("Administrator", "new-hash", sqlmock.AnyArg(), int64(7)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(`(?s)UPDATE refresh_tokens SET revoked_at = COALESCE.*WHERE user_id = \?`).
+		WithArgs(int64(7)).
+		WillReturnError(errors.New("database unavailable"))
+	mock.ExpectRollback()
+
+	repository, err := NewUserRepository(engine)
+	require.NoError(t, err)
+	user, created, err := repository.CreateOrPromoteSystemAdmin(
+		context.Background(), "admin", "Administrator", "new-hash",
+	)
+	require.Error(t, err)
+	require.Nil(t, user)
+	require.False(t, created)
 	require.NoError(t, mock.ExpectationsWereMet())
 }

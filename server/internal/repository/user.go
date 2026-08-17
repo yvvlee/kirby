@@ -359,14 +359,22 @@ func (r *UserRepository) CreateOrPromoteSystemAdmin(ctx context.Context, usernam
 		if _, err := tx.Exec(update, displayName, passwordHash, time.Now().UTC(), user.ID); err != nil {
 			return fmt.Errorf("promote administrator user: %w", err)
 		}
-		found, err = tx.Unscoped().ID(user.ID).Get(user)
+		if _, err := tx.Context(ctx).Exec(
+			"UPDATE refresh_tokens SET revoked_at = COALESCE(revoked_at, UTC_TIMESTAMP(6)), "+
+				"updated_at = UTC_TIMESTAMP(6) WHERE user_id = ?",
+			user.ID,
+		); err != nil {
+			return fmt.Errorf("revoke promoted administrator sessions: %w", err)
+		}
+		promoted := new(model.User)
+		found, err = tx.Unscoped().ID(user.ID).Get(promoted)
 		if err != nil {
 			return fmt.Errorf("read promoted administrator user: %w", err)
 		}
 		if !found {
 			return ErrUserNotFound
 		}
-		result = user
+		result = promoted
 		return nil
 	})
 	if err != nil {
