@@ -11,7 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/yvvlee/kirby/server/internal/model"
-	"github.com/yvvlee/kirby/server/internal/repository/base"
 )
 
 func TestProjectAPIKeyCreateClassifiesPublicIDCollision(t *testing.T) {
@@ -50,9 +49,9 @@ func TestRuntimeCredentialLookupAndUsageAreDatabaseBacked(t *testing.T) {
 	require.NoError(t, session.Commit())
 
 	usedAt := time.Now().UTC()
-	mock.ExpectExec(`(?s)UPDATE project_api_keys.*WHERE public_id = \? AND revoked_at IS NULL`).
-		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), "kirby_pk_public").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec(`(?s)UPDATE project_api_keys.*last_used_at = IF\(last_used_at IS NULL OR last_used_at < \?, \?, last_used_at\).*WHERE public_id = \? AND revoked_at IS NULL`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), "kirby_pk_public").WillReturnResult(sqlmock.NewResult(0, 0))
 	err = NewProjectAPIKeyRepository(engine).MarkUsed(context.Background(), "kirby_pk_public", usedAt)
-	assert.ErrorIs(t, err, base.ErrNoRowsAffected)
+	require.NoError(t, err)
 	require.NoError(t, mock.ExpectationsWereMet())
 }

@@ -233,18 +233,13 @@ func (r *ProjectAPIKeyRepository) MarkUsed(ctx context.Context, publicID string,
 	if err := base.ValidateEngine(r.engine == nil); err != nil {
 		return err
 	}
-	result, err := r.engine.Context(ctx).Exec(`
+	_, err := r.engine.Context(ctx).Exec(`
 UPDATE project_api_keys
-SET last_used_at = ?, updated_at = ?
-WHERE public_id = ? AND revoked_at IS NULL`, usedAt, usedAt, publicID)
+SET last_used_at = IF(last_used_at IS NULL OR last_used_at < ?, ?, last_used_at),
+    updated_at = IF(updated_at < ?, ?, updated_at)
+WHERE public_id = ? AND revoked_at IS NULL`, usedAt, usedAt, usedAt, usedAt, publicID)
 	if err != nil {
 		return base.Wrap("mark project API key used", err)
-	}
-	if result == nil {
-		return base.Unchanged("project API key usage")
-	}
-	if err := base.RequireAffected("project API key usage", result); err != nil {
-		return err
 	}
 	return nil
 }

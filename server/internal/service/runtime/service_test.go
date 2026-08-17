@@ -1,7 +1,10 @@
 package runtime
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"log/slog"
 	"net/http"
 	"testing"
 
@@ -116,4 +119,18 @@ func TestRuntimeServiceMapsAuthenticationAndScopeErrors(t *testing.T) {
 		_, err := service.Config(ctx, request)
 		assert.Equal(t, test.code, kratoserrors.FromError(err).Code)
 	}
+}
+
+func TestRuntimeServiceLogsUnexpectedErrors(t *testing.T) {
+	var output bytes.Buffer
+	service := &Service{
+		logic:  &logicFake{err: errors.New("database read failed")},
+		logger: slog.New(slog.NewTextHandler(&output, nil)),
+	}
+	ctx := context.WithValue(context.Background(), credentialKey{}, "secret")
+
+	_, err := service.Config(ctx, &runtimev1.ConfigRequest{Project: "website", Key: "feature"})
+
+	assert.Equal(t, int32(http.StatusInternalServerError), kratoserrors.FromError(err).Code)
+	assert.Contains(t, output.String(), "database read failed")
 }

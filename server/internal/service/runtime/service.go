@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	kratosmiddleware "github.com/go-kratos/kratos/v2/middleware"
@@ -30,14 +31,15 @@ type Logic interface {
 
 type Service struct {
 	runtimev1.UnimplementedApiServer
-	logic Logic
+	logic  Logic
+	logger *slog.Logger
 }
 
-func New(logicLayer *logic.Logic) (*Service, error) {
-	if logicLayer == nil {
-		return nil, fmt.Errorf("runtime service logic is nil")
+func New(logicLayer *logic.Logic, logger *slog.Logger) (*Service, error) {
+	if logicLayer == nil || logger == nil {
+		return nil, fmt.Errorf("runtime service logic and logger are required")
 	}
-	return &Service{logic: logicLayer}, nil
+	return &Service{logic: logicLayer, logger: logger}, nil
 }
 
 var (
@@ -55,12 +57,22 @@ func (s *Service) Config(ctx context.Context, request *runtimev1.ConfigRequest) 
 	}
 	result, err := s.logic.Read(ctx, credential, request.Project, request.Key)
 	if err != nil {
+		if s.logger != nil && isInternalError(err) {
+			s.logger.ErrorContext(ctx, "runtime config read failed", "error", err)
+		}
 		return nil, publicError(err)
 	}
 	if result == nil {
 		return nil, errorsv1.ErrorInternal("runtime config read failed")
 	}
 	return &runtimev1.ConfigReply{Content: result.Content, Version: result.Version}, nil
+}
+
+func isInternalError(err error) bool {
+	return !errors.Is(err, logic.ErrUnauthenticated) &&
+		!errors.Is(err, logic.ErrProjectMismatch) &&
+		!errors.Is(err, base.ErrInvalidArgument) &&
+		!errors.Is(err, base.ErrNotFound)
 }
 
 // HTTPAPIKey copies the runtime credential from the HTTP header into context.
