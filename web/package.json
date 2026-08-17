@@ -13,7 +13,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "lint": "eslint --ext .js,.vue src vite.config.js",
-    "test": "vitest --passWithNoTests"
+    "test": "vitest --passWithNoTests src",
+    "test:e2e": "npm run build && playwright test"
   },
   "dependencies": {
     "@formily/core": "2.3.7",
@@ -36,6 +37,7 @@
     "eslint-plugin-vue": "9.33.0",
     "jsdom": "22.1.0",
     "sass": "1.102.0",
+    "typescript": "5.9.3",
     "vite": "7.3.6",
     "vitest": "3.2.7",
     "vue-template-compiler": "2.7.16"
