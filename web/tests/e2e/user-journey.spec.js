@@ -133,11 +133,22 @@ test('runs the standalone management and runtime journey against the real backen
   const ticket = await api(request, token, 'POST', `/admin/environments/${source.id}/projects/${sourceProject.id}/assets/presign`, {
     environment_id: source.id, project_id: sourceProject.id, filename: 'asset.txt', content_type: 'text/plain', size: assetBody.length,
   })
-  const upload = await request.fetch(ticket.upload_url, {
-    method: ticket.upload_method,
-    data: assetBody,
-    headers: ticket.headers,
-  })
+  let upload
+  if (ticket.upload_method === 'POST') {
+    upload = await request.post(ticket.upload_url, {
+      multipart: {
+        ...ticket.form_fields,
+        file: { name: 'asset.txt', mimeType: 'text/plain', buffer: assetBody },
+      },
+      headers: ticket.headers,
+    })
+  } else {
+    upload = await request.fetch(ticket.upload_url, {
+      method: ticket.upload_method,
+      data: assetBody,
+      headers: ticket.headers,
+    })
+  }
   expect(upload.ok(), await upload.text()).toBeTruthy()
   const completed = await api(request, token, 'POST', `/admin/environments/${source.id}/projects/${sourceProject.id}/assets/complete`, {
     environment_id: source.id, project_id: sourceProject.id, object_key: ticket.object_key,
