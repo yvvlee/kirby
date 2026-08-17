@@ -167,6 +167,44 @@ describe('FileUpload', () => {
     expect(onError).not.toHaveBeenCalled()
   })
 
+  it('作用域变化时中止旧上传，新上传使用新环境和项目', async () => {
+    const calls = []
+    assetAPI.uploadAsset.mockImplementation(
+      (environmentId, projectId, _file, { signal }) => {
+        calls.push({ environmentId, projectId, signal })
+        return new Promise((_resolve, reject) => {
+          signal.addEventListener('abort', () => {
+            const error = new Error('aborted')
+            error.name = 'AbortError'
+            reject(error)
+          })
+        })
+      },
+    )
+    const { wrapper } = mountComponent()
+    const options = {
+      file: selectedFile(),
+      onError: vi.fn(),
+      onProgress: vi.fn(),
+      onSuccess: vi.fn(),
+    }
+
+    wrapper.vm.customUpload(options)
+    await wrapper.setProps({ environmentId: 22, projectId: 8 })
+    await flush()
+
+    expect(calls[0]).toMatchObject({ environmentId: 11, projectId: 7 })
+    expect(calls[0].signal.aborted).toBe(true)
+    expect(options.onError).not.toHaveBeenCalled()
+
+    wrapper.vm.customUpload({
+      ...options,
+      file: selectedFile('new', { uid: 'file-2' }),
+    })
+    expect(calls[1]).toMatchObject({ environmentId: 22, projectId: 8 })
+    wrapper.destroy()
+  })
+
   it('类型和大小检查只提示，仍由后端判断', async () => {
     assetAPI.uploadAsset.mockResolvedValue({
       objectKey: 'environments/11/projects/7/assets/id.txt',

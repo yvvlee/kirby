@@ -64,13 +64,14 @@
             <div class="config-detail__form-pane">
               <SchemaForm
                 v-if="tree"
+                :key="schemaFormScopeKey"
                 ref="schemaForm"
                 :config="tree"
                 :value="config.value || ''"
                 :disabled="!canWriteConfig"
                 :models="models"
                 :enums="enums"
-                :file-upload-component="fileFieldUnavailable"
+                :file-upload-component="scopedFileUploadComponent"
               />
               <el-alert
                 v-else
@@ -207,6 +208,7 @@ import { getConfig, updateConfig, updateConfigValue } from '@/api/configs'
 import { getProject } from '@/api/projects'
 import DataTypeSelector from '@/components/DataTypeSelector'
 import EnvironmentTag from '@/components/EnvironmentTag'
+import { createScopedFileUpload } from '@/components/FileUpload/scoped'
 import MonacoEditor from '@/components/MonacoEditor'
 import SchemaForm from '@/components/SchemaForm'
 import EnumsPanel from '@/features/config-center/enums/EnumsPanel.vue'
@@ -220,18 +222,6 @@ import {
   toApiType,
   toEditorType,
 } from './type-codec'
-
-const FileFieldUnavailable = {
-  name: 'FileFieldUnavailable',
-  functional: true,
-  render(createElement) {
-    return createElement(
-      'span',
-      { class: 'config-detail__file-placeholder' },
-      '文件上传将在对象存储接入后启用',
-    )
-  },
-}
 
 function errorMessage(error, fallback) {
   return error?.response?.data?.message || error?.message || fallback
@@ -289,7 +279,6 @@ export default {
       models: [],
       enums: [],
       previewValue: '',
-      fileFieldUnavailable: FileFieldUnavailable,
       dialog: {
         visible: false,
         saving: false,
@@ -316,6 +305,12 @@ export default {
     canReadSnapshots() {
       return this.$store.getters['environment/hasPermission']('snapshot:read')
     },
+    schemaFormScopeKey() {
+      return `${this.environmentId}:${this.projectId}:${this.configId}`
+    },
+    scopedFileUploadComponent() {
+      return createScopedFileUpload(this.environmentId, this.projectId)
+    },
     typeLabel() {
       if (!this.config?.type) {
         return '未设置'
@@ -335,19 +330,17 @@ export default {
         previousId !== undefined &&
         String(environmentId) !== String(previousId)
       ) {
-        this.project = null
-        this.config = null
-        this.tree = null
-        this.models = []
-        this.enums = []
+        this.clearScopedResources()
         return
       }
       this.reload()
     },
     projectId() {
+      this.clearScopedResources()
       this.reload()
     },
     configId() {
+      this.clearScopedResources()
       this.reload()
     },
   },
@@ -359,6 +352,14 @@ export default {
   },
 
   methods: {
+    clearScopedResources() {
+      this.project = null
+      this.config = null
+      this.tree = null
+      this.models = []
+      this.enums = []
+      this.previewValue = ''
+    },
     async reload() {
       if (!this.environmentId) {
         throw new Error('当前没有可用环境')

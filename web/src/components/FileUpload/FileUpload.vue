@@ -239,6 +239,16 @@ export default {
   },
 
   watch: {
+    environmentId(environmentId, previousId) {
+      if (String(environmentId) !== String(previousId)) {
+        this.abortPendingUploads()
+      }
+    },
+    projectId(projectId, previousId) {
+      if (String(projectId) !== String(previousId)) {
+        this.abortPendingUploads()
+      }
+    },
     currentValue: {
       immediate: true,
       deep: true,
@@ -263,11 +273,14 @@ export default {
 
   beforeDestroy() {
     this.destroying = true
-    this.uploadAttempts.forEach((upload) => upload.controller.abort())
-    this.uploadAttempts = []
+    this.abortPendingUploads()
   },
 
   methods: {
+    abortPendingUploads() {
+      this.uploadAttempts.forEach((upload) => upload.controller.abort())
+      this.uploadAttempts = []
+    },
     filenameFromURL(url) {
       if (!url) {
         return ''

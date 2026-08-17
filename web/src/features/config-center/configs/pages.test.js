@@ -335,4 +335,33 @@ describe('core configuration pages', () => {
     expect(ConfigDetailPage.computed.canReadSnapshots.call(context)).toBe(false)
     expect(ConfigsPage.computed.canReadApiKeys.call(context)).toBe(false)
   })
+
+  it('keys the schema form by environment, project, and config scope', () => {
+    expect(
+      ConfigDetailPage.computed.schemaFormScopeKey.call({
+        environmentId: 11,
+        projectId: 7,
+        configId: 31,
+      }),
+    ).toBe('11:7:31')
+    expect(
+      ConfigDetailPage.computed.schemaFormScopeKey.call({
+        environmentId: 22,
+        projectId: 8,
+        configId: 41,
+      }),
+    ).toBe('22:8:41')
+  })
+
+  it('invalidates the old schema before loading a changed project scope', () => {
+    const calls = []
+    const context = {
+      clearScopedResources: () => calls.push('clear'),
+      reload: () => calls.push('reload'),
+    }
+
+    ConfigDetailPage.watch.projectId.call(context)
+
+    expect(calls).toEqual(['clear', 'reload'])
+  })
 })
