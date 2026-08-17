@@ -33,26 +33,35 @@ tools:
 	GOBIN=$(TOOLS_BIN) $(GO) install google.golang.org/grpc/cmd/protoc-gen-go-grpc@$(PROTOC_GEN_GO_GRPC_VERSION)
 	GOBIN=$(TOOLS_BIN) $(GO) install github.com/envoyproxy/protoc-gen-validate@$(PROTOC_GEN_VALIDATE_VERSION)
 	GOBIN=$(TOOLS_BIN) $(GO) install github.com/go-kratos/kratos/cmd/protoc-gen-go-http/v2@$(PROTOC_GEN_GO_HTTP_VERSION)
-	cd tools/third_party/protoc-gen-go-errors && $(GO) build -trimpath -o $(TOOLS_BIN)/protoc-gen-go-errors .
-	cd tools/third_party/protoc-gen-go-json && $(GO) build -trimpath -o $(TOOLS_BIN)/protoc-gen-go-json .
+	cd tools/third_party/protoc-gen-go-errors && GOWORK=off GOFLAGS=-mod=readonly $(GO) test ./...
+	cd tools/third_party/protoc-gen-go-errors && GOWORK=off GOFLAGS=-mod=readonly $(GO) build -buildvcs=false -trimpath -o $(TOOLS_BIN)/protoc-gen-go-errors .
+	@test "$$($(TOOLS_BIN)/protoc-gen-go-errors --version)" = "protoc-gen-go-errors v1.0.0" || \
+		(echo "unexpected protoc-gen-go-errors version" >&2; exit 1)
+	cd tools/third_party/protoc-gen-go-json && GOWORK=off GOFLAGS=-mod=readonly $(GO) test ./...
+	cd tools/third_party/protoc-gen-go-json && GOWORK=off GOFLAGS=-mod=readonly $(GO) build -buildvcs=false -trimpath -o $(TOOLS_BIN)/protoc-gen-go-json .
+	@if grep -R -n -E '([[:alnum:]-]+\.)*changbaops\.com' tools/third_party; then \
+		echo "private domain found in vendored tools" >&2; exit 1; \
+	fi
 
 generate: tools
 	@rm -rf gen/kirby
 	@mkdir -p gen
-	PATH="$(TOOLS_BIN):$$PATH" protoc $(PROTO_INCLUDES) \
+	PATH="$(TOOLS_BIN):$$PATH" protoc --fatal_warnings $(PROTO_INCLUDES) \
 		--go_out=paths=source_relative:gen \
 		--go-http_out=paths=source_relative:gen \
 		--validate_out=paths=source_relative,lang=go:gen \
 		--go-json_out=paths=source_relative:gen \
+		--go-json_opt=EmitUnpopulated=true,DiscardUnknown=true \
 		$(MANAGEMENT_PROTO_FILES)
-	PATH="$(TOOLS_BIN):$$PATH" protoc $(PROTO_INCLUDES) \
+	PATH="$(TOOLS_BIN):$$PATH" protoc --fatal_warnings $(PROTO_INCLUDES) \
 		--go_out=paths=source_relative:gen \
 		--go-http_out=paths=source_relative:gen \
 		--go-grpc_out=paths=source_relative:gen \
 		--validate_out=paths=source_relative,lang=go:gen \
 		--go-json_out=paths=source_relative:gen \
+		--go-json_opt=EmitUnpopulated=true,DiscardUnknown=true \
 		$(RUNTIME_PROTO_FILES)
-	PATH="$(TOOLS_BIN):$$PATH" protoc $(PROTO_INCLUDES) \
+	PATH="$(TOOLS_BIN):$$PATH" protoc --fatal_warnings $(PROTO_INCLUDES) \
 		--go-errors_out=paths=source_relative:gen \
 		$(ERROR_PROTO_FILE)
 	$(GO) fmt ./gen/...

@@ -10,7 +10,7 @@ import (
 func (msg *PresignAssetRequest) MarshalJSON() ([]byte, error) {
 	return protojson.MarshalOptions{
 		UseEnumNumbers:  false,
-		EmitUnpopulated: false,
+		EmitUnpopulated: true,
 		UseProtoNames:   false,
 	}.Marshal(msg)
 }
@@ -18,7 +18,7 @@ func (msg *PresignAssetRequest) MarshalJSON() ([]byte, error) {
 // UnmarshalJSON implements json.Unmarshaler
 func (msg *PresignAssetRequest) UnmarshalJSON(b []byte) error {
 	return protojson.UnmarshalOptions{
-		DiscardUnknown: false,
+		DiscardUnknown: true,
 	}.Unmarshal(b, msg)
 }
 
@@ -26,7 +26,7 @@ func (msg *PresignAssetRequest) UnmarshalJSON(b []byte) error {
 func (msg *PresignAssetReply) MarshalJSON() ([]byte, error) {
 	return protojson.MarshalOptions{
 		UseEnumNumbers:  false,
-		EmitUnpopulated: false,
+		EmitUnpopulated: true,
 		UseProtoNames:   false,
 	}.Marshal(msg)
 }
@@ -34,7 +34,7 @@ func (msg *PresignAssetReply) MarshalJSON() ([]byte, error) {
 // UnmarshalJSON implements json.Unmarshaler
 func (msg *PresignAssetReply) UnmarshalJSON(b []byte) error {
 	return protojson.UnmarshalOptions{
-		DiscardUnknown: false,
+		DiscardUnknown: true,
 	}.Unmarshal(b, msg)
 }
 
@@ -42,7 +42,7 @@ func (msg *PresignAssetReply) UnmarshalJSON(b []byte) error {
 func (msg *CompleteAssetRequest) MarshalJSON() ([]byte, error) {
 	return protojson.MarshalOptions{
 		UseEnumNumbers:  false,
-		EmitUnpopulated: false,
+		EmitUnpopulated: true,
 		UseProtoNames:   false,
 	}.Marshal(msg)
 }
@@ -50,7 +50,7 @@ func (msg *CompleteAssetRequest) MarshalJSON() ([]byte, error) {
 // UnmarshalJSON implements json.Unmarshaler
 func (msg *CompleteAssetRequest) UnmarshalJSON(b []byte) error {
 	return protojson.UnmarshalOptions{
-		DiscardUnknown: false,
+		DiscardUnknown: true,
 	}.Unmarshal(b, msg)
 }
 
@@ -58,7 +58,7 @@ func (msg *CompleteAssetRequest) UnmarshalJSON(b []byte) error {
 func (msg *CompleteAssetReply) MarshalJSON() ([]byte, error) {
 	return protojson.MarshalOptions{
 		UseEnumNumbers:  false,
-		EmitUnpopulated: false,
+		EmitUnpopulated: true,
 		UseProtoNames:   false,
 	}.Marshal(msg)
 }
@@ -66,6 +66,6 @@ func (msg *CompleteAssetReply) MarshalJSON() ([]byte, error) {
 // UnmarshalJSON implements json.Unmarshaler
 func (msg *CompleteAssetReply) UnmarshalJSON(b []byte) error {
 	return protojson.UnmarshalOptions{
-		DiscardUnknown: false,
+		DiscardUnknown: true,
 	}.Unmarshal(b, msg)
 }

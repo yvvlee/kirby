@@ -10,7 +10,7 @@ import (
 func (msg *ProjectIDRequest) MarshalJSON() ([]byte, error) {
 	return protojson.MarshalOptions{
 		UseEnumNumbers:  false,
-		EmitUnpopulated: false,
+		EmitUnpopulated: true,
 		UseProtoNames:   false,
 	}.Marshal(msg)
 }
@@ -18,7 +18,7 @@ func (msg *ProjectIDRequest) MarshalJSON() ([]byte, error) {
 // UnmarshalJSON implements json.Unmarshaler
 func (msg *ProjectIDRequest) UnmarshalJSON(b []byte) error {
 	return protojson.UnmarshalOptions{
-		DiscardUnknown: false,
+		DiscardUnknown: true,
 	}.Unmarshal(b, msg)
 }
 
@@ -26,7 +26,7 @@ func (msg *ProjectIDRequest) UnmarshalJSON(b []byte) error {
 func (msg *CreateProjectRequest) MarshalJSON() ([]byte, error) {
 	return protojson.MarshalOptions{
 		UseEnumNumbers:  false,
-		EmitUnpopulated: false,
+		EmitUnpopulated: true,
 		UseProtoNames:   false,
 	}.Marshal(msg)
 }
@@ -34,7 +34,7 @@ func (msg *CreateProjectRequest) MarshalJSON() ([]byte, error) {
 // UnmarshalJSON implements json.Unmarshaler
 func (msg *CreateProjectRequest) UnmarshalJSON(b []byte) error {
 	return protojson.UnmarshalOptions{
-		DiscardUnknown: false,
+		DiscardUnknown: true,
 	}.Unmarshal(b, msg)
 }
 
@@ -42,7 +42,7 @@ func (msg *CreateProjectRequest) UnmarshalJSON(b []byte) error {
 func (msg *UpdateProjectRequest) MarshalJSON() ([]byte, error) {
 	return protojson.MarshalOptions{
 		UseEnumNumbers:  false,
-		EmitUnpopulated: false,
+		EmitUnpopulated: true,
 		UseProtoNames:   false,
 	}.Marshal(msg)
 }
@@ -50,7 +50,7 @@ func (msg *UpdateProjectRequest) MarshalJSON() ([]byte, error) {
 // UnmarshalJSON implements json.Unmarshaler
 func (msg *UpdateProjectRequest) UnmarshalJSON(b []byte) error {
 	return protojson.UnmarshalOptions{
-		DiscardUnknown: false,
+		DiscardUnknown: true,
 	}.Unmarshal(b, msg)
 }
 
@@ -58,7 +58,7 @@ func (msg *UpdateProjectRequest) UnmarshalJSON(b []byte) error {
 func (msg *ListProjectRequest) MarshalJSON() ([]byte, error) {
 	return protojson.MarshalOptions{
 		UseEnumNumbers:  false,
-		EmitUnpopulated: false,
+		EmitUnpopulated: true,
 		UseProtoNames:   false,
 	}.Marshal(msg)
 }
@@ -66,7 +66,7 @@ func (msg *ListProjectRequest) MarshalJSON() ([]byte, error) {
 // UnmarshalJSON implements json.Unmarshaler
 func (msg *ListProjectRequest) UnmarshalJSON(b []byte) error {
 	return protojson.UnmarshalOptions{
-		DiscardUnknown: false,
+		DiscardUnknown: true,
 	}.Unmarshal(b, msg)
 }
 
@@ -74,7 +74,7 @@ func (msg *ListProjectRequest) UnmarshalJSON(b []byte) error {
 func (msg *ProjectReply) MarshalJSON() ([]byte, error) {
 	return protojson.MarshalOptions{
 		UseEnumNumbers:  false,
-		EmitUnpopulated: false,
+		EmitUnpopulated: true,
 		UseProtoNames:   false,
 	}.Marshal(msg)
 }
@@ -82,7 +82,7 @@ func (msg *ProjectReply) MarshalJSON() ([]byte, error) {
 // UnmarshalJSON implements json.Unmarshaler
 func (msg *ProjectReply) UnmarshalJSON(b []byte) error {
 	return protojson.UnmarshalOptions{
-		DiscardUnknown: false,
+		DiscardUnknown: true,
 	}.Unmarshal(b, msg)
 }
 
@@ -90,7 +90,7 @@ func (msg *ProjectReply) UnmarshalJSON(b []byte) error {
 func (msg *ListProjectReply) MarshalJSON() ([]byte, error) {
 	return protojson.MarshalOptions{
 		UseEnumNumbers:  false,
-		EmitUnpopulated: false,
+		EmitUnpopulated: true,
 		UseProtoNames:   false,
 	}.Marshal(msg)
 }
@@ -98,6 +98,6 @@ func (msg *ListProjectReply) MarshalJSON() ([]byte, error) {
 // UnmarshalJSON implements json.Unmarshaler
 func (msg *ListProjectReply) UnmarshalJSON(b []byte) error {
 	return protojson.UnmarshalOptions{
-		DiscardUnknown: false,
+		DiscardUnknown: true,
 	}.Unmarshal(b, msg)
 }
