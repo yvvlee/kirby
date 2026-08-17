@@ -4,6 +4,7 @@ package config
 import (
 	"fmt"
 	"log/slog"
+	"net/netip"
 	"net/url"
 	"path"
 	"strconv"
@@ -150,6 +151,7 @@ type JWTConfig struct {
 type SecurityConfig struct {
 	APIKeyPepper   Secret   `yaml:"api_key_pepper"`
 	AllowedOrigins []string `yaml:"allowed_origins"`
+	TrustedProxies []string `yaml:"trusted_proxies"`
 }
 
 // ObjectStorageConfig selects local or S3-compatible object storage.
@@ -308,7 +310,39 @@ func (c SecurityConfig) validate() error {
 		}
 		seen[origin] = struct{}{}
 	}
+	if c.TrustedProxies == nil {
+		return fmt.Errorf("security.trusted_proxies must be a CIDR list; use [] for direct connections")
+	}
+	if _, err := ParseTrustedProxyCIDRs(c.TrustedProxies); err != nil {
+		return err
+	}
 	return nil
+}
+
+// ParseTrustedProxyCIDRs validates and parses the exact proxy networks trusted
+// to append X-Forwarded-For. An empty list means requests arrive directly.
+func ParseTrustedProxyCIDRs(values []string) ([]netip.Prefix, error) {
+	prefixes := make([]netip.Prefix, 0, len(values))
+	seen := make(map[netip.Prefix]struct{}, len(values))
+	for _, value := range values {
+		if value == "" || strings.TrimSpace(value) != value {
+			return nil, fmt.Errorf("security.trusted_proxies contains an empty or whitespace-padded CIDR")
+		}
+		prefix, err := netip.ParsePrefix(value)
+		if err != nil || !prefix.IsValid() || prefix.Addr().Zone() != "" || prefix.Addr().Is4In6() {
+			return nil, fmt.Errorf("security.trusted_proxies contains invalid CIDR %q", value)
+		}
+		masked := prefix.Masked()
+		if prefix != masked || value != masked.String() {
+			return nil, fmt.Errorf("security.trusted_proxies contains non-canonical CIDR %q", value)
+		}
+		if _, exists := seen[masked]; exists {
+			return nil, fmt.Errorf("security.trusted_proxies contains duplicate CIDR %q", value)
+		}
+		seen[masked] = struct{}{}
+		prefixes = append(prefixes, masked)
+	}
+	return prefixes, nil
 }
 
 func validateOrigin(origin string) error {

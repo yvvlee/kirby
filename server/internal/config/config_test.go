@@ -70,6 +70,16 @@ func TestSecuritySettingsAreRequired(t *testing.T) {
 			content: strings.Replace(validConfig("single", "memory", "local"), "  allowed_origins:\n    - \"https://kirby.example.com\"\n", "", 1),
 			want:    "security.allowed_origins",
 		},
+		{
+			name:    "missing trusted proxies",
+			content: strings.Replace(validConfig("single", "memory", "local"), "  trusted_proxies: []\n", "", 1),
+			want:    "security.trusted_proxies",
+		},
+		{
+			name:    "null trusted proxies",
+			content: strings.Replace(validConfig("single", "memory", "local"), "trusted_proxies: []", "trusted_proxies: null", 1),
+			want:    "security.trusted_proxies",
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -117,6 +127,51 @@ func TestAllowedOriginsAcceptHTTPAndExplicitPort(t *testing.T) {
 	)
 	_, err := LoadFile(writeConfig(t, content))
 	require.NoError(t, err)
+}
+
+func TestTrustedProxiesAreStrictCanonicalCIDRs(t *testing.T) {
+	base := validConfig("single", "memory", "local")
+	for _, value := range []string{
+		`"10.0.0.1"`,
+		`" 10.0.0.0/8"`,
+		`"10.0.0.1/8"`,
+		`"010.0.0.0/8"`,
+		`"::ffff:10.0.0.0/120"`,
+	} {
+		t.Run(value, func(t *testing.T) {
+			content := strings.Replace(base, "  trusted_proxies: []", "  trusted_proxies:\n    - "+value, 1)
+			_, err := LoadFile(writeConfig(t, content))
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "security.trusted_proxies")
+		})
+	}
+
+	duplicate := strings.Replace(
+		base,
+		"  trusted_proxies: []",
+		"  trusted_proxies:\n    - \"10.0.0.0/8\"\n    - \"10.0.0.0/8\"",
+		1,
+	)
+	_, err := LoadFile(writeConfig(t, duplicate))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "duplicate CIDR")
+}
+
+func TestTrustedProxiesAllowEmptyAndExactNetworks(t *testing.T) {
+	content := strings.Replace(
+		validConfig("single", "memory", "local"),
+		"  trusted_proxies: []",
+		"  trusted_proxies:\n    - \"10.0.0.0/8\"\n    - \"2001:db8::/32\"",
+		1,
+	)
+	cfg, err := LoadFile(writeConfig(t, content))
+	require.NoError(t, err)
+	assert.Equal(t, []string{"10.0.0.0/8", "2001:db8::/32"}, cfg.Security.TrustedProxies)
+
+	cfg, err = LoadFile(writeConfig(t, validConfig("single", "memory", "local")))
+	require.NoError(t, err)
+	assert.NotNil(t, cfg.Security.TrustedProxies)
+	assert.Empty(t, cfg.Security.TrustedProxies)
 }
 
 func TestLoadFileRejectsMultipleDocuments(t *testing.T) {
@@ -313,6 +368,7 @@ security:
   api_key_pepper: "01234567890123456789012345678901"
   allowed_origins:
     - "https://kirby.example.com"
+  trusted_proxies: []
 object_storage:
   driver: %s
   local:

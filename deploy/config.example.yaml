@@ -32,11 +32,12 @@ jwt:
   keys:
     change-me-primary: "CHANGE_ME_JWT_KEY"
 
-# Every server instance must use the same API key pepper and origin list.
+# Every server instance must use the same API key pepper, origin list, and proxy list.
 security:
   api_key_pepper: "CHANGE_ME_API_KEY_PEPPER"
   allowed_origins:
     - "https://kirby.example.invalid"
+  trusted_proxies: []
 
 object_storage:
   driver: s3

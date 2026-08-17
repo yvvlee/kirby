@@ -3,6 +3,7 @@ package auth
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"sync"
@@ -16,6 +17,7 @@ import (
 	adminv1 "github.com/yvvlee/kirby/server/gen/kirby/admin/v1"
 	"github.com/yvvlee/kirby/server/internal/auth/password"
 	authsession "github.com/yvvlee/kirby/server/internal/auth/session"
+	adminmiddleware "github.com/yvvlee/kirby/server/internal/middleware"
 	"github.com/yvvlee/kirby/server/internal/model"
 	"github.com/yvvlee/kirby/server/internal/repository"
 	"github.com/yvvlee/kirby/server/internal/storage/cache"
@@ -185,6 +187,10 @@ func (t *httpTransport) Request() *http.Request          { return t.request }
 func (*httpTransport) PathTemplate() string              { return "/auth/test" }
 
 func testService(t *testing.T) (*Service, *fakeUsers, *fakeRefreshTokens) {
+	return testServiceWithTrustedProxies(t, nil)
+}
+
+func testServiceWithTrustedProxies(t *testing.T, trustedProxies []string) (*Service, *fakeUsers, *fakeRefreshTokens) {
 	t.Helper()
 	hasher, err := password.New(password.Params{MemoryKiB: 8 * 1024, Iterations: 1, Parallelism: 1, SaltLength: 16, KeyLength: 32})
 	if err != nil {
@@ -202,7 +208,11 @@ func testService(t *testing.T) (*Service, *fakeUsers, *fakeRefreshTokens) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := newService(users, refresh, cache.NewMemory(), hasher, fakeTokens{ttl: 15 * time.Minute}, origins, 7*24*time.Hour, time.Now)
+	clientIPs, err := adminmiddleware.NewClientIPResolver(trustedProxies)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := newService(users, refresh, cache.NewMemory(), hasher, fakeTokens{ttl: 15 * time.Minute}, origins, clientIPs, 7*24*time.Hour, time.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,6 +261,62 @@ func TestLoginFailureIsUniformAndRateLimited(t *testing.T) {
 	_, err := service.Login(ctx, wrong)
 	if got := kratoserrors.FromError(err).Code; got != http.StatusTooManyRequests {
 		t.Fatalf("rate-limited login status = %d", got)
+	}
+}
+
+func TestLoginRateLimitIgnoresForgedForwardedHeader(t *testing.T) {
+	service, _, _ := testService(t)
+	ctx, requestTransport := requestContext(http.MethodPost, "https://kirby.example.com", "")
+	request := &adminv1.LoginRequest{Username: "alice", Password: "wrong"}
+	for attempt := 1; attempt <= loginAttemptLimit; attempt++ {
+		requestTransport.request.Header.Set("X-Forwarded-For", fmt.Sprintf("198.51.100.%d", attempt))
+		_, err := service.Login(ctx, request)
+		if code := kratoserrors.FromError(err).Code; code != http.StatusUnauthorized {
+			t.Fatalf("attempt %d status = %d", attempt, code)
+		}
+	}
+	requestTransport.request.Header.Set("X-Forwarded-For", "203.0.113.200")
+	_, err := service.Login(ctx, request)
+	if code := kratoserrors.FromError(err).Code; code != http.StatusTooManyRequests {
+		t.Fatalf("forged header bypassed rate limit: status=%d", code)
+	}
+}
+
+func TestLoginRateLimitUsesResolvedClientBehindTrustedProxy(t *testing.T) {
+	service, _, _ := testServiceWithTrustedProxies(t, []string{"10.0.0.0/8"})
+	ctx, requestTransport := requestContext(http.MethodPost, "https://kirby.example.com", "")
+	requestTransport.request.RemoteAddr = "10.0.0.2:443"
+	request := &adminv1.LoginRequest{Username: "alice", Password: "wrong"}
+	requestTransport.request.Header.Set("X-Forwarded-For", "198.51.100.10")
+	for attempt := 1; attempt <= loginAttemptLimit; attempt++ {
+		_, err := service.Login(ctx, request)
+		if code := kratoserrors.FromError(err).Code; code != http.StatusUnauthorized {
+			t.Fatalf("attempt %d status = %d", attempt, code)
+		}
+	}
+
+	requestTransport.request.Header.Set("X-Forwarded-For", "198.51.100.11")
+	_, err := service.Login(ctx, request)
+	if code := kratoserrors.FromError(err).Code; code != http.StatusUnauthorized {
+		t.Fatalf("independent proxy client status = %d", code)
+	}
+}
+
+func TestLoginFailsWhenTrustedProxyOmitsOrCorruptsForwardedHeader(t *testing.T) {
+	for _, forwarded := range []string{"", "not-an-ip"} {
+		t.Run(forwarded, func(t *testing.T) {
+			service, _, _ := testServiceWithTrustedProxies(t, []string{"10.0.0.0/8"})
+			ctx, requestTransport := requestContext(http.MethodPost, "https://kirby.example.com", "")
+			requestTransport.request.RemoteAddr = "10.0.0.2:443"
+			if forwarded != "" {
+				requestTransport.request.Header.Set("X-Forwarded-For", forwarded)
+			}
+			_, err := service.Login(ctx, &adminv1.LoginRequest{Username: "alice", Password: "wrong"})
+			kratosErr := kratoserrors.FromError(err)
+			if kratosErr.Code != http.StatusBadRequest || kratosErr.Message != "client address is invalid" {
+				t.Fatalf("unexpected proxy header error: %+v", kratosErr)
+			}
+		})
 	}
 }
 

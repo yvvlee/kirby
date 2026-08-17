@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -66,6 +65,7 @@ type Service struct {
 	passwords  passwordHasher
 	tokens     accessTokenManager
 	origins    *authsession.OriginValidator
+	clientIPs  *adminmiddleware.ClientIPResolver
 	refreshTTL time.Duration
 	dummyHash  string
 	now        func() time.Time
@@ -90,10 +90,14 @@ func New(cfg *config.Config, users UserRepository, refresh RefreshTokenRepositor
 	if err != nil {
 		return nil, err
 	}
+	clientIPs, err := adminmiddleware.NewClientIPResolver(cfg.Security.TrustedProxies)
+	if err != nil {
+		return nil, err
+	}
 	if cfg.JWT.RefreshTTL.Duration != refreshTokenTTL {
 		return nil, fmt.Errorf("refresh TTL must be %s", refreshTokenTTL)
 	}
-	return newService(users, refresh, cacheStore, hasher, tokens, origins, cfg.JWT.RefreshTTL.Duration, time.Now)
+	return newService(users, refresh, cacheStore, hasher, tokens, origins, clientIPs, cfg.JWT.RefreshTTL.Duration, time.Now)
 }
 
 func newService(
@@ -103,10 +107,11 @@ func newService(
 	hasher passwordHasher,
 	tokens accessTokenManager,
 	origins *authsession.OriginValidator,
+	clientIPs *adminmiddleware.ClientIPResolver,
 	refreshTTL time.Duration,
 	now func() time.Time,
 ) (*Service, error) {
-	if users == nil || refresh == nil || cacheStore == nil || hasher == nil || tokens == nil || origins == nil || now == nil {
+	if users == nil || refresh == nil || cacheStore == nil || hasher == nil || tokens == nil || origins == nil || clientIPs == nil || now == nil {
 		return nil, fmt.Errorf("authentication dependencies are incomplete")
 	}
 	if refreshTTL <= tokens.AccessTTL() {
@@ -118,7 +123,7 @@ func newService(
 	}
 	return &Service{
 		users: users, refresh: refresh, cache: cacheStore, passwords: hasher, tokens: tokens,
-		origins: origins, refreshTTL: refreshTTL, dummyHash: dummyHash, now: now,
+		origins: origins, clientIPs: clientIPs, refreshTTL: refreshTTL, dummyHash: dummyHash, now: now,
 	}, nil
 }
 
@@ -137,7 +142,11 @@ func (s *Service) Login(ctx context.Context, request *adminv1.LoginRequest) (*ad
 	if username == "" || request.Password == "" {
 		return nil, authenticationFailed()
 	}
-	limitKey := loginRateKey(username, clientIP(httpRequest))
+	clientAddress, err := s.clientIPs.Resolve(httpRequest)
+	if err != nil {
+		return nil, errorsv1.ErrorBadRequest("client address is invalid")
+	}
+	limitKey := loginRateKey(username, clientAddress.String())
 	attempts, err := s.cache.Increment(ctx, limitKey, loginAttemptWindow)
 	if err != nil {
 		return nil, errorsv1.ErrorInternal("authentication is unavailable")
@@ -345,17 +354,6 @@ func formatTime(value time.Time) string {
 func loginRateKey(username, ip string) string {
 	sum := sha256.Sum256([]byte(strings.ToLower(strings.TrimSpace(username)) + "\x00" + ip))
 	return "auth:login:" + fmt.Sprintf("%x", sum[:])
-}
-
-func clientIP(request *http.Request) string {
-	if request == nil {
-		return "unknown"
-	}
-	host, _, err := net.SplitHostPort(request.RemoteAddr)
-	if err == nil && host != "" {
-		return host
-	}
-	return request.RemoteAddr
 }
 
 func requestUsesHTTPS(request *http.Request) bool {
