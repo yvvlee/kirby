@@ -16,8 +16,8 @@ import (
 const redacted = "[REDACTED]"
 
 var (
-	jsonSecretPattern = regexp.MustCompile(`(?i)("(?:password|passwd|authorization|cookie|access_token|refresh_token|jwt|api_key|secret|signature)"\s*:\s*")[^"]*(")`)
-	keyValuePattern   = regexp.MustCompile(`(?i)(\b(?:password|passwd|authorization|cookie|access_token|refresh_token|jwt|api_key|secret|signature)\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,&]+)`)
+	jsonSecretPattern = regexp.MustCompile(`(?i)("(?:password|passwd|authorization|cookie|access_token|refresh_token|jwt|api_key_pepper|api_key|secret|signature)"\s*:\s*")[^"]*(")`)
+	keyValuePattern   = regexp.MustCompile(`(?i)(\b(?:password|passwd|authorization|cookie|access_token|refresh_token|jwt|api_key_pepper|api_key|secret|signature)\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,&]+)`)
 	bearerPattern     = regexp.MustCompile(`(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+`)
 	jwtPattern        = regexp.MustCompile(`\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b`)
 	signedURLPattern  = regexp.MustCompile(`(?i)(X-Amz-(?:Signature|Credential|Security-Token)=)[^&\s]+`)
@@ -28,7 +28,7 @@ var sensitiveKeys = map[string]struct{}{
 	"authorization": {}, "proxyauthorization": {},
 	"cookie": {}, "setcookie": {},
 	"token": {}, "accesstoken": {}, "refreshtoken": {}, "jwt": {},
-	"apikey": {}, "secret": {}, "clientsecret": {}, "signingkey": {},
+	"apikey": {}, "apikeypepper": {}, "secret": {}, "clientsecret": {}, "signingkey": {},
 	"signature": {}, "dsn": {}, "accesskey": {}, "secretkey": {},
 	"body": {}, "requestbody": {}, "responsebody": {}, "payload": {}, "rawrequest": {},
 }

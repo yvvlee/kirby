@@ -17,10 +17,11 @@ func TestLoggerRedactsSensitiveFieldsAndMessageText(t *testing.T) {
 	require.NoError(t, err)
 
 	logger.Info(
-		`request failed: {"password":"message-password","name":"alice"} authorization=message-token X-Amz-Signature=signed-value`,
+		`request failed: {"password":"message-password","name":"alice"} authorization=message-token api_key_pepper=message-pepper X-Amz-Signature=signed-value`,
 		"password", "attribute-password",
 		"authorization", "Bearer attribute-token",
 		"cookie", "kirby_session=cookie-secret",
+		"api_key_pepper", "shared-pepper-secret",
 		"request_body", []byte(`{"secret":"body-secret"}`),
 		"safe", "Bearer embedded-token",
 		slog.Group("credentials", "api_key", "key-value", "name", "visible"),
@@ -28,8 +29,8 @@ func TestLoggerRedactsSensitiveFieldsAndMessageText(t *testing.T) {
 
 	logged := output.String()
 	for _, secret := range []string{
-		"message-password", "message-token", "signed-value", "attribute-password",
-		"attribute-token", "cookie-secret", "body-secret", "embedded-token", "key-value",
+		"message-password", "message-token", "message-pepper", "signed-value", "attribute-password",
+		"attribute-token", "cookie-secret", "shared-pepper-secret", "body-secret", "embedded-token", "key-value",
 	} {
 		assert.NotContains(t, logged, secret)
 	}

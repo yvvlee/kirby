@@ -43,6 +43,76 @@ func TestLoadFileRejectsMissingRequiredField(t *testing.T) {
 	assert.Contains(t, err.Error(), "mysql.dsn is required")
 }
 
+func TestSecuritySettingsAreRequired(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    string
+	}{
+		{
+			name:    "missing pepper",
+			content: strings.Replace(validConfig("single", "memory", "local"), "  api_key_pepper: \"01234567890123456789012345678901\"\n", "", 1),
+			want:    "security.api_key_pepper",
+		},
+		{
+			name:    "short pepper",
+			content: strings.Replace(validConfig("single", "memory", "local"), "api_key_pepper: \"01234567890123456789012345678901\"", "api_key_pepper: \"too-short\"", 1),
+			want:    "at least 32 bytes",
+		},
+		{
+			name:    "missing origins",
+			content: strings.Replace(validConfig("single", "memory", "local"), "  allowed_origins:\n    - \"https://kirby.example.com\"\n", "", 1),
+			want:    "security.allowed_origins",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := LoadFile(writeConfig(t, test.content))
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), test.want)
+		})
+	}
+}
+
+func TestAllowedOriginsMustBeExactHTTPOrigins(t *testing.T) {
+	tests := []string{
+		"*",
+		"https://*.example.com",
+		"ftp://kirby.example.com",
+		"https://kirby.example.com/",
+		"https://kirby.example.com/path",
+		"https://kirby.example.com?query=value",
+		"https://kirby.example.com#fragment",
+		"https://kirby.example.com#",
+		"https://kirby.example.com:70000",
+		"https://user@kirby.example.com",
+	}
+	for _, origin := range tests {
+		t.Run(origin, func(t *testing.T) {
+			content := strings.Replace(
+				validConfig("single", "memory", "local"),
+				"https://kirby.example.com",
+				origin,
+				1,
+			)
+			_, err := LoadFile(writeConfig(t, content))
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "security.allowed_origins")
+		})
+	}
+}
+
+func TestAllowedOriginsAcceptHTTPAndExplicitPort(t *testing.T) {
+	content := strings.Replace(
+		validConfig("single", "memory", "local"),
+		"https://kirby.example.com",
+		"http://localhost:8080",
+		1,
+	)
+	_, err := LoadFile(writeConfig(t, content))
+	require.NoError(t, err)
+}
+
 func TestLoadFileRejectsMultipleDocuments(t *testing.T) {
 	path := writeConfig(t, validConfig("single", "memory", "local")+"---\nmode: single\n")
 	_, err := LoadFile(path)
@@ -133,6 +203,10 @@ jwt:
   refresh_ttl: 168h
   keys:
     primary: "01234567890123456789012345678901"
+security:
+  api_key_pepper: "01234567890123456789012345678901"
+  allowed_origins:
+    - "https://kirby.example.com"
 object_storage:
   driver: %s
   local:

@@ -4,6 +4,8 @@ package config
 import (
 	"fmt"
 	"log/slog"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -100,6 +102,7 @@ type Config struct {
 	MySQL         MySQLConfig         `yaml:"mysql"`
 	Cache         CacheConfig         `yaml:"cache"`
 	JWT           JWTConfig           `yaml:"jwt"`
+	Security      SecurityConfig      `yaml:"security"`
 	ObjectStorage ObjectStorageConfig `yaml:"object_storage"`
 	Log           LogConfig           `yaml:"log"`
 }
@@ -140,6 +143,12 @@ type JWTConfig struct {
 	AccessTTL  Duration          `yaml:"access_ttl"`
 	RefreshTTL Duration          `yaml:"refresh_ttl"`
 	Keys       map[string]Secret `yaml:"keys"`
+}
+
+// SecurityConfig contains secrets and browser origins shared by every instance.
+type SecurityConfig struct {
+	APIKeyPepper   Secret   `yaml:"api_key_pepper"`
+	AllowedOrigins []string `yaml:"allowed_origins"`
 }
 
 // ObjectStorageConfig selects local or S3-compatible object storage.
@@ -197,6 +206,9 @@ func (c Config) Validate() error {
 		return err
 	}
 	if err := c.JWT.validate(); err != nil {
+		return err
+	}
+	if err := c.Security.validate(); err != nil {
 		return err
 	}
 	if err := c.ObjectStorage.validate(); err != nil {
@@ -270,6 +282,61 @@ func (c JWTConfig) validate() error {
 	for kid, value := range c.Keys {
 		if strings.TrimSpace(kid) == "" || len(value.Value()) < 32 {
 			return fmt.Errorf("each JWT key must have a non-empty id and at least 32 bytes")
+		}
+	}
+	return nil
+}
+
+func (c SecurityConfig) validate() error {
+	if len(c.APIKeyPepper.Value()) < 32 {
+		return fmt.Errorf("security.api_key_pepper must contain at least 32 bytes")
+	}
+	if len(c.AllowedOrigins) == 0 {
+		return fmt.Errorf("security.allowed_origins must contain at least one origin")
+	}
+	seen := make(map[string]struct{}, len(c.AllowedOrigins))
+	for _, origin := range c.AllowedOrigins {
+		if err := validateOrigin(origin); err != nil {
+			return fmt.Errorf("security.allowed_origins contains invalid origin %q: %w", origin, err)
+		}
+		if _, exists := seen[origin]; exists {
+			return fmt.Errorf("security.allowed_origins contains duplicate origin %q", origin)
+		}
+		seen[origin] = struct{}{}
+	}
+	return nil
+}
+
+func validateOrigin(origin string) error {
+	if strings.TrimSpace(origin) != origin || origin == "" {
+		return fmt.Errorf("origin cannot be empty or contain surrounding whitespace")
+	}
+	if strings.Contains(origin, "*") {
+		return fmt.Errorf("wildcards are not allowed")
+	}
+	parsed, err := url.Parse(origin)
+	if err != nil {
+		return fmt.Errorf("parse origin: %w", err)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return fmt.Errorf("scheme must be http or https")
+	}
+	if parsed.Host == "" || parsed.Hostname() == "" {
+		return fmt.Errorf("host is required")
+	}
+	if parsed.User != nil {
+		return fmt.Errorf("user information is not allowed")
+	}
+	if origin != parsed.Scheme+"://"+parsed.Host || parsed.Path != "" || parsed.RawPath != "" || parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" {
+		return fmt.Errorf("path, query, and fragment are not allowed")
+	}
+	if strings.HasSuffix(parsed.Host, ":") {
+		return fmt.Errorf("port cannot be empty")
+	}
+	if port := parsed.Port(); port != "" {
+		value, err := strconv.Atoi(port)
+		if err != nil || value < 1 || value > 65535 {
+			return fmt.Errorf("port must be between 1 and 65535")
 		}
 	}
 	return nil

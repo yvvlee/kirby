@@ -32,6 +32,12 @@ jwt:
   keys:
     change-me-primary: "CHANGE_ME_WITH_AT_LEAST_32_RANDOM_BYTES"
 
+# Every server instance must use the same API key pepper and origin list.
+security:
+  api_key_pepper: "CHANGE_ME_WITH_AT_LEAST_32_RANDOM_BYTES"
+  allowed_origins:
+    - "https://kirby.example.invalid"
+
 object_storage:
   driver: s3
   local:
