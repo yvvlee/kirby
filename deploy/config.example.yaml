@@ -3,7 +3,9 @@ mode: multi
 
 http:
   address: ":8000"
-  timeout: 10s
+  # S3 complete streams up to 64 MiB through the server while publishing an
+  # immutable object. Keep this above the measured worst-case internal copy time.
+  timeout: 2m
 
 grpc:
   address: ":9000"

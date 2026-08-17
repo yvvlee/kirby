@@ -35,3 +35,8 @@ when the bucket already has lifecycle rules. Verify both controls after changes:
 aws s3api get-bucket-policy --bucket kirby
 aws s3api get-bucket-lifecycle-configuration --bucket kirby
 ```
+
+Completing an S3 upload streams at most 64 MiB from the private upload key to
+the immutable public key. Measure this path in the deployment network. Set
+`http.timeout` above the observed worst-case copy time. The example uses two
+minutes; do not reduce it to a value that truncates valid uploads.
