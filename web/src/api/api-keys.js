@@ -28,9 +28,44 @@ function scopeBody(environmentId, projectId, value = {}) {
   }
 }
 
+function normalizeProjectApiKey(value) {
+  if (!value || typeof value !== 'object') {
+    return value
+  }
+  return {
+    ...value,
+    publicId: value.public_id,
+    secretSuffix: value.secret_suffix,
+    createdBy: value.created_by,
+    createdAt: value.created_at,
+    lastUsedAt: value.last_used_at,
+    revokedAt: value.revoked_at,
+  }
+}
+
+function normalizeListReply(value) {
+  if (!Array.isArray(value?.list)) {
+    return value
+  }
+  return {
+    ...value,
+    list: value.list.map(normalizeProjectApiKey),
+  }
+}
+
+function normalizeSecretReply(value) {
+  if (!value || typeof value !== 'object') {
+    return value
+  }
+  return {
+    ...value,
+    apiKey: normalizeProjectApiKey(value.api_key),
+  }
+}
+
 export async function listProjectApiKeys(environmentId, projectId) {
   const { data } = await client.get(scopePath(environmentId, projectId))
-  return data
+  return normalizeListReply(data)
 }
 
 export async function createProjectApiKey(environmentId, projectId, name) {
@@ -41,7 +76,7 @@ export async function createProjectApiKey(environmentId, projectId, name) {
     scopePath(environmentId, projectId),
     scopeBody(environmentId, projectId, { name }),
   )
-  return data
+  return normalizeSecretReply(data)
 }
 
 export async function rotateProjectApiKey(
@@ -55,7 +90,7 @@ export async function rotateProjectApiKey(
       key_id: Number(positiveId('keyId', keyId)),
     }),
   )
-  return data
+  return normalizeSecretReply(data)
 }
 
 export async function revokeProjectApiKey(

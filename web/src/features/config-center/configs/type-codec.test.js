@@ -11,7 +11,7 @@ import {
 
 describe('configuration type codec', () => {
   it('converts protobuf enum names to the editor format and back', () => {
-    expect(toEditorType({ baseType: 'DATETIME_RANGE' })).toEqual({
+    expect(toEditorType({ base_type: 'DATETIME_RANGE' })).toEqual({
       baseType: 'DatetimeRange',
     })
     expect(toApiType({ baseType: 'DatetimeRange' })).toEqual({
@@ -30,27 +30,33 @@ describe('configuration type codec', () => {
     expect(
       normalizeModel({
         key: 'User',
-        fields: [{ key: 'name', type: { baseType: 'STRING' } }],
-      }).fields[0].type,
-    ).toEqual({ baseType: 'String' })
+        fields: [
+          {
+            key: 'name',
+            is_array: true,
+            type: { base_type: 'STRING' },
+          },
+        ],
+      }).fields[0],
+    ).toMatchObject({ isArray: true, type: { baseType: 'String' } })
 
     expect(
       normalizeTree({
-        value: { key: 'root', type: { structureKey: 'User' } },
+        value: { key: 'root', type: { structure_key: 'User' } },
         children: [
-          { value: { key: 'active', type: { baseType: 'BOOLEAN' } } },
+          { value: { key: 'active', type: { base_type: 'BOOLEAN' } } },
         ],
       }).children[0].value.type,
     ).toEqual({ baseType: 'Boolean' })
   })
 
   it('fails on unknown and malformed types', () => {
-    expect(() => toEditorType({ baseType: 'MONEY' })).toThrow(
+    expect(() => toEditorType({ base_type: 'MONEY' })).toThrow(
       '不支持的 API 基本类型: MONEY',
     )
     expect(() => parseEditorType('{')).toThrow('字段类型不是合法 JSON')
     expect(() => stringifyEditorType({})).toThrow(
-      '字段类型没有 baseType、structureKey 或 enumKey',
+      '字段类型没有 base_type、structure_key 或 enum_key',
     )
   })
 })

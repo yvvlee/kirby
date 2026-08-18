@@ -80,8 +80,8 @@ beforeEach(() => {
       id: 31,
       key: 'FeatureFlags',
       description: 'Flags',
-      type: { baseType: 'STRING' },
-      isArray: false,
+      type: { base_type: 'STRING' },
+      is_array: false,
       value: '"enabled"',
       version: 3,
     },
@@ -89,7 +89,7 @@ beforeEach(() => {
       value: {
         key: 'FeatureFlags',
         name: 'Flags',
-        type: { baseType: 'STRING' },
+        type: { base_type: 'STRING' },
       },
     },
   })
@@ -180,7 +180,7 @@ describe('core configuration pages', () => {
             {
               id: 41,
               key: 'User',
-              fields: [{ key: 'name', type: { baseType: 'STRING' } }],
+              fields: [{ key: 'name', type: { base_type: 'STRING' } }],
             },
           ],
         })
@@ -197,6 +197,7 @@ describe('core configuration pages', () => {
     expect(configApi.getConfig).toHaveBeenCalledWith(11, 31)
     expect(wrapper.vm.models[0].fields[0].type).toEqual({ baseType: 'String' })
     expect(wrapper.vm.tree.value.type).toEqual({ baseType: 'String' })
+    expect(wrapper.vm.typeLabel).toBe('String')
     expect(wrapper.vm.previewValue).toBe('"enabled"')
   })
 

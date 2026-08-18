@@ -32,20 +32,20 @@ function requireType(type) {
 
 export function toEditorType(type) {
   type = requireType(type)
-  if (type.baseType) {
-    const baseType = API_TO_EDITOR_BASE_TYPE[type.baseType]
+  if (type.base_type) {
+    const baseType = API_TO_EDITOR_BASE_TYPE[type.base_type]
     if (!baseType) {
-      throw new Error(`不支持的 API 基本类型: ${type.baseType}`)
+      throw new Error(`不支持的 API 基本类型: ${type.base_type}`)
     }
     return { baseType }
   }
-  if (type.structureKey) {
-    return { structureKey: type.structureKey }
+  if (type.structure_key) {
+    return { structureKey: type.structure_key }
   }
-  if (type.enumKey) {
-    return { enumKey: type.enumKey }
+  if (type.enum_key) {
+    return { enumKey: type.enum_key }
   }
-  throw new Error('字段类型没有 baseType、structureKey 或 enumKey')
+  throw new Error('字段类型没有 base_type、structure_key 或 enum_key')
 }
 
 export function toApiType(type) {
@@ -72,7 +72,7 @@ export function normalizeField(field) {
   }
   return {
     ...field,
-    isArray: Boolean(field.isArray),
+    isArray: Boolean(field.is_array),
     type: toEditorType(field.type),
   }
 }
