@@ -23,5 +23,6 @@ func TestServeUsesConfigFlag(t *testing.T) {
 	command.SetArgs([]string{"serve", "--help"})
 	require.NoError(t, command.Execute())
 	require.Contains(t, stdout.String(), "--config")
+	require.Contains(t, stdout.String(), "--web-root")
 	require.NotContains(t, stdout.String(), "--http-address")
 }

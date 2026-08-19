@@ -57,5 +57,5 @@ POST /admin/environments/{target_environment_id}/snapshot-imports
 ```
 
 Both endpoints use the administrator bearer token. The protobuf source in
-`api/kirby/admin/v1/snapshot_transfer.proto` is the request and response source
+`server/api/admin/snapshot_transfer.proto` is the request and response source
 of truth.

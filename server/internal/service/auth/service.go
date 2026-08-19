@@ -15,9 +15,9 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/types/known/emptypb"
 
-	adminv1 "github.com/yvvlee/kirby/server/gen/kirby/admin/v1"
-	commonv1 "github.com/yvvlee/kirby/server/gen/kirby/common/v1"
-	errorsv1 "github.com/yvvlee/kirby/server/gen/kirby/errors/v1"
+	adminv1 "github.com/yvvlee/kirby/server/api/admin"
+	commonv1 "github.com/yvvlee/kirby/server/api/common"
+	errorsv1 "github.com/yvvlee/kirby/server/api/errors"
 	authjwt "github.com/yvvlee/kirby/server/internal/auth/jwt"
 	"github.com/yvvlee/kirby/server/internal/auth/password"
 	authsession "github.com/yvvlee/kirby/server/internal/auth/session"

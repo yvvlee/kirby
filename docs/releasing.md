@@ -1,7 +1,7 @@
 # Releasing
 
 Kirby releases are created only from signed annotated semantic-version tags.
-The release workflow publishes Linux binaries, two multi-platform images,
+The release workflow publishes Linux binaries, one multi-platform image,
 checksums, CycloneDX SBOMs, provenance attestations, Sigstore bundles, and
 generated release notes.
 
@@ -42,16 +42,14 @@ The GitHub release contains:
 
 - `kirby-vX.Y.Z-linux-amd64` and `kirby-vX.Y.Z-linux-arm64`;
 - `SHA256SUMS` covering the binaries and attached SBOM files;
-- source, frontend, server-image, and web-image CycloneDX SBOMs;
+- source, frontend, and release-image CycloneDX SBOMs;
 - one `.sigstore.json` bundle for every attached artifact.
 
 The image packages are:
 
 ```text
-ghcr.io/OWNER/kirby-server:vX.Y.Z
-ghcr.io/OWNER/kirby-server:sha-FULL_GIT_SHA
-ghcr.io/OWNER/kirby-web:vX.Y.Z
-ghcr.io/OWNER/kirby-web:sha-FULL_GIT_SHA
+ghcr.io/OWNER/kirby:vX.Y.Z
+ghcr.io/OWNER/kirby:sha-FULL_GIT_SHA
 ```
 
 Each image tag is an amd64/arm64 manifest. BuildKit attaches per-platform SBOM
@@ -84,7 +82,7 @@ cosign verify \
   --certificate-identity \
   'https://github.com/OWNER/kirby/.github/workflows/release.yml@refs/tags/v0.1.0' \
   --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
-  ghcr.io/OWNER/kirby-server@sha256:IMAGE_MANIFEST_DIGEST
+  ghcr.io/OWNER/kirby@sha256:IMAGE_MANIFEST_DIGEST
 ```
 
 GitHub provenance for release files can also be verified with:

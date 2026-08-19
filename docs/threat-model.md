@@ -9,13 +9,12 @@ or deployment credentials.
 
 ## Trust boundaries
 
-1. A browser crosses the public HTTP boundary at the reverse proxy.
-2. The proxy crosses the private HTTP or gRPC boundary to a stateless server.
-3. The server crosses authenticated boundaries to MySQL, Redis, and object
+1. A browser crosses the public HTTP boundary at the Kirby process.
+2. The Kirby process crosses authenticated boundaries to MySQL, Redis, and object
    storage.
-4. A runtime client crosses a separate HTTP or gRPC boundary using a project API
+3. A runtime client crosses a separate HTTP or gRPC boundary using a project API
    key.
-5. Build workers cross public dependency and container-registry boundaries.
+4. Build workers cross public dependency and container-registry boundaries.
 
 The browser, request headers, route IDs, filenames, object keys, imported JSON,
 and runtime project/config keys are untrusted. MySQL is authoritative for
@@ -46,9 +45,8 @@ is shared acceleration and rate-limit state, not an authorization authority.
   trusted administrators and are not exposed directly to untrusted networks.
 - Server memory can contain active credentials. Host or process compromise is
   outside the application's containment boundary.
-- Vue 2 and its compiler have known low or moderate advisories. They remain a
-  maintenance risk until the frontend is migrated without breaking the current
-  application contract.
+- Formily's dependency declarations still target older React type shapes.
+  Runtime compatibility is covered by focused Formily and browser tests.
 - Fixed-window limits constrain abuse but are not a complete denial-of-service
   defense. The ingress still needs connection, body-size, and global traffic
   controls.

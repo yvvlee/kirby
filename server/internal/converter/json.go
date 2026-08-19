@@ -6,7 +6,7 @@ import (
 
 	"google.golang.org/protobuf/encoding/protojson"
 
-	commonv1 "github.com/yvvlee/kirby/server/gen/kirby/common/v1"
+	commonv1 "github.com/yvvlee/kirby/server/api/common"
 )
 
 func EncodeFieldType(value *commonv1.Field_Type) (string, error) {

@@ -3,15 +3,14 @@ set -eu
 
 repo_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 work_dir=$(mktemp -d "${TMPDIR:-/tmp}/kirby-security.XXXXXX")
-server_image="kirby-security-server:$PPID-$$"
-web_image="kirby-security-web:$PPID-$$"
+server_image="kirby-security:$PPID-$$"
 govuln_version=v1.1.4
 gosec_version=v2.22.7
 trivy_image="aquasec/trivy@sha256:e2b22eac59c02003d8749f5b8d9bd073b62e30fefaef5b7c8371204e0a4b0c08"
 trivy_db_image="${KIRBY_TRIVY_DB_IMAGE:-mirror.gcr.io/aquasec/trivy-db:2}"
 
 cleanup() {
-  docker image rm "$server_image" "$web_image" >/dev/null 2>&1 || true
+  docker image rm "$server_image" >/dev/null 2>&1 || true
   chmod -R u+w "$work_dir" >/dev/null 2>&1 || true
   rm -rf "$work_dir"
 }
@@ -84,7 +83,8 @@ echo "Checking Go source security rules..."
   -quiet -exclude-generated -track-suppressions . ./cmd/... ./internal/...)
 
 echo "Checking frontend dependencies..."
-(cd "$repo_dir/web" && npm audit --audit-level=high && npm ls --all >/dev/null)
+(cd "$repo_dir/web" && npm audit --audit-level=high)
+"$repo_dir/scripts/check-npm-tree.sh"
 
 echo "Checking removed and private dependencies..."
 private_source_pattern='git[.]changbaops[.]com|registry[.]changba'
@@ -113,25 +113,21 @@ echo "Running security-boundary tests..."
   ./internal/repository/... \
   ./internal/storage/object/...)
 
-echo "Building release images for scanning..."
+echo "Building the release image for scanning..."
 if [ -n "${KIRBY_GO_PROXY:-}" ]; then
-  docker build --build-arg "GOPROXY=$KIRBY_GO_PROXY" -t "$server_image" -f "$repo_dir/server/Dockerfile" "$repo_dir"
+  docker build --build-arg "GOPROXY=$KIRBY_GO_PROXY" -t "$server_image" -f "$repo_dir/Dockerfile" "$repo_dir"
 else
-  docker build -t "$server_image" -f "$repo_dir/server/Dockerfile" "$repo_dir"
+  docker build -t "$server_image" -f "$repo_dir/Dockerfile" "$repo_dir"
 fi
-docker build -t "$web_image" -f "$repo_dir/web/Dockerfile" "$repo_dir"
 docker save -o "$work_dir/server.tar" "$server_image"
-docker save -o "$work_dir/web.tar" "$web_image"
 
 echo "Preparing the current Trivy database..."
 prepare_trivy_db
 
-echo "Scanning release images for high and critical vulnerabilities..."
-for archive in server web; do
-  docker run --rm -v "$work_dir:/work" "$trivy_image" image \
-    --skip-db-update --cache-dir /work/trivy-cache --no-progress --scanners vuln \
-    --severity HIGH,CRITICAL --exit-code 1 --input "/work/$archive.tar"
-done
+echo "Scanning the release image for high and critical vulnerabilities..."
+docker run --rm -v "$work_dir:/work" "$trivy_image" image \
+  --skip-db-update --cache-dir /work/trivy-cache --no-progress --scanners vuln \
+  --severity HIGH,CRITICAL --exit-code 1 --input /work/server.tar
 
 echo "Scanning the source tree for secrets..."
 docker run --rm -v "$repo_dir:/src:ro" "$trivy_image" fs \

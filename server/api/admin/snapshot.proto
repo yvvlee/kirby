@@ -1,0 +1,82 @@
+syntax = "proto3";
+
+package kirby.admin.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "common/entity.proto";
+import "common/types.proto";
+import "validate/validate.proto";
+
+option go_package = "github.com/yvvlee/kirby/server/api/admin;adminv1";
+
+service SnapshotService {
+  rpc CreateSnapshot(CreateSnapshotRequest) returns (SnapshotReply) {
+    option (google.api.http) = {post: "/admin/environments/{environment_id}/snapshot/create", body: "*"};
+  }
+  rpc PreviewCreatingSnapshot(ConfigSnapshotRequest) returns (PreviewCreatingSnapshotReply) {
+    option (google.api.http) = {post: "/admin/environments/{environment_id}/snapshot/previewCreating", body: "*"};
+  }
+  rpc DeleteSnapshot(SnapshotIDRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {post: "/admin/environments/{environment_id}/snapshot/delete", body: "*"};
+  }
+  rpc GetSnapshot(SnapshotIDRequest) returns (SnapshotReply) {
+    option (google.api.http) = {post: "/admin/environments/{environment_id}/snapshot/detail", body: "*"};
+  }
+  rpc LoadSnapshot(LoadSnapshotRequest) returns (SnapshotReply) {
+    option (google.api.http) = {post: "/admin/environments/{environment_id}/snapshot/load", body: "*"};
+  }
+  rpc CurrentSnapshot(ConfigSnapshotRequest) returns (SnapshotReply) {
+    option (google.api.http) = {post: "/admin/environments/{environment_id}/snapshot/current", body: "*"};
+  }
+  rpc ReleasedSnapshot(ConfigSnapshotRequest) returns (SnapshotReply) {
+    option (google.api.http) = {post: "/admin/environments/{environment_id}/snapshot/released", body: "*"};
+  }
+  rpc ListSnapshot(ListSnapshotRequest) returns (ListSnapshotReply) {
+    option (google.api.http) = {post: "/admin/environments/{environment_id}/snapshot/list", body: "*"};
+  }
+}
+
+message SnapshotIDRequest {
+  int64 environment_id = 1 [(validate.rules).int64 = {gt: 0}];
+  int64 id = 2 [(validate.rules).int64 = {gt: 0}];
+}
+
+message ConfigSnapshotRequest {
+  int64 environment_id = 1 [(validate.rules).int64 = {gt: 0}];
+  int64 config_id = 2 [(validate.rules).int64 = {gt: 0}];
+}
+
+message CreateSnapshotRequest {
+  int64 environment_id = 1 [(validate.rules).int64 = {gt: 0}];
+  int64 config_id = 2 [(validate.rules).int64 = {gt: 0}];
+  int64 project_id = 3 [(validate.rules).int64 = {gt: 0}];
+  string description = 4 [(validate.rules).string = {min_len: 2, max_len: 255}];
+  repeated kirby.common.v1.Snapshot.Tag tags = 5;
+}
+
+message LoadSnapshotRequest {
+  int64 environment_id = 1 [(validate.rules).int64 = {gt: 0}];
+  int64 id = 2 [(validate.rules).int64 = {gt: 0}];
+  int64 config_id = 3 [(validate.rules).int64 = {gt: 0}];
+}
+
+message ListSnapshotRequest {
+  int64 environment_id = 1 [(validate.rules).int64 = {gt: 0}];
+  int64 config_id = 2 [(validate.rules).int64 = {gt: 0}];
+  int64 project_id = 3 [(validate.rules).int64 = {gt: 0}];
+  kirby.common.v1.PaginationRequest page = 4;
+}
+
+message SnapshotReply {
+  kirby.common.v1.Snapshot snapshot = 1;
+}
+
+message PreviewCreatingSnapshotReply {
+  string content = 1;
+}
+
+message ListSnapshotReply {
+  kirby.common.v1.Pagination page = 1;
+  repeated kirby.common.v1.SimpleSnapshot list = 2;
+}

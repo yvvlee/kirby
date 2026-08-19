@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	adminv1 "github.com/yvvlee/kirby/server/gen/kirby/admin/v1"
+	adminv1 "github.com/yvvlee/kirby/server/api/admin"
 	exportservice "github.com/yvvlee/kirby/server/internal/service/export"
 )
 

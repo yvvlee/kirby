@@ -12,8 +12,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
-	errorsv1 "github.com/yvvlee/kirby/server/gen/kirby/errors/v1"
-	runtimev1 "github.com/yvvlee/kirby/server/gen/kirby/runtime/v1"
+	errorsv1 "github.com/yvvlee/kirby/server/api/errors"
+	runtimev1 "github.com/yvvlee/kirby/server/api/runtime"
 	logic "github.com/yvvlee/kirby/server/internal/logic/runtime"
 	"github.com/yvvlee/kirby/server/internal/repository/base"
 )

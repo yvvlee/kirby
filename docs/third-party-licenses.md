@@ -7,9 +7,9 @@ also rejects npm packages whose declared or detected license is outside the
 reviewed set. GPL, AGPL, LGPL, SSPL, and missing license results fail the gate.
 The current dependency graph passes.
 
-The policy applies to code and assets distributed in the two Kirby release
-images. MySQL, Redis, MinIO, and the example ingress are independently operated
-infrastructure and are not copied into either image.
+The policy applies to code and assets distributed in the Kirby release image.
+MySQL, Redis, MinIO, and the external ingress are independently operated
+infrastructure and are not copied into the image.
 
 ## Reproducible inputs
 
@@ -19,12 +19,15 @@ that commit and the SHA-256 values of `server/go.sum` and
 `web/package-lock.json`. Image documents also contain the immutable local image
 digest produced from that source commit.
 
+The React migration is currently an uncommitted working tree. Its replacement
+SBOM must be generated after the migration commit so the recorded source commit
+and archived dependency manifests describe the same tree.
+
 The complete transitive inventories are:
 
 - `dist/sbom/source.cdx.json`: repository manifests, including development dependencies
 - `dist/sbom/web.cdx.json`: frontend runtime and development dependencies
-- `dist/sbom/server-image.cdx.json`: compiled server release image
-- `dist/sbom/web-image.cdx.json`: compiled web release image and assets
+- `dist/sbom/server-image.cdx.json`: compiled Kirby release image and web assets
 
 ## Direct runtime dependencies
 
@@ -34,20 +37,20 @@ protoc-gen-validate, MySQL and Redis clients, MinIO, Xorm, Cobra, JWT, UUID,
 Argon2 support, and the Go `x/*` libraries. `go-licenses v1.6.0` checks the
 complete compiled and test package graph, rather than trusting this summary.
 
-The web runtime directly uses Formily, Axios, Element UI, Monaco Editor, Vue,
-Vue Router, and Vuex. These packages are MIT licensed. The complete npm tree
+The web runtime directly uses React, React Router, TanStack Query, Ant Design,
+Formily, Axios, and Monaco Editor. These packages are MIT licensed. The complete npm tree
 also contains reviewed 0BSD, Apache-2.0, BSD, BlueOak, CC0, ISC, MPL, and
-Python-2.0 license expressions. `license-checker v25.0.1` reads the installed
+Python-2.0 license expressions. Browser compatibility data from caniuse-lite is
+CC-BY-4.0 and is attributed in `NOTICE`. `license-checker v25.0.1` reads the installed
 package metadata and license files after `npm ci`.
 
 ## Build tools and images
 
 | Input | Fixed version or digest | License |
 |---|---|---|
-| Go toolchain image | Go 1.25.13, `sha256:e401dae1bf814e29204a8cb7915682e1780951e609ca0dd8865ee1937f510c48` | Go BSD-3-Clause; build stage only |
-| Node.js toolchain image | Node 20.19.5, `sha256:9e70124bd00f47dd023e349cd587132ae61892acc0e47ed641416c3e18f401c3` | Node.js MIT; build stage only |
-| Server runtime | `scratch` | no operating-system packages |
-| Web runtime | `scratch` | no operating-system packages |
+| Go toolchain image | `golang:1.25-bookworm` tag, resolved at build time | Go BSD-3-Clause; build stage only |
+| Node.js toolchain image | `node:24-bookworm-slim` tag, resolved at build time | Node.js MIT; build stage only |
+| Kirby runtime | `scratch` | one Go process, React assets, no operating-system packages |
 | protoc | 35.1 | BSD-3-Clause |
 | protoc-gen-go | v1.36.12 | BSD-3-Clause |
 | protoc-gen-go-grpc | v1.6.2 | Apache-2.0 |

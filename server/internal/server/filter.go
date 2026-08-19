@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"runtime/debug"
@@ -13,6 +14,52 @@ import (
 
 const requestIDHeader = "X-Request-ID"
 
+type apiRequestContextKey struct{}
+
+// APIPrefix preserves the browser-facing /api namespace while generated
+// handlers continue to use their protobuf-defined paths.
+func APIPrefix() kratoshttp.FilterFunc {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			if request.URL.Path != "/api" && !strings.HasPrefix(request.URL.Path, "/api/") {
+				if reservedManagementPath(request.URL.Path) {
+					http.NotFound(writer, request)
+					return
+				}
+				next.ServeHTTP(writer, request)
+				return
+			}
+			request = request.WithContext(context.WithValue(request.Context(), apiRequestContextKey{}, true))
+			if request.URL.Path == "/api" || isLocalObjectPath(request.URL.Path) {
+				next.ServeHTTP(writer, request)
+				return
+			}
+			cloned := request.Clone(request.Context())
+			cloned.URL.Path = strings.TrimPrefix(request.URL.Path, "/api")
+			cloned.URL.RawPath = ""
+			next.ServeHTTP(writer, cloned)
+		})
+	}
+}
+
+func reservedManagementPath(requestPath string) bool {
+	for _, prefix := range []string{"/admin", "/auth"} {
+		if requestPath == prefix || strings.HasPrefix(requestPath, prefix+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+func isLocalObjectPath(requestPath string) bool {
+	return requestPath == "/api/assets/upload" || strings.HasPrefix(requestPath, "/api/assets/objects/")
+}
+
+func isAPIRequest(request *http.Request) bool {
+	value, _ := request.Context().Value(apiRequestContextKey{}).(bool)
+	return value
+}
+
 func HTTPBoundary(logger *slog.Logger) kratoshttp.FilterFunc {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
@@ -23,6 +70,9 @@ func HTTPBoundary(logger *slog.Logger) kratoshttp.FilterFunc {
 			request.Header.Set(requestIDHeader, requestID)
 			writer.Header().Set(requestIDHeader, requestID)
 			writer.Header().Set("X-Content-Type-Options", "nosniff")
+			writer.Header().Set("Content-Security-Policy", "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; form-action 'self'")
+			writer.Header().Set("Referrer-Policy", "no-referrer")
+			writer.Header().Set("X-Frame-Options", "DENY")
 			statusWriter := &responseStatusWriter{ResponseWriter: writer, status: http.StatusOK}
 			started := time.Now()
 			defer func() {

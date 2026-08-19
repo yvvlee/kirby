@@ -7,12 +7,11 @@ release_version=${KIRBY_RELEASE_VERSION:-dev}
 build_date=${KIRBY_BUILD_DATE:-unknown}
 work_dir=$(mktemp -d "${TMPDIR:-/tmp}/kirby-sbom.XXXXXX")
 checkout_dir="$work_dir/source"
-server_image="kirby-sbom-server:$PPID-$$"
-web_image="kirby-sbom-web:$PPID-$$"
+server_image="kirby-sbom:$PPID-$$"
 trivy_image='aquasec/trivy@sha256:e2b22eac59c02003d8749f5b8d9bd073b62e30fefaef5b7c8371204e0a4b0c08'
 
 cleanup() {
-  docker image rm "$server_image" "$web_image" >/dev/null 2>&1 || true
+  docker image rm "$server_image" >/dev/null 2>&1 || true
   chmod -R u+w "$work_dir" >/dev/null 2>&1 || true
   rm -rf "$work_dir"
 }
@@ -37,24 +36,20 @@ go_sum_sha=$(shasum -a 256 "$checkout_dir/server/go.sum" | awk '{print $1}')
 npm_lock_sha=$(shasum -a 256 "$checkout_dir/web/package-lock.json" | awk '{print $1}')
 source_time=$(git -C "$repo_dir" show -s --format=%cI "$source_commit")
 
-echo "Building release images from $source_commit..."
+echo "Building the release image from $source_commit..."
 if [ -n "${KIRBY_GO_PROXY:-}" ]; then
   docker build --provenance=false --build-arg "GOPROXY=$KIRBY_GO_PROXY" \
     --build-arg "VERSION=$release_version" --build-arg "COMMIT=$source_commit" \
     --build-arg "BUILD_DATE=$build_date" \
-    -t "$server_image" -f "$checkout_dir/server/Dockerfile" "$checkout_dir"
+    -t "$server_image" -f "$checkout_dir/Dockerfile" "$checkout_dir"
 else
   docker build --provenance=false --build-arg "VERSION=$release_version" \
     --build-arg "COMMIT=$source_commit" --build-arg "BUILD_DATE=$build_date" \
     -t "$server_image" \
-    -f "$checkout_dir/server/Dockerfile" "$checkout_dir"
+    -f "$checkout_dir/Dockerfile" "$checkout_dir"
 fi
-docker build --provenance=false -t "$web_image" \
-  -f "$checkout_dir/web/Dockerfile" "$checkout_dir"
 server_digest=$(docker image inspect "$server_image" --format '{{.Id}}')
-web_digest=$(docker image inspect "$web_image" --format '{{.Id}}')
 docker save -o "$work_dir/server.tar" "$server_image"
-docker save -o "$work_dir/web.tar" "$web_image"
 
 echo "Generating CycloneDX inventories..."
 docker run --rm -v "$checkout_dir:/src:ro" "$trivy_image" fs \
@@ -66,9 +61,6 @@ docker run --rm -v "$checkout_dir/web:/src:ro" "$trivy_image" fs \
 docker run --rm -v "$work_dir:/work:ro" "$trivy_image" image \
   --scanners license --format cyclonedx --input /work/server.tar \
   > "$work_dir/server-image.raw.json"
-docker run --rm -v "$work_dir:/work:ro" "$trivy_image" image \
-  --scanners license --format cyclonedx --input /work/web.tar \
-  > "$work_dir/web-image.raw.json"
 
 normalize() {
   input=$1
@@ -135,11 +127,8 @@ normalize "$work_dir/source.raw.json" "$repo_dir/dist/sbom/source.cdx.json" \
 normalize "$work_dir/web.raw.json" "$repo_dir/dist/sbom/web.cdx.json" \
   kirby-web-source "" "Git tree, web/package-lock.json"
 normalize "$work_dir/server-image.raw.json" "$repo_dir/dist/sbom/server-image.cdx.json" \
-  kirby-server-image "$server_digest" \
-  "golang:1.25.13-bookworm@sha256:e401dae1bf814e29204a8cb7915682e1780951e609ca0dd8865ee1937f510c48; scratch runtime"
-normalize "$work_dir/web-image.raw.json" "$repo_dir/dist/sbom/web-image.cdx.json" \
-  kirby-web-image "$web_digest" \
-  "node:20.19.5-bookworm-slim@sha256:9e70124bd00f47dd023e349cd587132ae61892acc0e47ed641416c3e18f401c3; golang:1.25.13-bookworm@sha256:e401dae1bf814e29204a8cb7915682e1780951e609ca0dd8865ee1937f510c48; scratch runtime"
+  kirby-image "$server_digest" \
+  "node:24-bookworm-slim; golang:1.25-bookworm; scratch runtime"
 
 for sbom in "$repo_dir"/dist/sbom/*.cdx.json; do
   test -s "$sbom"

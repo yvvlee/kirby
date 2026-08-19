@@ -10,7 +10,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
-	commonv1 "github.com/yvvlee/kirby/server/gen/kirby/common/v1"
+	commonv1 "github.com/yvvlee/kirby/server/api/common"
 )
 
 type ConfigSnapshot struct {

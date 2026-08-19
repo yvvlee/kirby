@@ -37,8 +37,7 @@ security:
   api_key_pepper: CHANGE_ME_AT_LEAST_32_RANDOM_BYTES
   allowed_origins:
     - http://localhost:8000
-  trusted_proxies:
-    - 172.30.0.10/32
+  trusted_proxies: []
 
 object_storage:
   driver: s3

@@ -10,7 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	commonv1 "github.com/yvvlee/kirby/server/gen/kirby/common/v1"
+	commonv1 "github.com/yvvlee/kirby/server/api/common"
 	"github.com/yvvlee/kirby/server/internal/set"
 )
 

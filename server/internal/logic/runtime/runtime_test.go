@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"xorm.io/xorm"
 
-	commonv1 "github.com/yvvlee/kirby/server/gen/kirby/common/v1"
+	commonv1 "github.com/yvvlee/kirby/server/api/common"
 	credential "github.com/yvvlee/kirby/server/internal/auth/api_key"
 	"github.com/yvvlee/kirby/server/internal/config"
 	"github.com/yvvlee/kirby/server/internal/entity"

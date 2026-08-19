@@ -1,0 +1,26 @@
+.smoke-page {
+  min-height: 100vh;
+  padding: 48px 24px;
+}
+
+.smoke-panel {
+  width: min(100%, 720px);
+  margin: 0 auto;
+  padding: 32px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 12px 32px rgb(15 23 42 / 8%);
+}
+
+.form-snapshot {
+  max-height: 240px;
+  margin-top: 24px;
+  padding: 16px;
+  overflow: auto;
+  border-radius: 6px;
+  background: #111827;
+  color: #f9fafb;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+}

@@ -6,9 +6,9 @@ Use MySQL 8.4, Redis 7, S3-compatible object storage, and a TLS ingress. The
 backend is stateless. Run one or more identical backend instances behind the
 ingress. Do not use local object storage in production.
 
-The repository provides pinned backend and web images. The final image stages
-contain only the static binaries and frontend assets. Both processes run as
-user `65532:65532`.
+The repository publishes one pinned Kirby image. Its final `scratch` stage
+contains the Go binary and built React assets. Each container runs one Go
+process as user `65532:65532`.
 
 ## Database initialization
 
@@ -38,7 +38,8 @@ symbolic link, and must not grant group or other access.
 ## Compose example
 
 The included Compose stack is a local deployment example with MySQL, Redis,
-MinIO, two stateless backend containers, the web image, and Nginx.
+MinIO, and one Kirby container. The Kirby process serves the React application,
+HTTP APIs, runtime gRPC, and the same-origin object-storage path.
 
 ```sh
 cp deploy/.env.example deploy/.env
@@ -79,21 +80,20 @@ The default HTTP address is `http://localhost:8000`. Runtime gRPC is exposed at
 Terminate HTTPS at the public ingress. Forward only from CIDRs listed in
 `security.trusted_proxies`. Route:
 
-- `/` to the web server;
-- `/api/` to the backend HTTP listener after removing the `/api` prefix;
-- the runtime gRPC port to the backend gRPC listener;
-- the configured public S3 path or hostname to object storage.
+- all HTTP paths to the Kirby HTTP listener without rewriting them;
+- the runtime gRPC port to the Kirby gRPC listener.
 
+Kirby serves `/`, removes the public `/api` prefix internally, and forwards the
+configured S3 bucket path to object storage while preserving the public Host.
 Preserve `Host`, the client address, `X-Request-ID`, and gRPC metadata. Set the
-HTTP request body limit to at least 64 MiB if uploads use the included limits.
-Use exact HTTPS origins in `security.allowed_origins`.
+ingress request body limit to at least 64 MiB if uploads use the included
+limits. Use exact HTTPS origins in `security.allowed_origins`.
 
 ## Rolling changes
 
-Apply compatible database changes first. Deploy backend instances with the same
-configuration and key ring. Deploy the web image after the management API is
-available. Remove old JWT keys only after the old access-token lifetime has
-elapsed.
+Apply compatible database changes first. Deploy Kirby instances with the same
+configuration, key ring, and image version. Remove old JWT keys only after the
+old access-token lifetime has elapsed.
 
 No old Kirby data migration is included. Import existing data through a
 separately reviewed migration or the supported snapshot import API.

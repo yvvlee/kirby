@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	adminv1 "github.com/yvvlee/kirby/server/gen/kirby/admin/v1"
+	adminv1 "github.com/yvvlee/kirby/server/api/admin"
 	"github.com/yvvlee/kirby/server/internal/model"
 	"github.com/yvvlee/kirby/server/internal/permission"
 )

@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	commonv1 "github.com/yvvlee/kirby/server/gen/kirby/common/v1"
+	commonv1 "github.com/yvvlee/kirby/server/api/common"
 	"github.com/yvvlee/kirby/server/internal/entity"
 	"github.com/yvvlee/kirby/server/internal/model"
 	"github.com/yvvlee/kirby/server/internal/permission"

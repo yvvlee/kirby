@@ -8,7 +8,7 @@ import (
 	kratosmiddleware "github.com/go-kratos/kratos/v2/middleware"
 	"github.com/go-kratos/kratos/v2/transport"
 
-	"github.com/yvvlee/kirby/server/gen/kirby/errors/v1"
+	"github.com/yvvlee/kirby/server/api/errors"
 	authjwt "github.com/yvvlee/kirby/server/internal/auth/jwt"
 	"github.com/yvvlee/kirby/server/internal/model"
 	"github.com/yvvlee/kirby/server/internal/repository"

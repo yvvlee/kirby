@@ -4,6 +4,7 @@ import { expect, test } from '@playwright/test'
 
 const adminCredential = 'kirby-e2e-admin-password'
 const roleCredential = ['kirby', 'role', 'password'].join('-')
+const testOrigin = new URL(process.env.KIRBY_LOCAL_WEB_URL || 'http://127.0.0.1:14173').origin
 const signingMaterial = [
   'kirby-e2e-jwt-key-',
   '012345678901234567890123',
@@ -44,7 +45,7 @@ async function api(request, token, method, path, data) {
 async function loginByAPI(request, username, password) {
   const response = await request.post('/api/auth/login', {
     data: { username, password },
-    headers: { Origin: 'http://127.0.0.1:14173' },
+    headers: { Origin: testOrigin },
   })
   expect(response.ok(), await response.text()).toBeTruthy()
   return response.json()
@@ -55,10 +56,10 @@ test('runs the standalone management and runtime journey against the real backen
   const loginResponse = page.waitForResponse((response) => response.url().endsWith('/api/auth/login') && response.request().method() === 'POST')
   await page.goto('/login')
   await expect(page.getByRole('heading', { name: '登录配置管理平台' })).toBeVisible()
-  const loginForm = page.locator('.login-card')
-  await loginForm.locator('input[autocomplete="username"]').fill('admin')
-  await loginForm.locator('input[autocomplete="current-password"]').fill(adminCredential)
-  await page.getByRole('button', { name: '登录' }).click()
+  const loginForm = page.getByRole('main')
+  await loginForm.getByLabel('用户名').fill('admin')
+  await loginForm.getByLabel('密码').fill(adminCredential)
+  await page.getByRole('button', { name: /登\s*录/ }).click()
   loginReply = await (await loginResponse).json()
   const token = loginReply.access_token
   expect(token).toBeTruthy()
@@ -68,20 +69,22 @@ test('runs the standalone management and runtime journey against the real backen
   await page.getByRole('button', { name: '新建环境' }).click()
   let dialog = page.getByRole('dialog', { name: '新建环境' })
   await dialog.getByPlaceholder('例如 production').fill('source')
-  await dialog.locator('.el-form-item').filter({ hasText: '名称' }).locator('input').fill('Source')
-  await dialog.locator('textarea').fill('E2E source environment')
+  await dialog.getByLabel('名称').fill('Source')
+  await dialog.getByLabel('说明').fill('E2E source environment')
   const sourceSaved = page.waitForResponse((response) => response.url().endsWith('/api/admin/environments') && response.request().method() === 'POST')
-  await dialog.getByRole('button', { name: '保存' }).click()
+  await dialog.getByRole('button', { name: /保\s*存/ }).click()
   await sourceSaved
+  await expect(dialog).toBeHidden()
 
   await page.getByRole('button', { name: '新建环境' }).click()
   dialog = page.getByRole('dialog', { name: '新建环境' })
   await dialog.getByPlaceholder('例如 production').fill('target')
-  await dialog.locator('.el-form-item').filter({ hasText: '名称' }).locator('input').fill('Target')
-  await dialog.locator('textarea').fill('E2E target environment')
+  await dialog.getByLabel('名称').fill('Target')
+  await dialog.getByLabel('说明').fill('E2E target environment')
   const targetSaved = page.waitForResponse((response) => response.url().endsWith('/api/admin/environments') && response.request().method() === 'POST')
-  await dialog.getByRole('button', { name: '保存' }).click()
+  await dialog.getByRole('button', { name: /保\s*存/ }).click()
   await targetSaved
+  await expect(dialog).toBeHidden()
 
   const environmentReply = await api(request, token, 'GET', '/admin/environments')
   const source = environmentReply.list.find((item) => item.key === 'source')
@@ -89,16 +92,14 @@ test('runs the standalone management and runtime journey against the real backen
   expect(source?.id).toBeTruthy()
   expect(target?.id).toBeTruthy()
 
-  await page.getByLabel('当前环境').click()
-  await page.locator('.el-select-dropdown:visible .el-select-dropdown__item').filter({ hasText: 'Source' }).click()
   await page.goto('/projects')
   await page.getByRole('button', { name: '创建项目' }).click()
   dialog = page.getByRole('dialog', { name: '创建项目' })
   await dialog.getByPlaceholder('例如 DemoConfig').fill('SourceProject')
-  await dialog.locator('.el-form-item').filter({ hasText: '项目名称' }).locator('input').fill('Source Project')
-  await dialog.locator('textarea').fill('E2E source')
+  await dialog.getByLabel('项目名称').fill('Source Project')
+  await dialog.getByLabel('项目描述').fill('E2E source')
   const sourceProjectSaved = page.waitForResponse((response) => response.url().endsWith(`/api/admin/environments/${source.id}/project/create`) && response.request().method() === 'POST')
-  await dialog.getByRole('button', { name: '保存' }).click()
+  await dialog.getByRole('button', { name: /保\s*存/ }).click()
   const sourceProjectReply = await (await sourceProjectSaved).json()
   const targetProjectReply = await api(request, token, 'POST', `/admin/environments/${target.id}/project/create`, {
     environment_id: target.id, key: 'TargetProject', name: 'Target Project', description: 'E2E target',
@@ -106,9 +107,8 @@ test('runs the standalone management and runtime journey against the real backen
   const sourceProject = sourceProjectReply.project
   const targetProject = targetProjectReply.project
 
+  await page.getByRole('link', { name: /Source Project/ }).click()
   await expect(page.getByRole('heading', { name: 'Source Project' })).toBeVisible()
-  await page.getByRole('heading', { name: 'Source Project' }).click()
-  await expect(page.getByRole('region', { name: 'Source Project' })).toBeVisible()
   await expect(page.getByRole('button', { name: '创建配置' })).toBeVisible()
 
   let configReply = await api(request, token, 'POST', `/admin/environments/${source.id}/config/create`, {
@@ -221,6 +221,10 @@ test('runs the standalone management and runtime journey against the real backen
     if (response.url().endsWith('/api/auth/refresh')) refreshCount += 1
   })
 
+  await page.getByRole('combobox', { name: '当前环境' }).press('ArrowDown')
+  const targetOption = page.getByText('Target', { exact: true }).filter({ visible: true })
+  await expect(targetOption).toBeVisible()
+
   let expiredTokenInjected = false
   await page.route('**/api/admin/**', async (route) => {
     if (expiredTokenInjected) {
@@ -236,8 +240,7 @@ test('runs the standalone management and runtime journey against the real backen
     })
   })
 
-  await page.getByLabel('当前环境').click()
-  await page.locator('.el-select-dropdown:visible .el-select-dropdown__item').filter({ hasText: 'Target' }).click()
+  await targetOption.click()
   await expect(page.getByText('Target Project')).toBeVisible()
   await expect(page.getByText('Source Project')).not.toBeVisible()
   await page.unroute('**/api/admin/**')

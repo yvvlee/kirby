@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"time"
 
-	adminv1 "github.com/yvvlee/kirby/server/gen/kirby/admin/v1"
-	commonv1 "github.com/yvvlee/kirby/server/gen/kirby/common/v1"
+	adminv1 "github.com/yvvlee/kirby/server/api/admin"
+	commonv1 "github.com/yvvlee/kirby/server/api/common"
 	"github.com/yvvlee/kirby/server/internal/entity"
 	logic "github.com/yvvlee/kirby/server/internal/logic/api_key"
 	"github.com/yvvlee/kirby/server/internal/model"

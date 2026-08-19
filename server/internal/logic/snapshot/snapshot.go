@@ -8,7 +8,7 @@ import (
 
 	"xorm.io/xorm"
 
-	commonv1 "github.com/yvvlee/kirby/server/gen/kirby/common/v1"
+	commonv1 "github.com/yvvlee/kirby/server/api/common"
 	"github.com/yvvlee/kirby/server/internal/converter"
 	"github.com/yvvlee/kirby/server/internal/entity"
 	"github.com/yvvlee/kirby/server/internal/model"

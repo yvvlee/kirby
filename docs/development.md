@@ -2,7 +2,7 @@
 
 ## Toolchain
 
-CI uses Go 1.25.13, Node.js 20.19.5, npm's committed lock file, and protoc
+CI uses Go 1.25.13, Node.js 24.19.0, npm's committed lock file, and protoc
 35.1. Generator versions are fixed in `server/Makefile`.
 
 Install dependencies from the repository root:
@@ -38,8 +38,8 @@ with `KIRBY_TEST_MYSQL_CONTAINER` and `KIRBY_TEST_REDIS_CONTAINER`.
 
 ## Protobuf generation
 
-Files under `api/kirby` are the source of truth. Generated Go files under
-`server/gen` are committed.
+Files under `server/api` are the source of truth. Generated Go files are
+committed next to their `.proto` files.
 
 ```sh
 make -C server generate
@@ -52,15 +52,16 @@ version checks, and dependency audit.
 
 ## Frontend
 
-The administration application deliberately remains on Vue 2. Keep Vue 2 and
-Element UI behavior compatible until a separate migration changes that
-contract. Run:
+The administration application uses React 19, TypeScript 6, Ant Design 5,
+TanStack Query, and Formily React. Run:
 
 ```sh
 cd web
 npm run lint
+npm run typecheck
 npm run test -- --run
 npm run build
+npm run test:e2e
 ```
 
 Vite proxies `/api` to `KIRBY_DEV_API_TARGET`. It also proxies local signed

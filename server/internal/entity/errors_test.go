@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	errorsv1 "github.com/yvvlee/kirby/server/gen/kirby/errors/v1"
+	errorsv1 "github.com/yvvlee/kirby/server/api/errors"
 	"github.com/yvvlee/kirby/server/internal/repository"
 )
 

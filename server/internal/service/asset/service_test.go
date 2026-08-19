@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	adminv1 "github.com/yvvlee/kirby/server/gen/kirby/admin/v1"
+	adminv1 "github.com/yvvlee/kirby/server/api/admin"
 	assetlogic "github.com/yvvlee/kirby/server/internal/logic/asset"
 	"github.com/yvvlee/kirby/server/internal/storage/object"
 )

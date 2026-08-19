@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	errorsv1 "github.com/yvvlee/kirby/server/gen/kirby/errors/v1"
+	errorsv1 "github.com/yvvlee/kirby/server/api/errors"
 	"github.com/yvvlee/kirby/server/internal/permission"
 	"github.com/yvvlee/kirby/server/internal/repository"
 )

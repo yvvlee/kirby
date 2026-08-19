@@ -14,7 +14,7 @@ import (
 	"github.com/go-kratos/kratos/v2/transport"
 	"google.golang.org/protobuf/types/known/emptypb"
 
-	adminv1 "github.com/yvvlee/kirby/server/gen/kirby/admin/v1"
+	adminv1 "github.com/yvvlee/kirby/server/api/admin"
 	"github.com/yvvlee/kirby/server/internal/auth/password"
 	authsession "github.com/yvvlee/kirby/server/internal/auth/session"
 	adminmiddleware "github.com/yvvlee/kirby/server/internal/middleware"

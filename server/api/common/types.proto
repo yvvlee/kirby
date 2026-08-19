@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package kirby.common.v1;
+
+import "validate/validate.proto";
+
+option go_package = "github.com/yvvlee/kirby/server/api/common;commonv1";
+
+message PaginationRequest {
+  optional uint32 page = 1 [(validate.rules).uint32 = {gt: 0}];
+  optional uint32 limit = 2 [(validate.rules).uint32 = {gt: 0, lte: 100}];
+}
+
+message Pagination {
+  uint32 page = 1;
+  uint32 limit = 2;
+  uint64 total = 3;
+}
+
+message SelectOption {
+  string label = 1 [(validate.rules).string = {min_len: 1, max_len: 64}];
+  string value = 2 [(validate.rules).string = {
+    min_len: 1,
+    max_len: 64,
+    pattern: "^[A-Z][A-Z0-9_]*$"
+  }];
+  string description = 3 [(validate.rules).string = {max_len: 255}];
+}

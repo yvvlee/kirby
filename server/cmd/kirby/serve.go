@@ -16,23 +16,29 @@ import (
 
 func newServeCommand() *cobra.Command {
 	var configPath string
+	var webRoot string
 
 	command := &cobra.Command{
 		Use:   "serve",
 		Short: "Start the Kirby server",
 		RunE: func(command *cobra.Command, _ []string) error {
-			return runServer(command.Context(), configPath)
+			return runServer(command.Context(), configPath, webRoot)
 		},
 	}
 	command.Flags().StringVar(&configPath, "config", "", "path to the YAML configuration file")
+	command.Flags().StringVar(&webRoot, "web-root", "", "path to the built web application")
 
 	return command
 }
 
-func runServer(ctx context.Context, configPath string) (err error) {
+func runServer(ctx context.Context, configPath, webRoot string) (err error) {
 	cfg, err := config.Load(configPath, os.LookupEnv)
 	if err != nil {
 		return err
+	}
+	webHandler, err := serverruntime.NewWebHandler(webRoot)
+	if err != nil {
+		return fmt.Errorf("load web application: %w", err)
 	}
 	logger, err := observability.NewLogger(os.Stderr, cfg.Log)
 	if err != nil {
@@ -43,7 +49,7 @@ func runServer(ctx context.Context, configPath string) (err error) {
 		return fmt.Errorf("initialize server: %w", err)
 	}
 	defer func() { err = errors.Join(err, dependencies.Close()) }()
-	app, err := serverruntime.NewApplication(ctx, dependencies)
+	app, err := serverruntime.NewApplication(ctx, dependencies, webHandler)
 	if err != nil {
 		return fmt.Errorf("assemble server: %w", err)
 	}

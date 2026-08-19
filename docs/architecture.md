@@ -4,7 +4,7 @@
 
 Kirby has one administration plane and one runtime plane.
 
-The administration plane consists of the Vue 2 application and management HTTP
+The administration plane consists of the React 19 application and management HTTP
 API. Users log in once. Each request carries an access JWT, then the backend
 resolves the user's current role for the requested environment.
 
@@ -20,8 +20,8 @@ handlers.
 | MySQL | All durable application and audit data |
 | Redis | Permission and publication caches, generation markers, and rate-limit counters |
 | S3-compatible storage | Temporary uploads and immutable published objects |
-| Backend process | Request handling only; no durable process-local state |
-| Vue application | User interface and in-memory access token |
+| Kirby process | HTTP/gRPC APIs, React assets, S3 same-origin forwarding; no durable process-local state |
+| React application | User interface, in-memory access token, and environment-scoped query cache |
 
 MySQL is authoritative. Redis may accelerate reads, but it is not an
 authorization authority. Backend processes are stateless when configured with
@@ -58,8 +58,9 @@ multi`.
 
 ## Deployment boundary
 
-Public TLS terminates at an ingress or reverse proxy. The proxy routes the web
-application and HTTP API, and may expose the runtime gRPC listener separately.
+Public TLS terminates at an ingress or load balancer. One Kirby image contains
+the Go server and React assets. Each container runs one Go process, which serves
+the web application and HTTP APIs and may expose runtime gRPC separately.
 MySQL, Redis, and object storage stay on private networks.
 
 Every backend instance must receive the same database, Redis, JWT key ring, API

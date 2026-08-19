@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	adminv1 "github.com/yvvlee/kirby/server/gen/kirby/admin/v1"
+	adminv1 "github.com/yvvlee/kirby/server/api/admin"
 	authjwt "github.com/yvvlee/kirby/server/internal/auth/jwt"
 	"github.com/yvvlee/kirby/server/internal/config"
 	"github.com/yvvlee/kirby/server/internal/entity"

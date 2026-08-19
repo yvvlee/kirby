@@ -35,7 +35,7 @@ system permissions separate from environment roles.
 
 ## Enforcement
 
-The Vue application hides unavailable actions for usability. It is not a
+The React application hides unavailable actions for usability. It is not a
 security boundary. The backend checks permissions and scopes repository queries
 to the environment. Replacing an environment, project, snapshot, import, key,
 or object ID in a request does not bypass the ownership check.

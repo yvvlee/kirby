@@ -8,8 +8,12 @@ Kirby includes open-source Go and npm dependencies. Their exact names,
 versions, package checksums, and release-image membership are recorded in
 docs/third-party-licenses.md and dist/sbom/*.cdx.json. The applicable license
 families are 0BSD, Apache-2.0, BSD-2-Clause, BSD-3-Clause, BlueOak-1.0.0,
-CC0-1.0, ISC, MIT, MPL-2.0, and Python-2.0. Copyright notices and license texts
+CC-BY-4.0, CC0-1.0, ISC, MIT, MPL-2.0, and Python-2.0. Copyright notices and license texts
 remain available in the corresponding source distributions.
+
+The frontend build uses browser compatibility data from caniuse-lite,
+copyright Ben Briggs and contributors, licensed under CC-BY-4.0. Source:
+https://github.com/browserslist/caniuse-lite. Kirby does not modify this data.
 
 The following MIT-licensed generator source is redistributed in this
 repository:

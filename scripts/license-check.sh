@@ -65,7 +65,7 @@ verify_generator protoc-gen-go-json v1.0.1 217c673080d2518111c3b3330a7647803058b
 
 echo "Verifying npm package licenses..."
 test -d "$repo_dir/web/node_modules"
-(cd "$repo_dir/web" && npm ls --all >/dev/null)
+"$repo_dir/scripts/check-npm-tree.sh"
 actual_integrity=$(npm view "license-checker@$license_checker_version" dist.integrity)
 if [ "$actual_integrity" != "$license_checker_integrity" ]; then
   echo "unexpected license-checker package integrity: $actual_integrity" >&2
@@ -78,7 +78,7 @@ jq -e '
     | select(.key != "@kirby/web@0.1.0")
     | select(.value.licenses as $license
       | (["0BSD", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause",
-               "BlueOak-1.0.0", "ISC", "MIT", "MIT*", "Python-2.0",
+               "BlueOak-1.0.0", "CC-BY-4.0", "ISC", "MIT", "MIT*", "Python-2.0",
                "(MIT OR CC0-1.0)", "(MPL-2.0 OR Apache-2.0)"]
         | index($license)) == null)]
   | length == 0
@@ -94,12 +94,11 @@ jq -r 'to_entries[] | select(.value.licenses == "MIT*") | .value.licenseFile' \
 done
 
 echo "Verifying release stages contain no operating-system packages..."
-for dockerfile in "$repo_dir/server/Dockerfile" "$repo_dir/web/Dockerfile"; do
-  final_stage=$(awk '/^FROM / { line=$0 } END { print line }' "$dockerfile")
-  if [ "$final_stage" != "FROM scratch" ]; then
-    echo "$dockerfile final stage is not scratch" >&2
-    exit 1
-  fi
-done
+dockerfile="$repo_dir/Dockerfile"
+final_stage=$(awk '/^FROM / { line=$0 } END { print line }' "$dockerfile")
+if [ "$final_stage" != "FROM scratch" ]; then
+  echo "$dockerfile final stage is not scratch" >&2
+  exit 1
+fi
 
 echo "License checks passed."

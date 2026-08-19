@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	adminv1 "github.com/yvvlee/kirby/server/gen/kirby/admin/v1"
+	adminv1 "github.com/yvvlee/kirby/server/api/admin"
 	logic "github.com/yvvlee/kirby/server/internal/logic/api_key"
 	"github.com/yvvlee/kirby/server/internal/model"
 	"github.com/yvvlee/kirby/server/internal/permission"

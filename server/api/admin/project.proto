@@ -1,0 +1,71 @@
+syntax = "proto3";
+
+package kirby.admin.v1;
+
+import "google/api/annotations.proto";
+import "common/entity.proto";
+import "validate/validate.proto";
+
+option go_package = "github.com/yvvlee/kirby/server/api/admin;adminv1";
+
+service ProjectService {
+  rpc CreateProject(CreateProjectRequest) returns (ProjectReply) {
+    option (google.api.http) = {
+      post: "/admin/environments/{environment_id}/project/create"
+      body: "*"
+    };
+  }
+  rpc UpdateProject(UpdateProjectRequest) returns (ProjectReply) {
+    option (google.api.http) = {
+      post: "/admin/environments/{environment_id}/project/update"
+      body: "*"
+    };
+  }
+  rpc ListProject(ListProjectRequest) returns (ListProjectReply) {
+    option (google.api.http) = {
+      post: "/admin/environments/{environment_id}/project/list"
+      body: "*"
+    };
+  }
+  rpc ProjectDetail(ProjectIDRequest) returns (ProjectReply) {
+    option (google.api.http) = {
+      post: "/admin/environments/{environment_id}/project/detail"
+      body: "*"
+    };
+  }
+}
+
+message ProjectIDRequest {
+  int64 environment_id = 1 [(validate.rules).int64 = {gt: 0}];
+  int64 id = 2 [(validate.rules).int64 = {gt: 0}];
+}
+
+message CreateProjectRequest {
+  int64 environment_id = 1 [(validate.rules).int64 = {gt: 0}];
+  string key = 2 [(validate.rules).string = {
+    min_len: 1, max_len: 64, pattern: "^[A-Za-z][A-Za-z0-9]*$"
+  }];
+  string name = 3 [(validate.rules).string = {min_len: 1, max_len: 64}];
+  string description = 4 [(validate.rules).string = {max_len: 255}];
+}
+
+message UpdateProjectRequest {
+  int64 environment_id = 1 [(validate.rules).int64 = {gt: 0}];
+  int64 id = 2 [(validate.rules).int64 = {gt: 0}];
+  string name = 3 [(validate.rules).string = {min_len: 1, max_len: 64}];
+  string description = 4 [(validate.rules).string = {max_len: 255}];
+  uint32 version = 55;
+}
+
+message ListProjectRequest {
+  int64 environment_id = 1 [(validate.rules).int64 = {gt: 0}];
+  string keyword = 2 [(validate.rules).string = {max_len: 64}];
+}
+
+message ProjectReply {
+  kirby.common.v1.Project project = 1;
+}
+
+message ListProjectReply {
+  repeated kirby.common.v1.Project list = 1;
+}

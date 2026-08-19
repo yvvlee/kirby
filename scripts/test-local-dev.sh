@@ -9,7 +9,7 @@ mysql_port=${KIRBY_TEST_MYSQL_PORT:-3306}
 redis_port=${KIRBY_TEST_REDIS_PORT:-6379}
 http_port=${KIRBY_TEST_HTTP_PORT:-18080}
 grpc_port=${KIRBY_TEST_GRPC_PORT:-19090}
-web_port=${KIRBY_TEST_WEB_PORT:-5173}
+web_port=${KIRBY_TEST_WEB_PORT:-15173}
 test_id="${PPID}$$"
 database="kirby_local_${test_id}"
 database_user="kirby_${test_id}"
@@ -58,10 +58,8 @@ SQL
 trap cleanup EXIT INT TERM
 
 node_version=$(node -p 'process.versions.node' 2>/dev/null || true)
-node_major=$(printf '%s' "$node_version" | cut -d. -f1)
-node_minor=$(printf '%s' "$node_version" | cut -d. -f2)
-if [ -z "$node_major" ] || [ "$node_major" -lt 20 ] || { [ "$node_major" -eq 20 ] && [ "$node_minor" -lt 19 ]; }; then
-  echo "Node.js 20.19 or newer is required; found ${node_version:-unavailable}" >&2
+if [ "$node_version" != "24.19.0" ]; then
+  echo "Node.js 24.19.0 is required; found ${node_version:-unavailable}" >&2
   exit 1
 fi
 

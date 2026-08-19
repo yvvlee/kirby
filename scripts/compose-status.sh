@@ -17,9 +17,9 @@ compose() {
 }
 
 compose ps
-compose exec -T server-1 /kirby healthcheck
-compose exec -T server-2 /kirby healthcheck
+compose exec -T server /kirby healthcheck
 
-http_port=$(compose port nginx 8000 | sed 's/.*://')
+http_port=$(compose port server 8080 | sed 's/.*://')
 curl --fail --silent --show-error "http://127.0.0.1:$http_port/healthz" >/dev/null
-echo "Both Server instances and the HTTP entry are healthy."
+curl --fail --silent --show-error "http://127.0.0.1:$http_port/login" | grep -q '<div id="root"></div>'
+echo "Kirby API and web application are healthy."

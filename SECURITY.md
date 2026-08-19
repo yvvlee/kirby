@@ -34,5 +34,5 @@ scripts/license-check.sh
 ```
 
 High and critical reachable vulnerabilities or container findings block a
-release. Known residual risks, including the Vue 2 maintenance state, are
-recorded in `docs/security-report.md`.
+release. Known residual dependency risks are recorded in
+`docs/security-report.md`.

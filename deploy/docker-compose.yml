@@ -7,43 +7,6 @@ x-default-security: &default-security
   security_opt:
     - no-new-privileges:true
 
-x-server: &server
-  <<: *default-security
-  image: kirby-server:local
-  build:
-    context: ..
-    dockerfile: server/Dockerfile
-  command:
-    - serve
-    - --config
-    - /etc/kirby/config.yaml
-  volumes:
-    - type: bind
-      source: ${KIRBY_CONFIG_PATH:-./config.compose.yaml}
-      target: /etc/kirby/config.yaml
-      read_only: true
-  tmpfs:
-    - /tmp:rw,noexec,nosuid,size=16m,mode=1777
-  depends_on:
-    mysql:
-      condition: service_healthy
-    redis:
-      condition: service_healthy
-    minio:
-      condition: service_healthy
-  healthcheck:
-    test: ["CMD", "/kirby", "healthcheck"]
-    interval: 5s
-    timeout: 4s
-    retries: 12
-    start_period: 10s
-  restart: unless-stopped
-  cpus: 1.0
-  mem_limit: 512m
-  pids_limit: 256
-  networks:
-    kirby-internal: {}
-
 services:
   mysql:
     <<: *default-security
@@ -177,70 +140,47 @@ services:
     networks:
       kirby-internal: {}
 
-  server-1:
-    <<: *server
-
-  server-2:
-    <<: *server
-
-  web:
+  server:
     <<: *default-security
-    image: kirby-web:local
+    image: kirby:local
     build:
       context: ..
-      dockerfile: web/Dockerfile
-    tmpfs:
-      - /tmp:rw,noexec,nosuid,size=16m,mode=1777
-    healthcheck:
-      test: ["CMD", "/kirby-web", "healthcheck"]
-      interval: 5s
-      timeout: 3s
-      retries: 12
-      start_period: 5s
-    restart: unless-stopped
-    cpus: 0.5
-    mem_limit: 128m
-    pids_limit: 128
-    networks:
-      kirby-internal: {}
-
-  nginx:
-    <<: *default-security
-    image: nginx:1.30.4-alpine3.24-slim@sha256:ddde39c6e51f02fde7410c2e9c234cf2d0a4c7bdbbe176aeb37d8ad7ab4eb58c
-    user: "65532:65532"
-    entrypoint: ["nginx", "-g", "daemon off;"]
+      dockerfile: Dockerfile
+    command:
+      - serve
+      - --config
+      - /etc/kirby/config.yaml
+      - --web-root
+      - /srv
     ports:
-      - "127.0.0.1:${KIRBY_HTTP_PORT:-8000}:8000"
-      - "127.0.0.1:${KIRBY_GRPC_PORT:-9000}:9000"
+      - "127.0.0.1:${KIRBY_HTTP_PORT:-8000}:8080"
+      - "127.0.0.1:${KIRBY_GRPC_PORT:-9000}:9090"
     volumes:
       - type: bind
-        source: ./nginx/nginx.conf
-        target: /etc/nginx/nginx.conf
+        source: ${KIRBY_CONFIG_PATH:-./config.compose.yaml}
+        target: /etc/kirby/config.yaml
         read_only: true
     tmpfs:
-      - /tmp:rw,noexec,nosuid,size=32m,mode=1777
+      - /tmp:rw,noexec,nosuid,size=16m,mode=1777
     depends_on:
-      server-1:
+      mysql:
         condition: service_healthy
-      server-2:
-        condition: service_healthy
-      web:
+      redis:
         condition: service_healthy
       minio:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:8000/healthz"]
+      test: ["CMD", "/kirby", "healthcheck"]
       interval: 5s
-      timeout: 3s
+      timeout: 4s
       retries: 12
-      start_period: 5s
+      start_period: 10s
     restart: unless-stopped
-    cpus: 0.5
-    mem_limit: 128m
-    pids_limit: 128
+    cpus: 1.0
+    mem_limit: 512m
+    pids_limit: 256
     networks:
-      kirby-internal:
-        ipv4_address: 172.30.0.10
+      kirby-internal: {}
 
 volumes:
   mysql-data:
@@ -250,6 +190,3 @@ volumes:
 networks:
   kirby-internal:
     driver: bridge
-    ipam:
-      config:
-        - subnet: 172.30.0.0/24

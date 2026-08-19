@@ -1,13 +1,12 @@
 import { spawn, spawnSync } from 'node:child_process'
-import { createReadStream, existsSync, readFileSync, writeFileSync, chmodSync, rmSync } from 'node:fs'
-import { createServer } from 'node:http'
-import { request as proxyRequest } from 'node:http'
-import { extname, join, normalize, resolve } from 'node:path'
+import { existsSync, readFileSync, writeFileSync, chmodSync, rmSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 
 const webRoot = resolve(import.meta.dirname, '../..')
 const repositoryRoot = resolve(webRoot, '..')
 const serverRoot = join(repositoryRoot, 'server')
+const publicRoot = join(webRoot, 'dist')
 const configPath = join(import.meta.dirname, 'fixtures/config.e2e.yaml')
 const containerName = 'kirby-fe08-mysql'
 const mysqlCredential = 'kirby-e2e-password'
@@ -91,49 +90,12 @@ run(binaryPath, [
   '--display-name', 'E2E Admin', '--password-file', passwordPath,
 ], { cwd: serverRoot })
 
-const backend = spawn(binaryPath, ['serve', '--config', configPath], {
+const backend = spawn(binaryPath, ['serve', '--config', configPath, '--web-root', publicRoot], {
   cwd: serverRoot,
   stdio: ['ignore', 'inherit', 'inherit'],
 })
 children.add(backend)
 backend.once('exit', (code) => { if (!stopping) cleanup(code || 1) })
-await waitFor(async () => (await fetch('http://127.0.0.1:18080/healthz')).ok, 'Kirby backend')
-
-const mimeTypes = new Map([
-  ['.css', 'text/css; charset=utf-8'], ['.html', 'text/html; charset=utf-8'],
-  ['.js', 'text/javascript; charset=utf-8'], ['.json', 'application/json'],
-  ['.svg', 'image/svg+xml'], ['.ttf', 'font/ttf'], ['.woff', 'font/woff'],
-])
-
-function proxy(request, response) {
-  const keepAPIPrefix = request.url.startsWith('/api/assets/upload')
-    || request.url.startsWith('/api/assets/objects/')
-  const upstreamPath = keepAPIPrefix
-    ? request.url
-    : request.url.replace(/^\/api(?=\/|$)/, '') || '/'
-  const upstream = proxyRequest({
-    hostname: '127.0.0.1', port: 18080, method: request.method,
-    path: upstreamPath, headers: { ...request.headers, host: '127.0.0.1:18080' },
-  }, (upstreamResponse) => {
-    response.writeHead(upstreamResponse.statusCode || 502, upstreamResponse.headers)
-    upstreamResponse.pipe(response)
-  })
-  upstream.on('error', (error) => { response.writeHead(502); response.end(error.message) })
-  request.pipe(upstream)
-}
-
-const publicRoot = join(webRoot, 'dist')
-const frontend = createServer((request, response) => {
-  if (request.url.startsWith('/api/')) {
-    proxy(request, response)
-    return
-  }
-  const pathname = new URL(request.url, 'http://localhost').pathname
-  const candidate = normalize(join(publicRoot, pathname))
-  const path = candidate.startsWith(publicRoot) && existsSync(candidate) && !candidate.endsWith('/')
-    ? candidate : join(publicRoot, 'index.html')
-  response.setHeader('Content-Type', mimeTypes.get(extname(path)) || 'application/octet-stream')
-  createReadStream(path).on('error', () => { response.writeHead(404); response.end('not found') }).pipe(response)
-})
-frontend.listen(14173, '127.0.0.1', () => console.log('Kirby E2E ready at http://127.0.0.1:14173'))
+await waitFor(async () => (await fetch('http://127.0.0.1:14173/login')).ok, 'Kirby web application')
+console.log('Kirby E2E ready at http://127.0.0.1:14173')
 await new Promise(() => {})

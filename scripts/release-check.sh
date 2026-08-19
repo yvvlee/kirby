@@ -59,7 +59,7 @@ elif [ "$dry_run" = false ]; then
 fi
 
 "$repo_dir/scripts/ci/check-generated.sh"
-if [ -n "$(git -C "$repo_dir" status --porcelain -- api server/gen)" ]; then
+if [ -n "$(git -C "$repo_dir" status --porcelain -- server/api)" ]; then
   echo "generated source changed during the release check" >&2
   exit 1
 fi

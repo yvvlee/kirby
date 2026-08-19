@@ -4,6 +4,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -13,8 +14,8 @@ import (
 	"github.com/go-kratos/kratos/v2/middleware/selector"
 	kratoshttp "github.com/go-kratos/kratos/v2/transport/http"
 
-	adminv1 "github.com/yvvlee/kirby/server/gen/kirby/admin/v1"
-	runtimev1 "github.com/yvvlee/kirby/server/gen/kirby/runtime/v1"
+	adminv1 "github.com/yvvlee/kirby/server/api/admin"
+	runtimev1 "github.com/yvvlee/kirby/server/api/runtime"
 	"github.com/yvvlee/kirby/server/internal/health"
 	adminmiddleware "github.com/yvvlee/kirby/server/internal/middleware"
 	"github.com/yvvlee/kirby/server/internal/provider"
@@ -31,7 +32,7 @@ const (
 )
 
 // NewApplication registers every public transport before any listener starts.
-func NewApplication(ctx context.Context, deps *provider.Application) (*kratos.App, error) {
+func NewApplication(ctx context.Context, deps *provider.Application, webHandler http.Handler) (*kratos.App, error) {
 	if deps == nil || deps.Config == nil || deps.Store == nil || deps.Runtime == nil {
 		return nil, fmt.Errorf("server dependencies are incomplete")
 	}
@@ -50,7 +51,7 @@ func NewApplication(ctx context.Context, deps *provider.Application) (*kratos.Ap
 	httpServer := kratoshttp.NewServer(
 		kratoshttp.Address(deps.Config.HTTP.Address),
 		kratoshttp.Timeout(deps.Config.HTTP.Timeout.Duration),
-		kratoshttp.Filter(HTTPBoundary(deps.Logger), CORS(deps.Config.Security.AllowedOrigins)),
+		kratoshttp.Filter(HTTPBoundary(deps.Logger), APIPrefix(), CORS(deps.Config.Security.AllowedOrigins)),
 		kratoshttp.Middleware(recovery.Recovery(), authSelector, adminSelector, runtimeHTTPSelector),
 	)
 	registerHTTP(httpServer, deps)
@@ -59,6 +60,16 @@ func NewApplication(ctx context.Context, deps *provider.Application) (*kratos.Ap
 	if local, ok := deps.Object.(*object.LocalStorage); ok {
 		httpServer.Handle(object.LocalUploadPath, local)
 		httpServer.HandlePrefix(object.LocalObjectPathPrefix, local)
+	}
+	if deps.Config.ObjectStorage.Driver == "s3" {
+		proxy, prefix, err := newObjectStorageProxy(deps.Config.ObjectStorage.S3, deps.Logger)
+		if err != nil {
+			return nil, err
+		}
+		registerObjectStorageProxy(httpServer, prefix, proxy)
+	}
+	if webHandler != nil {
+		httpServer.HandlePrefix("/", webHandler)
 	}
 
 	grpcServer := newRuntimeGRPCServer(
@@ -75,6 +86,13 @@ func NewApplication(ctx context.Context, deps *provider.Application) (*kratos.Ap
 		kratos.AfterStart(func(context.Context) error { probe.SetReady(true); return nil }),
 		kratos.BeforeStop(func(context.Context) error { probe.SetReady(false); return nil }),
 	), nil
+}
+
+func registerObjectStorageProxy(server *kratoshttp.Server, prefix string, handler http.Handler) {
+	// Prefix must be registered first. Kratos uses StrictSlash, so placing the
+	// exact route first would redirect POST /bucket/ to GET /bucket.
+	server.HandlePrefix(prefix+"/", handler)
+	server.Handle(prefix, handler)
 }
 
 func registerGRPC(server *runtimeGRPCServer, runtimeService runtimev1.ApiServer) {

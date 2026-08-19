@@ -15,8 +15,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	adminv1 "github.com/yvvlee/kirby/server/gen/kirby/admin/v1"
-	runtimev1 "github.com/yvvlee/kirby/server/gen/kirby/runtime/v1"
+	adminv1 "github.com/yvvlee/kirby/server/api/admin"
+	runtimev1 "github.com/yvvlee/kirby/server/api/runtime"
 	"github.com/yvvlee/kirby/server/internal/provider"
 )
 
@@ -103,6 +103,46 @@ func TestHTTPBoundaryDoesNotLogQueryOrHeaders(t *testing.T) {
 	handler.ServeHTTP(response, request)
 	assert.Equal(t, http.StatusOK, response.Code)
 	assert.NotEmpty(t, response.Header().Get(requestIDHeader))
+	assert.NotEmpty(t, response.Header().Get("Content-Security-Policy"))
+	assert.Equal(t, "no-referrer", response.Header().Get("Referrer-Policy"))
+	assert.Equal(t, "DENY", response.Header().Get("X-Frame-Options"))
 	assert.NotContains(t, output.String(), "secret-query")
 	assert.NotContains(t, output.String(), "secret-header")
+}
+
+func TestAPIPrefixStripsGeneratedPathsAndPreservesLocalObjects(t *testing.T) {
+	handler := APIPrefix()(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		assert.True(t, isAPIRequest(request))
+		_, _ = io.WriteString(writer, request.URL.RequestURI())
+	}))
+
+	for _, test := range []struct {
+		requestPath string
+		wantPath    string
+	}{
+		{requestPath: "/api/auth/login?next=1", wantPath: "/auth/login?next=1"},
+		{requestPath: "/api/assets/upload?token=value", wantPath: "/api/assets/upload?token=value"},
+		{requestPath: "/api/assets/objects/example", wantPath: "/api/assets/objects/example"},
+	} {
+		t.Run(test.requestPath, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, test.requestPath, nil))
+			assert.Equal(t, test.wantPath, response.Body.String())
+		})
+	}
+}
+
+func TestAPIPrefixRejectsUnprefixedManagementRoutes(t *testing.T) {
+	handler := APIPrefix()(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.WriteHeader(http.StatusNoContent)
+	}))
+
+	for _, requestPath := range []string{"/auth/login", "/admin/users"} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, requestPath, nil))
+		assert.Equal(t, http.StatusNotFound, response.Code)
+	}
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/config", nil))
+	assert.Equal(t, http.StatusNoContent, response.Code)
 }

@@ -4,7 +4,7 @@ set -eu
 repo_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd)
 
 (cd "$repo_dir/server" && make generate)
-changes=$(git -C "$repo_dir" status --porcelain -- api server/gen)
+changes=$(git -C "$repo_dir" status --porcelain -- server/api)
 if [ -n "$changes" ]; then
   printf '%s\n' "$changes" >&2
   echo "generated protobuf source is not current" >&2

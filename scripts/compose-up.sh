@@ -32,7 +32,7 @@ if [ "$schema_count" != "15" ]; then
 fi
 
 compose up -d --build --wait --wait-timeout 180
-http_port=$(compose port nginx 8000 | sed 's/.*://')
-grpc_port=$(compose port nginx 9000 | sed 's/.*://')
+http_port=$(compose port server 8080 | sed 's/.*://')
+grpc_port=$(compose port server 9090 | sed 's/.*://')
 echo "Kirby HTTP is ready at http://localhost:$http_port"
 echo "Kirby runtime gRPC is ready at localhost:$grpc_port"

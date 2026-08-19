@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	adminv1 "github.com/yvvlee/kirby/server/gen/kirby/admin/v1"
+	adminv1 "github.com/yvvlee/kirby/server/api/admin"
 	"github.com/yvvlee/kirby/server/internal/converter"
 	"github.com/yvvlee/kirby/server/internal/entity"
 	logic "github.com/yvvlee/kirby/server/internal/logic/publish"

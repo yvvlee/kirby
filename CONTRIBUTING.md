@@ -29,8 +29,8 @@ make -C server generate
 scripts/ci/check-generated.sh
 ```
 
-Commit the API source and generated output together. Never edit files under
-`server/gen` by hand.
+Commit the API source and generated output together. Never edit generated files
+under `server/api` by hand.
 
 ## Tests
 

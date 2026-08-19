@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strconv"
 
-	commonv1 "github.com/yvvlee/kirby/server/gen/kirby/common/v1"
+	commonv1 "github.com/yvvlee/kirby/server/api/common"
 	"github.com/yvvlee/kirby/server/internal/model"
 	"github.com/yvvlee/kirby/server/internal/safeint"
 	"github.com/yvvlee/kirby/server/internal/timeutil"

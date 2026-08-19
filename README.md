@@ -6,7 +6,7 @@ assigned separately in each environment.
 
 The repository contains:
 
-- a Vue 2 administration application;
+- a React 19 and TypeScript administration application;
 - an HTTP management API protected by administrator JWTs;
 - HTTP and gRPC runtime APIs protected by project-level API keys;
 - a stateless Go backend backed by MySQL, Redis, and S3-compatible storage.
@@ -22,7 +22,7 @@ containers and runs the frontend directly with `npm run dev`.
 Requirements:
 
 - Go 1.25.13 or a compatible newer toolchain;
-- Node.js 20.19.5 and npm;
+- Node.js 24.19.0 and npm;
 - running MySQL 8.4 and Redis 7 containers exposed on localhost;
 - container names `mysql` and `redis` in the commands below, or equivalent
   commands adjusted for the local names.
@@ -72,7 +72,7 @@ jwt:
   keys: {local: "local-development-jwt-key-0000000000000000"}
 security:
   api_key_pepper: "local-development-api-pepper-00000000000000"
-  allowed_origins: ["http://localhost:5173", "http://127.0.0.1:5173"]
+  allowed_origins: ["http://localhost:15173", "http://127.0.0.1:15173"]
   trusted_proxies: []
 object_storage:
   driver: local
@@ -110,7 +110,7 @@ cd server
 go run . serve --config ../.local/config.yaml
 ```
 
-Start the Vue development server in the second terminal:
+Start the React development server in the second terminal:
 
 ```sh
 cd web
@@ -118,7 +118,7 @@ npm ci
 KIRBY_DEV_API_TARGET=http://127.0.0.1:8080 npm run dev
 ```
 
-Open `http://localhost:5173`. The Vite proxy maps `/api` to the backend. The
+Open `http://localhost:15173`. The Vite proxy maps `/api` to the backend. The
 backend readiness endpoint is `http://127.0.0.1:8080/readyz`.
 
 For a disposable automated run against the same existing containers, use:
@@ -168,7 +168,7 @@ the request changes the `project` parameter.
 - [Security design](docs/security.md)
 - [Source provenance](docs/source-provenance.md)
 
-The public API source of truth is under `api/kirby`. See
+The public API source of truth is under `server/api`. See
 [CONTRIBUTING.md](CONTRIBUTING.md) before changing generated code or
 dependencies.
 

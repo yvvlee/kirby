@@ -13,7 +13,7 @@ import (
 	"github.com/go-kratos/kratos/v2/transport"
 	kratoshttp "github.com/go-kratos/kratos/v2/transport/http"
 
-	errorsv1 "github.com/yvvlee/kirby/server/gen/kirby/errors/v1"
+	errorsv1 "github.com/yvvlee/kirby/server/api/errors"
 	"github.com/yvvlee/kirby/server/internal/storage/cache"
 )
 
