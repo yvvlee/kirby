@@ -50,8 +50,8 @@ func NewContentCache(store cache.Store) (*ContentCache, error) {
 	return &ContentCache{store: store}, nil
 }
 
-func (c *ContentCache) DeletePublishedConfigVersion(ctx context.Context, environmentID, projectID int64, configKey string, runtimeVersion int64) error {
-	key, err := contentCacheKey(environmentID, projectID, configKey, runtimeVersion)
+func (c *ContentCache) DeletePublishedConfigVersion(ctx context.Context, projectID int64, configKey string, runtimeVersion int64) error {
+	key, err := contentCacheKey(projectID, configKey, runtimeVersion)
 	if err != nil {
 		return err
 	}
@@ -124,7 +124,7 @@ func (l *Logic) Read(ctx context.Context, fullCredential, requestedProject, conf
 		if err != nil {
 			return fmt.Errorf("runtime config version is invalid")
 		}
-		cacheKey, err := contentCacheKey(project.EnvironmentID, project.ID, config.Key, config.RuntimeVersion)
+		cacheKey, err := contentCacheKey(project.ID, config.Key, config.RuntimeVersion)
 		if err != nil {
 			return err
 		}
@@ -169,9 +169,9 @@ func (l *Logic) Read(ctx context.Context, fullCredential, requestedProject, conf
 	return result, nil
 }
 
-func contentCacheKey(environmentID, projectID int64, configKey string, runtimeVersion int64) (string, error) {
-	if environmentID <= 0 || projectID <= 0 || runtimeVersion < 0 || strings.TrimSpace(configKey) == "" {
+func contentCacheKey(projectID int64, configKey string, runtimeVersion int64) (string, error) {
+	if projectID <= 0 || runtimeVersion < 0 || strings.TrimSpace(configKey) == "" {
 		return "", base.InvalidArgument("runtime cache scope is invalid")
 	}
-	return "runtime:config:" + strconv.FormatInt(environmentID, 10) + ":" + strconv.FormatInt(projectID, 10) + ":" + configKey + ":" + strconv.FormatInt(runtimeVersion, 10), nil
+	return "runtime:config:" + strconv.FormatInt(projectID, 10) + ":" + configKey + ":" + strconv.FormatInt(runtimeVersion, 10), nil
 }

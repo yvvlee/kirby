@@ -23,9 +23,10 @@ require_command() {
   fi
 }
 
-for command_name in curl docker go grep gzip jq npm sort; do
+for command_name in curl docker go grep gzip id jq npm sort; do
   require_command "$command_name"
 done
+trivy_user="$(id -u):$(id -g)"
 
 download_govuln_db() {
   database_dir="$work_dir/govulndb"
@@ -55,12 +56,12 @@ prepare_trivy_db() {
   attempt=1
   while :; do
     if [ -n "$trivy_db_repository" ]; then
-      if docker run --rm -v "$work_dir:/work" "$trivy_image" image \
+      if docker run --rm --user "$trivy_user" -v "$work_dir:/work" "$trivy_image" image \
         --cache-dir /work/trivy-cache --no-progress --download-db-only \
         --db-repository "$trivy_db_repository"; then
         break
       fi
-    elif docker run --rm -v "$work_dir:/work" "$trivy_image" image \
+    elif docker run --rm --user "$trivy_user" -v "$work_dir:/work" "$trivy_image" image \
       --cache-dir /work/trivy-cache --no-progress --download-db-only; then
       break
     fi
@@ -125,13 +126,13 @@ echo "Preparing the current Trivy database..."
 prepare_trivy_db
 
 echo "Scanning the release image for high and critical vulnerabilities..."
-docker run --rm -v "$work_dir:/work" "$trivy_image" image \
+docker run --rm --user "$trivy_user" -v "$work_dir:/work" "$trivy_image" image \
   --skip-db-update --cache-dir /work/trivy-cache --no-progress --scanners vuln \
   --severity HIGH,CRITICAL --exit-code 1 --input /work/server.tar
 
 echo "Scanning the source tree for secrets..."
-docker run --rm -v "$repo_dir:/src:ro" "$trivy_image" fs \
-  --no-progress --scanners secret --exit-code 1 \
+docker run --rm --user "$trivy_user" -v "$repo_dir:/src:ro" "$trivy_image" fs \
+  --cache-dir /tmp/trivy-cache --no-progress --scanners secret --exit-code 1 \
   --skip-dirs /src/.git --skip-dirs /src/web/node_modules --skip-dirs /src/web/dist /src
 
 echo "Security checks passed."

@@ -319,17 +319,17 @@ func (a stateAudits) RecordForEnvironmentTx(_ context.Context, _ *xorm.Session, 
 }
 
 type cleanupCall struct {
-	environmentID, projectID, version int64
-	key                               string
+	projectID, version int64
+	key                string
 }
 type stateCache struct {
 	mu    sync.Mutex
 	calls []cleanupCall
 }
 
-func (c *stateCache) DeletePublishedConfigVersion(_ context.Context, environmentID, projectID int64, key string, version int64) error {
+func (c *stateCache) DeletePublishedConfigVersion(_ context.Context, projectID int64, key string, version int64) error {
 	c.mu.Lock()
-	c.calls = append(c.calls, cleanupCall{environmentID, projectID, version, key})
+	c.calls = append(c.calls, cleanupCall{projectID, version, key})
 	c.mu.Unlock()
 	return nil
 }
@@ -467,7 +467,7 @@ func TestReplaceRequiresExplicitTargetAndPreservesTargetKey(t *testing.T) {
 	assert.Equal(t, int64(5), state.configs[50].Version)
 	state.mu.Unlock()
 	cache.mu.Lock()
-	assert.Equal(t, []cleanupCall{{environmentID: 2, projectID: 20, version: 7, key: "existingFeature"}}, cache.calls)
+	assert.Equal(t, []cleanupCall{{projectID: 20, version: 7, key: "existingFeature"}}, cache.calls)
 	cache.mu.Unlock()
 
 	request.TargetConfigID = nil

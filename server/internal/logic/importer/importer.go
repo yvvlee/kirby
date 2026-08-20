@@ -90,7 +90,7 @@ type AuditRepository interface {
 }
 
 type CacheCleaner interface {
-	DeletePublishedConfigVersion(context.Context, int64, int64, string, int64) error
+	DeletePublishedConfigVersion(context.Context, int64, string, int64) error
 }
 
 type Logic struct {
@@ -223,14 +223,14 @@ func (l *Logic) Import(ctx context.Context, actor permission.Actor, request Requ
 			return err
 		}
 		targetSnapshotID = targetSnapshot.ID
-		cleanup = &cacheTarget{environmentID: request.TargetEnvironmentID, projectID: targetProject.ID, configKey: targetConfig.Key, runtimeVersion: targetConfig.RuntimeVersion}
+		cleanup = &cacheTarget{projectID: targetProject.ID, configKey: targetConfig.Key, runtimeVersion: targetConfig.RuntimeVersion}
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
 	if cleanup != nil {
-		_ = l.cache.DeletePublishedConfigVersion(ctx, cleanup.environmentID, cleanup.projectID, cleanup.configKey, cleanup.runtimeVersion)
+		_ = l.cache.DeletePublishedConfigVersion(ctx, cleanup.projectID, cleanup.configKey, cleanup.runtimeVersion)
 	}
 	snapshot, err := l.snapshots.FindByID(ctx, request.TargetEnvironmentID, targetSnapshotID)
 	if err != nil {
@@ -391,7 +391,6 @@ func canonicalTargetContent(source *entity.ConfigSnapshot, config *model.Config,
 }
 
 type cacheTarget struct {
-	environmentID  int64
 	projectID      int64
 	configKey      string
 	runtimeVersion int64

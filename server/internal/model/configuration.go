@@ -3,7 +3,7 @@ package model
 import "time"
 
 type Project struct {
-	Meta          `xorm:"extends"`
+	Meta `xorm:"extends"`
 	// EnvironmentID is retained in memory for the current environment-scoped
 	// authorization path. It is no longer persisted; project ownership is
 	// represented by environments.project_id.

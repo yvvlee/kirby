@@ -253,7 +253,6 @@ func (a *testAuthorizer) Require(_ context.Context, _ int64, _ int64, keys ...st
 }
 
 type cleanupCall struct {
-	environmentID  int64
 	projectID      int64
 	configKey      string
 	runtimeVersion int64
@@ -265,9 +264,9 @@ type testCache struct {
 	calls []cleanupCall
 }
 
-func (c *testCache) DeletePublishedConfigVersion(_ context.Context, environmentID, projectID int64, configKey string, runtimeVersion int64) error {
+func (c *testCache) DeletePublishedConfigVersion(_ context.Context, projectID int64, configKey string, runtimeVersion int64) error {
 	c.mu.Lock()
-	c.calls = append(c.calls, cleanupCall{environmentID: environmentID, projectID: projectID, configKey: configKey, runtimeVersion: runtimeVersion})
+	c.calls = append(c.calls, cleanupCall{projectID: projectID, configKey: configKey, runtimeVersion: runtimeVersion})
 	c.mu.Unlock()
 	return c.err
 }
@@ -311,7 +310,7 @@ func TestPublishSwitchesReleaseWithStableLockOrder(t *testing.T) {
 	assert.Equal(t, "snapshot.publish", state.audits[0].Action)
 	assert.Equal(t, "request-1", state.audits[0].RequestID)
 	require.Len(t, cache.calls, 1)
-	assert.Equal(t, cleanupCall{environmentID: 5, projectID: 20, configKey: "feature", runtimeVersion: 0}, cache.calls[0])
+	assert.Equal(t, cleanupCall{projectID: 20, configKey: "feature", runtimeVersion: 0}, cache.calls[0])
 }
 
 func TestConcurrentPublishLeavesExactlyOneReleasedSnapshot(t *testing.T) {

@@ -65,23 +65,42 @@ test('runs the standalone management and runtime journey against the real backen
   expect(token).toBeTruthy()
   await expect(page.getByRole('heading', { name: '配置管理平台' })).toBeVisible()
 
+  await page.goto('/projects')
+  await page.getByRole('button', { name: '创建项目' }).click()
+  let dialog = page.getByRole('dialog', { name: '创建项目' })
+  await dialog.getByPlaceholder('例如 DemoConfig').fill('SourceProject')
+  await dialog.getByLabel('项目名称').fill('Source Project')
+  await dialog.getByLabel('项目描述').fill('E2E source')
+  const sourceProjectSaved = page.waitForResponse((response) => response.url().endsWith('/api/admin/projects') && response.request().method() === 'POST')
+  await dialog.getByRole('button', { name: /保\s*存/ }).click()
+  const sourceProjectReply = await (await sourceProjectSaved).json()
+  const targetProjectReply = await api(request, token, 'POST', '/admin/projects', {
+    key: 'TargetProject', name: 'Target Project', description: 'E2E target',
+  })
+  const sourceProject = sourceProjectReply.project
+  const targetProject = targetProjectReply.project
+
   await page.goto('/system/environments')
   await page.getByRole('button', { name: '新建环境' }).click()
-  let dialog = page.getByRole('dialog', { name: '新建环境' })
+  dialog = page.getByRole('dialog', { name: '新建环境' })
+  await dialog.getByRole('combobox', { name: '所属项目' }).click()
+  await page.getByText('Source Project (SourceProject)', { exact: true }).filter({ visible: true }).click()
   await dialog.getByPlaceholder('例如 production').fill('source')
   await dialog.getByLabel('名称').fill('Source')
   await dialog.getByLabel('说明').fill('E2E source environment')
-  const sourceSaved = page.waitForResponse((response) => response.url().endsWith('/api/admin/environments') && response.request().method() === 'POST')
+  const sourceSaved = page.waitForResponse((response) => response.url().endsWith(`/api/admin/projects/${sourceProject.id}/environments`) && response.request().method() === 'POST')
   await dialog.getByRole('button', { name: /保\s*存/ }).click()
   await sourceSaved
   await expect(dialog).toBeHidden()
 
   await page.getByRole('button', { name: '新建环境' }).click()
   dialog = page.getByRole('dialog', { name: '新建环境' })
+  await dialog.getByRole('combobox', { name: '所属项目' }).click()
+  await page.getByText('Target Project (TargetProject)', { exact: true }).filter({ visible: true }).click()
   await dialog.getByPlaceholder('例如 production').fill('target')
   await dialog.getByLabel('名称').fill('Target')
   await dialog.getByLabel('说明').fill('E2E target environment')
-  const targetSaved = page.waitForResponse((response) => response.url().endsWith('/api/admin/environments') && response.request().method() === 'POST')
+  const targetSaved = page.waitForResponse((response) => response.url().endsWith(`/api/admin/projects/${targetProject.id}/environments`) && response.request().method() === 'POST')
   await dialog.getByRole('button', { name: /保\s*存/ }).click()
   await targetSaved
   await expect(dialog).toBeHidden()
@@ -93,20 +112,6 @@ test('runs the standalone management and runtime journey against the real backen
   expect(target?.id).toBeTruthy()
 
   await page.goto('/projects')
-  await page.getByRole('button', { name: '创建项目' }).click()
-  dialog = page.getByRole('dialog', { name: '创建项目' })
-  await dialog.getByPlaceholder('例如 DemoConfig').fill('SourceProject')
-  await dialog.getByLabel('项目名称').fill('Source Project')
-  await dialog.getByLabel('项目描述').fill('E2E source')
-  const sourceProjectSaved = page.waitForResponse((response) => response.url().endsWith(`/api/admin/environments/${source.id}/project/create`) && response.request().method() === 'POST')
-  await dialog.getByRole('button', { name: /保\s*存/ }).click()
-  const sourceProjectReply = await (await sourceProjectSaved).json()
-  const targetProjectReply = await api(request, token, 'POST', `/admin/environments/${target.id}/project/create`, {
-    environment_id: target.id, key: 'TargetProject', name: 'Target Project', description: 'E2E target',
-  })
-  const sourceProject = sourceProjectReply.project
-  const targetProject = targetProjectReply.project
-
   await page.getByRole('link', { name: /Source Project/ }).click()
   await expect(page.getByRole('heading', { name: 'Source Project' })).toBeVisible()
   await expect(page.getByRole('button', { name: '创建配置' })).toBeVisible()

@@ -50,7 +50,7 @@ type AuditRepository interface {
 // CacheCleaner removes only an obsolete versioned entry. Runtime correctness
 // comes from configs.runtime_version, so cleanup errors must not undo commits.
 type CacheCleaner interface {
-	DeletePublishedConfigVersion(context.Context, int64, int64, string, int64) error
+	DeletePublishedConfigVersion(context.Context, int64, string, int64) error
 }
 
 type Logic struct {
@@ -146,7 +146,7 @@ func (l *Logic) Publish(ctx context.Context, actor permission.Actor, environment
 		copy.UpdatedAt = changedAt
 		copy.Version++
 		result = &copy
-		cleanup = cleanupKey{environmentID: environmentID, projectID: config.ProjectID, configKey: config.Key, runtimeVersion: config.RuntimeVersion}
+		cleanup = cleanupKey{projectID: config.ProjectID, configKey: config.Key, runtimeVersion: config.RuntimeVersion}
 		return nil
 	})
 	if err != nil {
@@ -213,7 +213,7 @@ func (l *Logic) Unpublish(ctx context.Context, actor permission.Actor, environme
 		copy.UpdatedAt = changedAt
 		copy.Version++
 		result = &copy
-		cleanup = cleanupKey{environmentID: environmentID, projectID: config.ProjectID, configKey: config.Key, runtimeVersion: config.RuntimeVersion}
+		cleanup = cleanupKey{projectID: config.ProjectID, configKey: config.Key, runtimeVersion: config.RuntimeVersion}
 		return nil
 	})
 	if err != nil {
@@ -298,14 +298,13 @@ func validateSnapshot(snapshot *model.Snapshot, config *model.Config) error {
 }
 
 type cleanupKey struct {
-	environmentID  int64
 	projectID      int64
 	configKey      string
 	runtimeVersion int64
 }
 
 func (l *Logic) cleanup(ctx context.Context, key cleanupKey) {
-	_ = l.cache.DeletePublishedConfigVersion(ctx, key.environmentID, key.projectID, key.configKey, key.runtimeVersion)
+	_ = l.cache.DeletePublishedConfigVersion(ctx, key.projectID, key.configKey, key.runtimeVersion)
 }
 
 func audit(actor permission.Actor, action string, snapshotID int64) *model.AuditLog {

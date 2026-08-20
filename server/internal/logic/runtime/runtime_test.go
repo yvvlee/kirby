@@ -95,7 +95,7 @@ func newRuntimeFixture(t *testing.T) (*credential.Manager, *runtimeState, string
 	require.NoError(t, err)
 	state := &runtimeState{
 		key:      model.ProjectAPIKey{RecordMeta: model.RecordMeta{ID: 30}, ProjectID: 20, PublicID: generated.PublicID, SecretHash: generated.Hash},
-		project:  model.Project{Meta: model.Meta{ID: 20}, EnvironmentID: 5, Key: "website"},
+		project:  model.Project{Meta: model.Meta{ID: 20}, Key: "website"},
 		config:   model.Config{Meta: model.Meta{ID: 10}, ProjectID: 20, Key: "feature", RuntimeVersion: 1},
 		snapshot: model.Snapshot{Meta: model.Meta{ID: 40}, ProjectID: 20, ConfigID: 10, ConfigKey: "feature", Status: model.SnapshotStatusReleased, Content: snapshotContent(t, `"one"`)},
 	}
@@ -167,7 +167,7 @@ func TestContentCacheCleanerDeletesOnlyRequestedVersion(t *testing.T) {
 	logicLayer := newRuntimeLogic(t, manager, state, contentCache)
 	_, err := logicLayer.Read(context.Background(), full, "website", "feature")
 	require.NoError(t, err)
-	require.NoError(t, contentCache.DeletePublishedConfigVersion(context.Background(), 5, 20, "feature", 1))
+	require.NoError(t, contentCache.DeletePublishedConfigVersion(context.Background(), 20, "feature", 1))
 
 	_, err = logicLayer.Read(context.Background(), full, "website", "feature")
 	require.NoError(t, err)

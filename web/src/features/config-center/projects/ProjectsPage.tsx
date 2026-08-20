@@ -21,7 +21,7 @@ export default function ProjectsPage() {
   const queryClient = useQueryClient()
   const [keywordInput, setKeywordInput] = useState('')
   const [keyword, setKeyword] = useState('')
-  const projectScope = systemAdmin ? null : environment.currentId
+  const projectScope = environment.currentId
   const projects = useProjectsQuery(projectScope, keyword)
   const canWrite = systemAdmin
   const [form] = Form.useForm<ProjectForm>()

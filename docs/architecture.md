@@ -43,8 +43,8 @@ environments, but environment content still uses explicit environment scope.
 
 Editors build configurations and snapshots in MySQL. Publishers select a
 snapshot as the published version. Runtime reads resolve the project and config
-against that published version. Cache entries include environment, project,
-config key, and version so publication changes cannot reuse an older value.
+against that published version. Cache entries include project, config key, and
+version so publication changes cannot reuse an older value.
 
 ## Upload flow
 
