@@ -11,55 +11,47 @@ option go_package = "github.com/yvvlee/kirby/server/api/admin;adminv1";
 service ProjectService {
   rpc CreateProject(CreateProjectRequest) returns (ProjectReply) {
     option (google.api.http) = {
-      post: "/admin/environments/{environment_id}/project/create"
+      post: "/admin/projects"
       body: "*"
     };
   }
   rpc UpdateProject(UpdateProjectRequest) returns (ProjectReply) {
     option (google.api.http) = {
-      post: "/admin/environments/{environment_id}/project/update"
+      put: "/admin/projects/{id}"
       body: "*"
     };
   }
   rpc ListProject(ListProjectRequest) returns (ListProjectReply) {
-    option (google.api.http) = {
-      post: "/admin/environments/{environment_id}/project/list"
-      body: "*"
-    };
+    option (google.api.http) = {get: "/admin/projects"};
   }
   rpc ProjectDetail(ProjectIDRequest) returns (ProjectReply) {
-    option (google.api.http) = {
-      post: "/admin/environments/{environment_id}/project/detail"
-      body: "*"
-    };
+    option (google.api.http) = {get: "/admin/projects/{id}"};
   }
 }
 
 message ProjectIDRequest {
-  int64 environment_id = 1 [(validate.rules).int64 = {gt: 0}];
-  int64 id = 2 [(validate.rules).int64 = {gt: 0}];
+  int64 id = 1 [(validate.rules).int64 = {gt: 0}];
+  optional int64 environment_id = 2 [(validate.rules).int64 = {gt: 0}];
 }
 
 message CreateProjectRequest {
-  int64 environment_id = 1 [(validate.rules).int64 = {gt: 0}];
-  string key = 2 [(validate.rules).string = {
+  string key = 1 [(validate.rules).string = {
     min_len: 1, max_len: 64, pattern: "^[A-Za-z][A-Za-z0-9]*$"
   }];
-  string name = 3 [(validate.rules).string = {min_len: 1, max_len: 64}];
-  string description = 4 [(validate.rules).string = {max_len: 255}];
+  string name = 2 [(validate.rules).string = {min_len: 1, max_len: 64}];
+  string description = 3 [(validate.rules).string = {max_len: 255}];
 }
 
 message UpdateProjectRequest {
-  int64 environment_id = 1 [(validate.rules).int64 = {gt: 0}];
-  int64 id = 2 [(validate.rules).int64 = {gt: 0}];
-  string name = 3 [(validate.rules).string = {min_len: 1, max_len: 64}];
-  string description = 4 [(validate.rules).string = {max_len: 255}];
+  int64 id = 1 [(validate.rules).int64 = {gt: 0}];
+  string name = 2 [(validate.rules).string = {min_len: 1, max_len: 64}];
+  string description = 3 [(validate.rules).string = {max_len: 255}];
   uint32 version = 55;
 }
 
 message ListProjectRequest {
-  int64 environment_id = 1 [(validate.rules).int64 = {gt: 0}];
-  string keyword = 2 [(validate.rules).string = {max_len: 64}];
+  string keyword = 1 [(validate.rules).string = {max_len: 64}];
+  optional int64 environment_id = 2 [(validate.rules).int64 = {gt: 0}];
 }
 
 message ProjectReply {

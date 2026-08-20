@@ -31,8 +31,10 @@ export async function getMyPermissions(
 export async function createEnvironment(
   environment: ApiObject,
 ): Promise<Environment> {
+  const projectId = environment.project_id
+  if (typeof projectId !== 'number' && typeof projectId !== 'string') throw new TypeError('project_id is required')
   const { data } = await client.post<Environment>(
-    '/admin/environments',
+    `/admin/projects/${positiveId(projectId, 'projectId')}/environments`,
     environment,
   )
   return data
@@ -42,9 +44,11 @@ export async function updateEnvironment(
   environmentId: Identifier,
   environment: ApiObject,
 ): Promise<Environment> {
+  const projectId = environment.project_id
+  if (typeof projectId !== 'number' && typeof projectId !== 'string') throw new TypeError('project_id is required')
   const { data } = await client.put<Environment>(
-    environmentPath(environmentId),
-    { ...environment, environment_id: environmentId },
+    `/admin/projects/${positiveId(projectId, 'projectId')}/environments/${positiveId(environmentId, 'environmentId')}`,
+    { ...environment, environment_id: environmentId, project_id: projectId },
   )
   return data
 }

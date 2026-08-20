@@ -51,7 +51,8 @@ SELECT s.*
 FROM structures AS s
 INNER JOIN configs AS c ON c.id = s.config_id AND c.deleted_at IS NULL
 INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
-WHERE p.environment_id = ? AND c.id = ?
+INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
+WHERE e.id = ? AND c.id = ?
 ORDER BY s.id ASC
 FOR UPDATE`, environmentID, configID).Find(&locked); err != nil {
 		return nil, base.Wrap("lock structures for config", err)
@@ -159,7 +160,8 @@ INSERT INTO structures
 SELECT c.id, ?, ?, ?, ?, ?, ?
 FROM configs AS c
 INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
-WHERE c.id = ? AND c.deleted_at IS NULL AND p.environment_id = ?`
+INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
+WHERE c.id = ? AND c.deleted_at IS NULL AND e.id = ?`
 
 func structureCreateArgs(environmentID, configID int64, structure *model.Structure) []any {
 	return []any{
@@ -178,7 +180,8 @@ SELECT s.*
 FROM structures AS s
 INNER JOIN configs AS c ON c.id = s.config_id AND c.deleted_at IS NULL
 INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
-WHERE p.environment_id = ? AND s.id = ? AND s.deleted_at IS NULL
+INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
+WHERE e.id = ? AND s.id = ? AND s.deleted_at IS NULL
 LIMIT 1`, []any{environmentID, structureID}, &structure)
 	if err != nil {
 		return nil, err
@@ -199,7 +202,8 @@ SELECT s.*
 FROM structures AS s
 INNER JOIN configs AS c ON c.id = s.config_id AND c.deleted_at IS NULL
 INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
-WHERE p.environment_id = ? AND c.id = ? AND s.`+"`key`"+` = ? AND s.deleted_at IS NULL
+INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
+WHERE e.id = ? AND c.id = ? AND s.`+"`key`"+` = ? AND s.deleted_at IS NULL
 LIMIT 1`, []any{environmentID, configID, key}, &structure)
 	if err != nil {
 		return nil, err
@@ -214,7 +218,7 @@ func (r *StructureRepositoryImpl) List(ctx context.Context, environmentID int64,
 	if err := base.ValidateID("config_id", filter.ConfigID); err != nil {
 		return base.PageResult[model.Structure]{}, err
 	}
-	where := "p.environment_id = ? AND p.id = ? AND c.id = ? AND s.deleted_at IS NULL"
+	where := "e.id = ? AND p.id = ? AND c.id = ? AND s.deleted_at IS NULL"
 	args := []any{environmentID, filter.ProjectID, filter.ConfigID}
 	if filter.IgnoreDependencyID != nil {
 		if err := base.ValidateID("ignore_dependency_id", *filter.IgnoreDependencyID); err != nil {
@@ -261,7 +265,8 @@ WHERE s.id = ? AND s.version = ? AND s.deleted_at IS NULL
       SELECT 1
       FROM configs AS c
       INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
-      WHERE c.id = s.config_id AND c.deleted_at IS NULL AND p.environment_id = ?
+      INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
+      WHERE c.id = s.config_id AND c.deleted_at IS NULL AND e.id = ?
   )`, update.Key, update.Name, update.Description, update.FieldsJSON, update.UpdatedBy,
 		structureID, update.Version, environmentID)
 	return err
@@ -280,7 +285,8 @@ WHERE s.id = ? AND s.version = ? AND s.deleted_at IS NULL
       SELECT 1
       FROM configs AS c
       INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
-      WHERE c.id = s.config_id AND c.deleted_at IS NULL AND p.environment_id = ?
+      INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
+      WHERE c.id = s.config_id AND c.deleted_at IS NULL AND e.id = ?
   )`, update.Key, update.Name, update.Description, update.FieldsJSON, update.UpdatedBy,
 		structureID, update.Version, environmentID)
 	return err
@@ -299,7 +305,8 @@ WHERE s.id = ? AND s.deleted_at IS NULL
       SELECT 1
       FROM configs AS c
       INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
-      WHERE c.id = s.config_id AND c.deleted_at IS NULL AND p.environment_id = ?
+      INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
+      WHERE c.id = s.config_id AND c.deleted_at IS NULL AND e.id = ?
   )`, updatedBy, structureID, environmentID)
 	return err
 }
@@ -317,7 +324,8 @@ WHERE s.id = ? AND s.deleted_at IS NULL
       SELECT 1
       FROM configs AS c
       INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
-      WHERE c.id = s.config_id AND c.deleted_at IS NULL AND p.environment_id = ?
+      INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
+      WHERE c.id = s.config_id AND c.deleted_at IS NULL AND e.id = ?
   )`, updatedBy, structureID, environmentID)
 	return err
 }
@@ -336,7 +344,8 @@ func (r *StructureRepositoryImpl) ReconcileTx(ctx context.Context, tx *xorm.Sess
 SELECT c.id
 FROM configs AS c
 INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
-WHERE p.environment_id = ? AND c.id = ? AND c.deleted_at IS NULL
+INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
+WHERE e.id = ? AND c.id = ? AND c.deleted_at IS NULL
 LIMIT 1
 FOR UPDATE`, []any{environmentID, configID}, &locked); err != nil {
 		return err

@@ -7,7 +7,7 @@ server_image="kirby-security:$PPID-$$"
 govuln_version=v1.1.4
 gosec_version=v2.22.7
 trivy_image="aquasec/trivy@sha256:e2b22eac59c02003d8749f5b8d9bd073b62e30fefaef5b7c8371204e0a4b0c08"
-trivy_db_image="${KIRBY_TRIVY_DB_IMAGE:-mirror.gcr.io/aquasec/trivy-db:2}"
+trivy_db_repository="${KIRBY_TRIVY_DB_REPOSITORY:-${KIRBY_TRIVY_DB_IMAGE:-}}"
 
 cleanup() {
   docker image rm "$server_image" >/dev/null 2>&1 || true
@@ -23,7 +23,7 @@ require_command() {
   fi
 }
 
-for command_name in curl docker go grep gzip jq npm sort tar; do
+for command_name in curl docker go grep gzip jq npm sort; do
   require_command "$command_name"
 done
 
@@ -53,23 +53,23 @@ download_govuln_db() {
 
 prepare_trivy_db() {
   attempt=1
-  while ! docker pull "$trivy_db_image"; do
+  while :; do
+    if [ -n "$trivy_db_repository" ]; then
+      if docker run --rm -v "$work_dir:/work" "$trivy_image" image \
+        --cache-dir /work/trivy-cache --no-progress --download-db-only \
+        --db-repository "$trivy_db_repository"; then
+        break
+      fi
+    elif docker run --rm -v "$work_dir:/work" "$trivy_image" image \
+      --cache-dir /work/trivy-cache --no-progress --download-db-only; then
+      break
+    fi
     if [ "$attempt" -ge 3 ]; then
-      echo "failed to pull the Trivy vulnerability database after 3 attempts" >&2
+      echo "failed to download the Trivy vulnerability database after 3 attempts" >&2
       exit 1
     fi
     attempt=$((attempt + 1))
   done
-
-  database_archive="$work_dir/trivy-db-image.tar"
-  docker save -o "$database_archive" "$trivy_db_image"
-  manifest_digest=$(tar -xOf "$database_archive" index.json | jq -er '.manifests[0].digest')
-  manifest_path="blobs/sha256/${manifest_digest#sha256:}"
-  layer_digest=$(tar -xOf "$database_archive" "$manifest_path" | jq -er \
-    '.layers[] | select(.mediaType == "application/vnd.aquasec.trivy.db.layer.v1.tar+gzip") | .digest')
-  mkdir -p "$work_dir/trivy-cache/db"
-  tar -xOf "$database_archive" "blobs/sha256/${layer_digest#sha256:}" \
-    | tar -xzf - -C "$work_dir/trivy-cache/db"
   test -s "$work_dir/trivy-cache/db/trivy.db"
   test -s "$work_dir/trivy-cache/db/metadata.json"
 }

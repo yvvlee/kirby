@@ -6,8 +6,8 @@ import { useNavigate } from 'react-router-dom'
 
 import { createProject, updateProject } from '@/api/projects'
 import { queryKeys } from '@/app/query-keys'
+import { useAuth } from '@/auth/auth-state'
 import { useEnvironment } from '@/auth/environment-state'
-import EnvironmentTag from '@/components/EnvironmentTag/EnvironmentTag'
 import { getApiErrorMessage } from '@/api/errors'
 import { type Project, useProjectsQuery } from '../queries'
 
@@ -16,24 +16,27 @@ type ProjectForm = { key: string; name: string; description: string }
 export default function ProjectsPage() {
   const { message } = App.useApp()
   const navigate = useNavigate()
+  const { systemAdmin } = useAuth()
   const environment = useEnvironment()
   const queryClient = useQueryClient()
   const [keywordInput, setKeywordInput] = useState('')
   const [keyword, setKeyword] = useState('')
-  const projects = useProjectsQuery(environment.currentId, keyword)
-  const canWrite = environment.hasPermission('project:write')
+  const projectScope = systemAdmin ? null : environment.currentId
+  const projects = useProjectsQuery(projectScope, keyword)
+  const canWrite = systemAdmin
   const [form] = Form.useForm<ProjectForm>()
   const [editing, setEditing] = useState<Project | null>(null)
   const [open, setOpen] = useState(false)
   const [actionError, setActionError] = useState<unknown>(null)
   const save = useMutation({
     mutationFn: (values: ProjectForm) => {
-      if (environment.currentId === null) throw new Error('当前没有可用环境')
       return editing
-        ? updateProject(environment.currentId, { ...values, id: editing.id, version: editing.version })
-        : createProject(environment.currentId, values)
+        ? updateProject(null, { ...values, id: editing.id, version: editing.version })
+        : createProject(null, values)
     },
-    onSuccess: () => environment.currentId === null ? Promise.resolve() : queryClient.invalidateQueries({ queryKey: queryKeys.projects(environment.currentId) }),
+    onSuccess: () => projectScope === null
+      ? queryClient.invalidateQueries({ queryKey: queryKeys.globalProjects() })
+      : queryClient.invalidateQueries({ queryKey: queryKeys.projects(projectScope) }),
   })
 
   const close = () => { setOpen(false); setEditing(null); form.resetFields() }
@@ -53,7 +56,7 @@ export default function ProjectsPage() {
   return (
     <section className="catalog-page" aria-labelledby="projects-title">
       <header className="catalog-header">
-        <div><div className="title-row"><h1 id="projects-title">项目</h1><EnvironmentTag environment={environment.current} /></div><p>每个项目独立管理配置和运行时访问权限。</p></div>
+        <div><div className="title-row"><h1 id="projects-title">项目</h1></div><p>每个项目可以包含多个环境，并独立管理配置和运行时访问权限。</p></div>
         {canWrite ? <Button type="primary" onClick={showCreate}>创建项目</Button> : null}
       </header>
       {error ? <Alert type="error" showIcon message={getApiErrorMessage(error, '加载项目失败')} /> : null}
@@ -69,7 +72,7 @@ export default function ProjectsPage() {
           </article>
         ))}
       </div>
-      {!projects.isLoading && !projects.data?.length ? <Empty description="当前环境还没有项目" /> : null}
+      {!projects.isLoading && !projects.data?.length ? <Empty description="暂无项目" /> : null}
       <Modal title={editing ? '编辑项目' : '创建项目'} open={open} width={520} confirmLoading={save.isPending} okText="保存" onCancel={close} onOk={() => form.submit()} afterClose={() => form.resetFields()} destroyOnHidden>
         <Form form={form} layout="vertical" onFinish={submit} preserve={false}>
           <Form.Item label="项目标识" name="key" rules={[{ required: true, message: '请输入项目标识' }, { pattern: /^[A-Za-z][A-Za-z0-9]*$/, message: '项目标识只能包含字母和数字，且以字母开头' }]}><Input disabled={Boolean(editing)} maxLength={64} placeholder="例如 DemoConfig" /></Form.Item>

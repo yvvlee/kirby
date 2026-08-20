@@ -62,9 +62,11 @@ jobs:
           repository=$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')
           namespace=${repository%%/*}
           name=${repository#*/}
-          echo "KIRBY_IMAGE=ghcr.io/$namespace/$name" >> "$GITHUB_ENV"
-          echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
-          echo "BUILD_DATE=$(git show -s --format=%cI "$GITHUB_SHA")" >> "$GITHUB_ENV"
+          {
+            echo "KIRBY_IMAGE=ghcr.io/$namespace/$name"
+            echo "VERSION=${GITHUB_REF_NAME#v}"
+            echo "BUILD_DATE=$(git show -s --format=%cI "$GITHUB_SHA")"
+          } >> "$GITHUB_ENV"
       - name: Install protoc
         run: scripts/ci/install-protoc.sh
       - name: Run release gates
@@ -79,7 +81,7 @@ jobs:
             KIRBY_BUILD_DATE="$BUILD_DATE" \
             scripts/generate-sbom.sh
           cp dist/sbom/*.cdx.json dist/release/
-          (cd dist/release && sha256sum kirby-* *.cdx.json > SHA256SUMS)
+          (cd dist/release && sha256sum -- kirby-* *.cdx.json > SHA256SUMS)
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io

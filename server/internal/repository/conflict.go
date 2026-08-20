@@ -25,7 +25,8 @@ func lockConfigParent(ctx context.Context, tx *xorm.Session, environmentID, conf
 SELECT c.id
 FROM configs AS c
 INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
-WHERE p.environment_id = ? AND c.id = ? AND c.deleted_at IS NULL
+INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
+WHERE e.id = ? AND c.id = ? AND c.deleted_at IS NULL
 LIMIT 1
 FOR UPDATE`, []any{environmentID, configID}, &config)
 }

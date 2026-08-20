@@ -22,10 +22,12 @@ type Repository interface {
 
 type Authorizer interface {
 	Require(context.Context, int64, int64, ...string) error
+	RequireSystem(context.Context, int64, string) error
 }
 
 type AuditRepository interface {
 	RecordForEnvironmentTx(context.Context, *xorm.Session, int64, *model.AuditLog) error
+	RecordSystemTx(context.Context, *xorm.Session, *model.AuditLog) error
 }
 
 type Logic struct {
@@ -43,7 +45,7 @@ func New(projects Repository, permissions Authorizer, audits AuditRepository, tr
 }
 
 func (l *Logic) Create(ctx context.Context, actor permission.Actor, environmentID int64, item *model.Project) (*model.Project, error) {
-	if err := l.permissions.Require(ctx, actor.UserID, environmentID, permission.ProjectWrite); err != nil {
+	if err := l.permissions.RequireSystem(ctx, actor.UserID, permission.SystemProjectManage); err != nil {
 		return nil, err
 	}
 	if item == nil {
@@ -55,16 +57,16 @@ func (l *Logic) Create(ctx context.Context, actor permission.Actor, environmentI
 		if err := l.projects.CreateTx(ctx, tx, environmentID, item); err != nil {
 			return err
 		}
-		return l.audits.RecordForEnvironmentTx(ctx, tx, environmentID, audit(actor, "project.create", "project", item.ID))
+		return l.audits.RecordSystemTx(ctx, tx, audit(actor, "project.create", "project", item.ID))
 	})
 	if err != nil {
 		return nil, err
 	}
-	return l.projects.FindByID(ctx, environmentID, item.ID)
+	return l.projects.FindByID(ctx, 0, item.ID)
 }
 
 func (l *Logic) Update(ctx context.Context, actor permission.Actor, environmentID, projectID int64, update repository.ProjectUpdate) (*model.Project, error) {
-	if err := l.permissions.Require(ctx, actor.UserID, environmentID, permission.ProjectWrite); err != nil {
+	if err := l.permissions.RequireSystem(ctx, actor.UserID, permission.SystemProjectManage); err != nil {
 		return nil, err
 	}
 	update.UpdatedBy = actor.UserID
@@ -72,16 +74,20 @@ func (l *Logic) Update(ctx context.Context, actor permission.Actor, environmentI
 		if err := l.projects.UpdateTx(ctx, tx, environmentID, projectID, update); err != nil {
 			return err
 		}
-		return l.audits.RecordForEnvironmentTx(ctx, tx, environmentID, audit(actor, "project.update", "project", projectID))
+		return l.audits.RecordSystemTx(ctx, tx, audit(actor, "project.update", "project", projectID))
 	})
 	if err != nil {
 		return nil, err
 	}
-	return l.projects.FindByID(ctx, environmentID, projectID)
+	return l.projects.FindByID(ctx, 0, projectID)
 }
 
 func (l *Logic) List(ctx context.Context, actor permission.Actor, environmentID int64, keyword string) ([]model.Project, error) {
-	if err := l.permissions.Require(ctx, actor.UserID, environmentID, permission.ProjectRead); err != nil {
+	if environmentID > 0 {
+		if err := l.permissions.Require(ctx, actor.UserID, environmentID, permission.ProjectRead); err != nil {
+			return nil, err
+		}
+	} else if err := l.permissions.RequireSystem(ctx, actor.UserID, permission.SystemProjectManage); err != nil {
 		return nil, err
 	}
 	result := make([]model.Project, 0)
@@ -98,7 +104,11 @@ func (l *Logic) List(ctx context.Context, actor permission.Actor, environmentID 
 }
 
 func (l *Logic) Detail(ctx context.Context, actor permission.Actor, environmentID, projectID int64) (*model.Project, error) {
-	if err := l.permissions.Require(ctx, actor.UserID, environmentID, permission.ProjectRead); err != nil {
+	if environmentID > 0 {
+		if err := l.permissions.Require(ctx, actor.UserID, environmentID, permission.ProjectRead); err != nil {
+			return nil, err
+		}
+	} else if err := l.permissions.RequireSystem(ctx, actor.UserID, permission.SystemProjectManage); err != nil {
 		return nil, err
 	}
 	return l.projects.FindByID(ctx, environmentID, projectID)

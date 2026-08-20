@@ -4,7 +4,10 @@ import "time"
 
 type Project struct {
 	Meta          `xorm:"extends"`
-	EnvironmentID int64  `xorm:"notnull 'environment_id'"`
+	// EnvironmentID is retained in memory for the current environment-scoped
+	// authorization path. It is no longer persisted; project ownership is
+	// represented by environments.project_id.
+	EnvironmentID int64  `xorm:"-"`
 	Key           string `xorm:"VARCHAR(128) notnull 'key'"`
 	Name          string `xorm:"VARCHAR(64) notnull 'name'"`
 	Description   string `xorm:"VARCHAR(255) notnull default '' 'description'"`

@@ -10,14 +10,14 @@ import "validate/validate.proto";
 option go_package = "github.com/yvvlee/kirby/server/api/admin;adminv1";
 
 service EnvironmentService {
-  rpc ListEnvironments(google.protobuf.Empty) returns (ListEnvironmentsReply) {
+  rpc ListEnvironments(ListEnvironmentsRequest) returns (ListEnvironmentsReply) {
     option (google.api.http) = {get: "/admin/environments"};
   }
   rpc CreateEnvironment(CreateEnvironmentRequest) returns (EnvironmentReply) {
-    option (google.api.http) = {post: "/admin/environments", body: "*"};
+    option (google.api.http) = {post: "/admin/projects/{project_id}/environments", body: "*"};
   }
   rpc UpdateEnvironment(UpdateEnvironmentRequest) returns (EnvironmentReply) {
-    option (google.api.http) = {put: "/admin/environments/{environment_id}", body: "*"};
+    option (google.api.http) = {put: "/admin/projects/{project_id}/environments/{environment_id}", body: "*"};
   }
   rpc MyPermissions(EnvironmentIDRequest) returns (MyPermissionsReply) {
     option (google.api.http) = {get: "/admin/environments/{environment_id}/my-permissions"};
@@ -37,19 +37,25 @@ message EnvironmentIDRequest {
   int64 environment_id = 1 [(validate.rules).int64 = {gt: 0}];
 }
 
+message ListEnvironmentsRequest {
+  optional int64 project_id = 1 [(validate.rules).int64 = {gt: 0}];
+}
+
 message CreateEnvironmentRequest {
-  string key = 1 [(validate.rules).string = {
+  int64 project_id = 1 [(validate.rules).int64 = {gt: 0}];
+  string key = 2 [(validate.rules).string = {
     min_len: 1, max_len: 64, pattern: "^[a-z][a-z0-9-]*$"
   }];
-  string name = 2 [(validate.rules).string = {min_len: 1, max_len: 64}];
-  string description = 3 [(validate.rules).string = {max_len: 255}];
+  string name = 3 [(validate.rules).string = {min_len: 1, max_len: 64}];
+  string description = 4 [(validate.rules).string = {max_len: 255}];
 }
 
 message UpdateEnvironmentRequest {
-  int64 environment_id = 1 [(validate.rules).int64 = {gt: 0}];
-  string name = 2 [(validate.rules).string = {min_len: 1, max_len: 64}];
-  string description = 3 [(validate.rules).string = {max_len: 255}];
-  bool enabled = 4;
+  int64 project_id = 1 [(validate.rules).int64 = {gt: 0}];
+  int64 environment_id = 2 [(validate.rules).int64 = {gt: 0}];
+  string name = 3 [(validate.rules).string = {min_len: 1, max_len: 64}];
+  string description = 4 [(validate.rules).string = {max_len: 255}];
+  bool enabled = 5;
   uint32 version = 55;
 }
 

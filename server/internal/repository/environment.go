@@ -63,10 +63,13 @@ func (r *EnvironmentRepositoryImpl) Create(ctx context.Context, environment *mod
 		return base.InvalidArgument("environment and audit log are required")
 	}
 	return database.WithTx(ctx, r.engine, func(tx *xorm.Session) error {
+		if err := base.ValidateID("project_id", environment.ProjectID); err != nil {
+			return err
+		}
 		result, err := base.ExecuteTx(ctx, tx, "environment", `
 INSERT INTO environments
-    (`+"`key`"+`, name, description, enabled, created_by, updated_by)
-VALUES (?, ?, ?, TRUE, ?, ?)`, environment.Key, environment.Name, environment.Description, environment.CreatedBy, environment.UpdatedBy)
+    (project_id, `+"`key`"+`, name, description, enabled, created_by, updated_by)
+VALUES (?, ?, ?, ?, TRUE, ?, ?)`, environment.ProjectID, environment.Key, environment.Name, environment.Description, environment.CreatedBy, environment.UpdatedBy)
 		if err != nil {
 			return err
 		}

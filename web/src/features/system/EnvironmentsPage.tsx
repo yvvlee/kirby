@@ -1,14 +1,16 @@
 import { useMutation } from '@tanstack/react-query'
-import { Alert, App, Button, Form, Input, Modal, Switch, Table, Tag } from 'antd'
+import { Alert, App, Button, Form, Input, Modal, Select, Switch, Table, Tag } from 'antd'
 import { useState } from 'react'
 
 import { createEnvironment, updateEnvironment } from '@/api/environments'
 import type { Environment } from '@/api/types'
 import { useAuth } from '@/auth/auth-state'
 import { useEnvironment } from '@/auth/environment-state'
+import { useProjectsQuery } from '@/features/config-center/queries'
 import { actionErrorMessage } from './errors'
 
 type EnvironmentForm = {
+  project_id: number
   key: string
   name: string
   description: string
@@ -19,6 +21,7 @@ export default function EnvironmentsPage() {
   const { message } = App.useApp()
   const { systemAdmin } = useAuth()
   const environmentState = useEnvironment()
+  const projects = useProjectsQuery(null, '')
   const [form] = Form.useForm<EnvironmentForm>()
   const [editing, setEditing] = useState<Environment | null>(null)
   const [open, setOpen] = useState(false)
@@ -26,7 +29,7 @@ export default function EnvironmentsPage() {
   const save = useMutation({
     mutationFn: async (values: EnvironmentForm) => editing
       ? updateEnvironment(editing.id, { ...values, version: editing.version })
-      : createEnvironment({ key: values.key, name: values.name, description: values.description }),
+      : createEnvironment(values),
     onSuccess: () => environmentState.loadAvailable(),
   })
 
@@ -45,6 +48,7 @@ export default function EnvironmentsPage() {
     setActionError(null)
     setEditing(item)
     form.setFieldsValue({
+      project_id: Number(item.project_id),
       key: item.key,
       name: item.name,
       description: item.description ?? '',
@@ -100,6 +104,9 @@ export default function EnvironmentsPage() {
         destroyOnHidden
       >
         <Form form={form} layout="vertical" onFinish={submit} preserve={false}>
+          {!editing ? <Form.Item label="所属项目" name="project_id" rules={[{ required: true, message: '请选择所属项目' }]}>
+            <Select loading={projects.isLoading} options={(projects.data ?? []).map((project) => ({ value: Number(project.id), label: `${project.name} (${project.key})` }))} placeholder="请选择项目" />
+          </Form.Item> : null}
           <Form.Item label="环境标识" name="key" rules={[
             { required: true, message: '请输入环境标识' },
             { pattern: /^[a-z][a-z0-9-]*$/, message: '只能使用小写字母、数字和连字符，且必须以字母开头' },

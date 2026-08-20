@@ -19,7 +19,7 @@ func ProjectToProto(item *model.Project) (*commonv1.Project, error) {
 		return nil, err
 	}
 	return &commonv1.Project{
-		Id: item.ID, EnvironmentId: item.EnvironmentID, Key: item.Key, Name: item.Name, Description: item.Description,
+		Id: item.ID, Key: item.Key, Name: item.Name, Description: item.Description,
 		CreatedBy: formatActor(item.CreatedBy), UpdatedBy: formatActor(item.UpdatedBy),
 		CreatedAt: timeutil.FormatRFC3339(item.CreatedAt), UpdatedAt: timeutil.FormatRFC3339(item.UpdatedAt), Version: version,
 	}, nil

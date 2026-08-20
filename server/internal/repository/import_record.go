@@ -43,7 +43,7 @@ INNER JOIN snapshots AS source_snapshot
     ON source_snapshot.id = ? AND source_snapshot.deleted_at IS NULL
 INNER JOIN projects AS source_project
     ON source_project.id = source_snapshot.project_id
-   AND source_project.environment_id = source_environment.id
+   AND source_environment.project_id = source_project.id
    AND source_project.deleted_at IS NULL
 INNER JOIN configs AS source_config
     ON source_config.id = source_snapshot.config_id
@@ -53,7 +53,7 @@ INNER JOIN environments AS target_environment
     ON target_environment.id = ? AND target_environment.enabled = TRUE
    AND target_environment.deleted_at IS NULL
 INNER JOIN projects AS target_project
-    ON target_project.id = ? AND target_project.environment_id = target_environment.id
+    ON target_project.id = ? AND target_environment.project_id = target_project.id
    AND target_project.deleted_at IS NULL
 WHERE u.id = ? AND u.enabled = TRUE AND u.deleted_at IS NULL
 ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(import_records.id)`,

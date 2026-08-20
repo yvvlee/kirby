@@ -14,7 +14,8 @@ resolves current roles for the environment named in the path and request body.
 | Read projects, configs, structures, enums, and snapshots | Yes | Yes | Yes | Yes | All environments |
 | Read project API-key metadata | Yes | Yes | Yes | Yes | All environments |
 | Export snapshots | Yes | Yes | Yes | Yes | All environments |
-| Edit projects, configs, structures, and enums | No | Yes | Yes | Yes | All environments |
+| Edit configs, structures, and enums | No | Yes | Yes | Yes | All environments |
+| Create and edit projects | No | No | No | No | Yes |
 | Create/delete snapshots and upload assets | No | Yes | Yes | Yes | All environments |
 | Import snapshots | No | Yes | Yes | Yes | All environments |
 | Publish and unpublish snapshots | No | No | Yes | Yes | All environments |
@@ -22,7 +23,7 @@ resolves current roles for the environment named in the path and request body.
 | Manage members of the current environment | No | No | No | Yes | All environments |
 | Manage users, roles, and environments | No | No | No | No | Yes |
 
-System administration is the `users.is_system_admin` flag. The three system
+System administration is the `users.is_system_admin` flag. The four system
 permissions are not assigned to environment roles. A system administrator
 bypasses environment roles and receives all permissions for every existing
 environment. Requests for a nonexistent environment still fail.

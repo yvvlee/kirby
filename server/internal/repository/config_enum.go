@@ -50,7 +50,8 @@ SELECT e.*
 FROM config_enums AS e
 INNER JOIN configs AS c ON c.id = e.config_id AND c.deleted_at IS NULL
 INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
-WHERE p.environment_id = ? AND c.id = ?
+INNER JOIN environments AS env ON env.project_id = p.id AND env.deleted_at IS NULL
+WHERE env.id = ? AND c.id = ?
 ORDER BY e.id ASC
 FOR UPDATE`, environmentID, configID).Find(&locked); err != nil {
 		return nil, base.Wrap("lock config enums for config", err)
@@ -158,7 +159,8 @@ INSERT INTO config_enums
 SELECT c.id, ?, ?, ?, ?, ?, ?
 FROM configs AS c
 INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
-WHERE c.id = ? AND c.deleted_at IS NULL AND p.environment_id = ?`
+INNER JOIN environments AS env ON env.project_id = p.id AND env.deleted_at IS NULL
+WHERE c.id = ? AND c.deleted_at IS NULL AND env.id = ?`
 
 func configEnumCreateArgs(environmentID, configID int64, enum *model.ConfigEnum) []any {
 	return []any{
@@ -177,7 +179,8 @@ SELECT e.*
 FROM config_enums AS e
 INNER JOIN configs AS c ON c.id = e.config_id AND c.deleted_at IS NULL
 INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
-WHERE p.environment_id = ? AND e.id = ? AND e.deleted_at IS NULL
+INNER JOIN environments AS env ON env.project_id = p.id AND env.deleted_at IS NULL
+WHERE env.id = ? AND e.id = ? AND e.deleted_at IS NULL
 LIMIT 1`, []any{environmentID, enumID}, &enum)
 	if err != nil {
 		return nil, err
@@ -198,7 +201,8 @@ SELECT e.*
 FROM config_enums AS e
 INNER JOIN configs AS c ON c.id = e.config_id AND c.deleted_at IS NULL
 INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
-WHERE p.environment_id = ? AND c.id = ? AND e.`+"`key`"+` = ? AND e.deleted_at IS NULL
+INNER JOIN environments AS env ON env.project_id = p.id AND env.deleted_at IS NULL
+WHERE env.id = ? AND c.id = ? AND e.`+"`key`"+` = ? AND e.deleted_at IS NULL
 LIMIT 1`, []any{environmentID, configID, key}, &enum)
 	if err != nil {
 		return nil, err
@@ -219,7 +223,8 @@ func (r *ConfigEnumRepositoryImpl) List(ctx context.Context, environmentID int64
 FROM config_enums AS e
 INNER JOIN configs AS c ON c.id = e.config_id AND c.deleted_at IS NULL
 INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
-WHERE p.environment_id = ? AND p.id = ? AND c.id = ? AND e.deleted_at IS NULL`
+INNER JOIN environments AS env ON env.project_id = p.id AND env.deleted_at IS NULL
+WHERE env.id = ? AND p.id = ? AND c.id = ? AND e.deleted_at IS NULL`
 	total, err := base.Count(ctx, r.engine, "config enums", "SELECT COUNT(*) AS total"+from, args...)
 	if err != nil {
 		return base.PageResult[model.ConfigEnum]{}, err
@@ -248,7 +253,8 @@ WHERE e.id = ? AND e.version = ? AND e.deleted_at IS NULL
       SELECT 1
       FROM configs AS c
       INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
-      WHERE c.id = e.config_id AND c.deleted_at IS NULL AND p.environment_id = ?
+      INNER JOIN environments AS env ON env.project_id = p.id AND env.deleted_at IS NULL
+      WHERE c.id = e.config_id AND c.deleted_at IS NULL AND env.id = ?
   )`, update.Key, update.Name, update.Description, update.ValuesJSON, update.UpdatedBy,
 		enumID, update.Version, environmentID)
 	return err
@@ -267,7 +273,8 @@ WHERE e.id = ? AND e.version = ? AND e.deleted_at IS NULL
       SELECT 1
       FROM configs AS c
       INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
-      WHERE c.id = e.config_id AND c.deleted_at IS NULL AND p.environment_id = ?
+      INNER JOIN environments AS env ON env.project_id = p.id AND env.deleted_at IS NULL
+      WHERE c.id = e.config_id AND c.deleted_at IS NULL AND env.id = ?
   )`, update.Key, update.Name, update.Description, update.ValuesJSON, update.UpdatedBy,
 		enumID, update.Version, environmentID)
 	return err
@@ -286,7 +293,8 @@ WHERE e.id = ? AND e.deleted_at IS NULL
       SELECT 1
       FROM configs AS c
       INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
-      WHERE c.id = e.config_id AND c.deleted_at IS NULL AND p.environment_id = ?
+      INNER JOIN environments AS env ON env.project_id = p.id AND env.deleted_at IS NULL
+      WHERE c.id = e.config_id AND c.deleted_at IS NULL AND env.id = ?
   )`, updatedBy, enumID, environmentID)
 	return err
 }
@@ -304,7 +312,8 @@ WHERE e.id = ? AND e.deleted_at IS NULL
       SELECT 1
       FROM configs AS c
       INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
-      WHERE c.id = e.config_id AND c.deleted_at IS NULL AND p.environment_id = ?
+      INNER JOIN environments AS env ON env.project_id = p.id AND env.deleted_at IS NULL
+      WHERE c.id = e.config_id AND c.deleted_at IS NULL AND env.id = ?
   )`, updatedBy, enumID, environmentID)
 	return err
 }
@@ -323,7 +332,8 @@ func (r *ConfigEnumRepositoryImpl) ReconcileTx(ctx context.Context, tx *xorm.Ses
 SELECT c.id
 FROM configs AS c
 INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
-WHERE p.environment_id = ? AND c.id = ? AND c.deleted_at IS NULL
+INNER JOIN environments AS env ON env.project_id = p.id AND env.deleted_at IS NULL
+WHERE env.id = ? AND c.id = ? AND c.deleted_at IS NULL
 LIMIT 1
 FOR UPDATE`, []any{environmentID, configID}, &locked); err != nil {
 		return err

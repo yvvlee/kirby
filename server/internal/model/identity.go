@@ -4,6 +4,7 @@ import "time"
 
 type Environment struct {
 	Meta        `xorm:"extends"`
+	ProjectID   int64  `xorm:"notnull 'project_id'"`
 	Key         string `xorm:"VARCHAR(64) notnull 'key'"`
 	Name        string `xorm:"VARCHAR(64) notnull 'name'"`
 	Description string `xorm:"VARCHAR(255) notnull default '' 'description'"`

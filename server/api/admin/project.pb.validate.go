@@ -57,17 +57,6 @@ func (m *ProjectIDRequest) validate(all bool) error {
 
 	var errors []error
 
-	if m.GetEnvironmentId() <= 0 {
-		err := ProjectIDRequestValidationError{
-			field:  "EnvironmentId",
-			reason: "value must be greater than 0",
-		}
-		if !all {
-			return err
-		}
-		errors = append(errors, err)
-	}
-
 	if m.GetId() <= 0 {
 		err := ProjectIDRequestValidationError{
 			field:  "Id",
@@ -77,6 +66,21 @@ func (m *ProjectIDRequest) validate(all bool) error {
 			return err
 		}
 		errors = append(errors, err)
+	}
+
+	if m.EnvironmentId != nil {
+
+		if m.GetEnvironmentId() <= 0 {
+			err := ProjectIDRequestValidationError{
+				field:  "EnvironmentId",
+				reason: "value must be greater than 0",
+			}
+			if !all {
+				return err
+			}
+			errors = append(errors, err)
+		}
+
 	}
 
 	if len(errors) > 0 {
@@ -178,17 +182,6 @@ func (m *CreateProjectRequest) validate(all bool) error {
 	}
 
 	var errors []error
-
-	if m.GetEnvironmentId() <= 0 {
-		err := CreateProjectRequestValidationError{
-			field:  "EnvironmentId",
-			reason: "value must be greater than 0",
-		}
-		if !all {
-			return err
-		}
-		errors = append(errors, err)
-	}
 
 	if l := utf8.RuneCountInString(m.GetKey()); l < 1 || l > 64 {
 		err := CreateProjectRequestValidationError{
@@ -338,17 +331,6 @@ func (m *UpdateProjectRequest) validate(all bool) error {
 
 	var errors []error
 
-	if m.GetEnvironmentId() <= 0 {
-		err := UpdateProjectRequestValidationError{
-			field:  "EnvironmentId",
-			reason: "value must be greater than 0",
-		}
-		if !all {
-			return err
-		}
-		errors = append(errors, err)
-	}
-
 	if m.GetId() <= 0 {
 		err := UpdateProjectRequestValidationError{
 			field:  "Id",
@@ -486,17 +468,6 @@ func (m *ListProjectRequest) validate(all bool) error {
 
 	var errors []error
 
-	if m.GetEnvironmentId() <= 0 {
-		err := ListProjectRequestValidationError{
-			field:  "EnvironmentId",
-			reason: "value must be greater than 0",
-		}
-		if !all {
-			return err
-		}
-		errors = append(errors, err)
-	}
-
 	if utf8.RuneCountInString(m.GetKeyword()) > 64 {
 		err := ListProjectRequestValidationError{
 			field:  "Keyword",
@@ -506,6 +477,21 @@ func (m *ListProjectRequest) validate(all bool) error {
 			return err
 		}
 		errors = append(errors, err)
+	}
+
+	if m.EnvironmentId != nil {
+
+		if m.GetEnvironmentId() <= 0 {
+			err := ListProjectRequestValidationError{
+				field:  "EnvironmentId",
+				reason: "value must be greater than 0",
+			}
+			if !all {
+				return err
+			}
+			errors = append(errors, err)
+		}
+
 	}
 
 	if len(errors) > 0 {

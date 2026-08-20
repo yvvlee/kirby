@@ -26,8 +26,8 @@ const (
 
 type ProjectIDRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	EnvironmentId int64                  `protobuf:"varint,1,opt,name=environment_id,json=environmentId,proto3" json:"environment_id,omitempty"`
-	Id            int64                  `protobuf:"varint,2,opt,name=id,proto3" json:"id,omitempty"`
+	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	EnvironmentId *int64                 `protobuf:"varint,2,opt,name=environment_id,json=environmentId,proto3,oneof" json:"environment_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -62,13 +62,6 @@ func (*ProjectIDRequest) Descriptor() ([]byte, []int) {
 	return file_admin_project_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *ProjectIDRequest) GetEnvironmentId() int64 {
-	if x != nil {
-		return x.EnvironmentId
-	}
-	return 0
-}
-
 func (x *ProjectIDRequest) GetId() int64 {
 	if x != nil {
 		return x.Id
@@ -76,12 +69,18 @@ func (x *ProjectIDRequest) GetId() int64 {
 	return 0
 }
 
+func (x *ProjectIDRequest) GetEnvironmentId() int64 {
+	if x != nil && x.EnvironmentId != nil {
+		return *x.EnvironmentId
+	}
+	return 0
+}
+
 type CreateProjectRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	EnvironmentId int64                  `protobuf:"varint,1,opt,name=environment_id,json=environmentId,proto3" json:"environment_id,omitempty"`
-	Key           string                 `protobuf:"bytes,2,opt,name=key,proto3" json:"key,omitempty"`
-	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
-	Description   string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
+	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Description   string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -116,13 +115,6 @@ func (*CreateProjectRequest) Descriptor() ([]byte, []int) {
 	return file_admin_project_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *CreateProjectRequest) GetEnvironmentId() int64 {
-	if x != nil {
-		return x.EnvironmentId
-	}
-	return 0
-}
-
 func (x *CreateProjectRequest) GetKey() string {
 	if x != nil {
 		return x.Key
@@ -146,10 +138,9 @@ func (x *CreateProjectRequest) GetDescription() string {
 
 type UpdateProjectRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	EnvironmentId int64                  `protobuf:"varint,1,opt,name=environment_id,json=environmentId,proto3" json:"environment_id,omitempty"`
-	Id            int64                  `protobuf:"varint,2,opt,name=id,proto3" json:"id,omitempty"`
-	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
-	Description   string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
+	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Description   string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
 	Version       uint32                 `protobuf:"varint,55,opt,name=version,proto3" json:"version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -185,13 +176,6 @@ func (*UpdateProjectRequest) Descriptor() ([]byte, []int) {
 	return file_admin_project_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *UpdateProjectRequest) GetEnvironmentId() int64 {
-	if x != nil {
-		return x.EnvironmentId
-	}
-	return 0
-}
-
 func (x *UpdateProjectRequest) GetId() int64 {
 	if x != nil {
 		return x.Id
@@ -222,8 +206,8 @@ func (x *UpdateProjectRequest) GetVersion() uint32 {
 
 type ListProjectRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	EnvironmentId int64                  `protobuf:"varint,1,opt,name=environment_id,json=environmentId,proto3" json:"environment_id,omitempty"`
-	Keyword       string                 `protobuf:"bytes,2,opt,name=keyword,proto3" json:"keyword,omitempty"`
+	Keyword       string                 `protobuf:"bytes,1,opt,name=keyword,proto3" json:"keyword,omitempty"`
+	EnvironmentId *int64                 `protobuf:"varint,2,opt,name=environment_id,json=environmentId,proto3,oneof" json:"environment_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -258,18 +242,18 @@ func (*ListProjectRequest) Descriptor() ([]byte, []int) {
 	return file_admin_project_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *ListProjectRequest) GetEnvironmentId() int64 {
-	if x != nil {
-		return x.EnvironmentId
-	}
-	return 0
-}
-
 func (x *ListProjectRequest) GetKeyword() string {
 	if x != nil {
 		return x.Keyword
 	}
 	return ""
+}
+
+func (x *ListProjectRequest) GetEnvironmentId() int64 {
+	if x != nil && x.EnvironmentId != nil {
+		return *x.EnvironmentId
+	}
+	return 0
 }
 
 type ProjectReply struct {
@@ -364,33 +348,33 @@ var File_admin_project_proto protoreflect.FileDescriptor
 
 const file_admin_project_proto_rawDesc = "" +
 	"\n" +
-	"\x13admin/project.proto\x12\x0ekirby.admin.v1\x1a\x1cgoogle/api/annotations.proto\x1a\x13common/entity.proto\x1a\x17validate/validate.proto\"[\n" +
-	"\x10ProjectIDRequest\x12.\n" +
-	"\x0eenvironment_id\x18\x01 \x01(\x03B\a\xfaB\x04\"\x02 \x00R\renvironmentId\x12\x17\n" +
-	"\x02id\x18\x02 \x01(\x03B\a\xfaB\x04\"\x02 \x00R\x02id\"\xc6\x01\n" +
-	"\x14CreateProjectRequest\x12.\n" +
-	"\x0eenvironment_id\x18\x01 \x01(\x03B\a\xfaB\x04\"\x02 \x00R\renvironmentId\x123\n" +
-	"\x03key\x18\x02 \x01(\tB!\xfaB\x1er\x1c\x10\x01\x18@2\x16^[A-Za-z][A-Za-z0-9]*$R\x03key\x12\x1d\n" +
-	"\x04name\x18\x03 \x01(\tB\t\xfaB\x06r\x04\x10\x01\x18@R\x04name\x12*\n" +
-	"\vdescription\x18\x04 \x01(\tB\b\xfaB\x05r\x03\x18\xff\x01R\vdescription\"\xc4\x01\n" +
-	"\x14UpdateProjectRequest\x12.\n" +
-	"\x0eenvironment_id\x18\x01 \x01(\x03B\a\xfaB\x04\"\x02 \x00R\renvironmentId\x12\x17\n" +
-	"\x02id\x18\x02 \x01(\x03B\a\xfaB\x04\"\x02 \x00R\x02id\x12\x1d\n" +
-	"\x04name\x18\x03 \x01(\tB\t\xfaB\x06r\x04\x10\x01\x18@R\x04name\x12*\n" +
-	"\vdescription\x18\x04 \x01(\tB\b\xfaB\x05r\x03\x18\xff\x01R\vdescription\x12\x18\n" +
-	"\aversion\x187 \x01(\rR\aversion\"g\n" +
-	"\x12ListProjectRequest\x12.\n" +
-	"\x0eenvironment_id\x18\x01 \x01(\x03B\a\xfaB\x04\"\x02 \x00R\renvironmentId\x12!\n" +
-	"\akeyword\x18\x02 \x01(\tB\a\xfaB\x04r\x02\x18@R\akeyword\"B\n" +
+	"\x13admin/project.proto\x12\x0ekirby.admin.v1\x1a\x1cgoogle/api/annotations.proto\x1a\x13common/entity.proto\x1a\x17validate/validate.proto\"s\n" +
+	"\x10ProjectIDRequest\x12\x17\n" +
+	"\x02id\x18\x01 \x01(\x03B\a\xfaB\x04\"\x02 \x00R\x02id\x123\n" +
+	"\x0eenvironment_id\x18\x02 \x01(\x03B\a\xfaB\x04\"\x02 \x00H\x00R\renvironmentId\x88\x01\x01B\x11\n" +
+	"\x0f_environment_id\"\x96\x01\n" +
+	"\x14CreateProjectRequest\x123\n" +
+	"\x03key\x18\x01 \x01(\tB!\xfaB\x1er\x1c\x10\x01\x18@2\x16^[A-Za-z][A-Za-z0-9]*$R\x03key\x12\x1d\n" +
+	"\x04name\x18\x02 \x01(\tB\t\xfaB\x06r\x04\x10\x01\x18@R\x04name\x12*\n" +
+	"\vdescription\x18\x03 \x01(\tB\b\xfaB\x05r\x03\x18\xff\x01R\vdescription\"\x94\x01\n" +
+	"\x14UpdateProjectRequest\x12\x17\n" +
+	"\x02id\x18\x01 \x01(\x03B\a\xfaB\x04\"\x02 \x00R\x02id\x12\x1d\n" +
+	"\x04name\x18\x02 \x01(\tB\t\xfaB\x06r\x04\x10\x01\x18@R\x04name\x12*\n" +
+	"\vdescription\x18\x03 \x01(\tB\b\xfaB\x05r\x03\x18\xff\x01R\vdescription\x12\x18\n" +
+	"\aversion\x187 \x01(\rR\aversion\"\x7f\n" +
+	"\x12ListProjectRequest\x12!\n" +
+	"\akeyword\x18\x01 \x01(\tB\a\xfaB\x04r\x02\x18@R\akeyword\x123\n" +
+	"\x0eenvironment_id\x18\x02 \x01(\x03B\a\xfaB\x04\"\x02 \x00H\x00R\renvironmentId\x88\x01\x01B\x11\n" +
+	"\x0f_environment_id\"B\n" +
 	"\fProjectReply\x122\n" +
 	"\aproject\x18\x01 \x01(\v2\x18.kirby.common.v1.ProjectR\aproject\"@\n" +
 	"\x10ListProjectReply\x12,\n" +
-	"\x04list\x18\x01 \x03(\v2\x18.kirby.common.v1.ProjectR\x04list2\xe2\x04\n" +
-	"\x0eProjectService\x12\x93\x01\n" +
-	"\rCreateProject\x12$.kirby.admin.v1.CreateProjectRequest\x1a\x1c.kirby.admin.v1.ProjectReply\">\x82\xd3\xe4\x93\x028:\x01*\"3/admin/environments/{environment_id}/project/create\x12\x93\x01\n" +
-	"\rUpdateProject\x12$.kirby.admin.v1.UpdateProjectRequest\x1a\x1c.kirby.admin.v1.ProjectReply\">\x82\xd3\xe4\x93\x028:\x01*\"3/admin/environments/{environment_id}/project/update\x12\x91\x01\n" +
-	"\vListProject\x12\".kirby.admin.v1.ListProjectRequest\x1a .kirby.admin.v1.ListProjectReply\"<\x82\xd3\xe4\x93\x026:\x01*\"1/admin/environments/{environment_id}/project/list\x12\x8f\x01\n" +
-	"\rProjectDetail\x12 .kirby.admin.v1.ProjectIDRequest\x1a\x1c.kirby.admin.v1.ProjectReply\">\x82\xd3\xe4\x93\x028:\x01*\"3/admin/environments/{environment_id}/project/detailB2Z0github.com/yvvlee/kirby/server/api/admin;adminv1b\x06proto3"
+	"\x04list\x18\x01 \x03(\v2\x18.kirby.common.v1.ProjectR\x04list2\xd4\x03\n" +
+	"\x0eProjectService\x12o\n" +
+	"\rCreateProject\x12$.kirby.admin.v1.CreateProjectRequest\x1a\x1c.kirby.admin.v1.ProjectReply\"\x1a\x82\xd3\xe4\x93\x02\x14:\x01*\"\x0f/admin/projects\x12t\n" +
+	"\rUpdateProject\x12$.kirby.admin.v1.UpdateProjectRequest\x1a\x1c.kirby.admin.v1.ProjectReply\"\x1f\x82\xd3\xe4\x93\x02\x19:\x01*\x1a\x14/admin/projects/{id}\x12l\n" +
+	"\vListProject\x12\".kirby.admin.v1.ListProjectRequest\x1a .kirby.admin.v1.ListProjectReply\"\x17\x82\xd3\xe4\x93\x02\x11\x12\x0f/admin/projects\x12m\n" +
+	"\rProjectDetail\x12 .kirby.admin.v1.ProjectIDRequest\x1a\x1c.kirby.admin.v1.ProjectReply\"\x1c\x82\xd3\xe4\x93\x02\x16\x12\x14/admin/projects/{id}B2Z0github.com/yvvlee/kirby/server/api/admin;adminv1b\x06proto3"
 
 var (
 	file_admin_project_proto_rawDescOnce sync.Once
@@ -437,6 +421,8 @@ func file_admin_project_proto_init() {
 	if File_admin_project_proto != nil {
 		return
 	}
+	file_admin_project_proto_msgTypes[0].OneofWrappers = []any{}
+	file_admin_project_proto_msgTypes[3].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

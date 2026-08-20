@@ -34,8 +34,8 @@ INSERT INTO project_api_keys
      last_used_at, revoked_at, created_at, updated_at)
 SELECT p.id, ?, ?, ?, ?, ?, NULL, NULL, ?, ?
 FROM projects AS p
-INNER JOIN environments AS e ON e.id = p.environment_id AND e.deleted_at IS NULL
-WHERE p.environment_id = ? AND p.id = ? AND p.deleted_at IS NULL`,
+INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
+WHERE e.id = ? AND p.id = ? AND p.deleted_at IS NULL`,
 		key.PublicID, key.Name, key.SecretHash, key.SecretSuffix, key.CreatedBy,
 		key.CreatedAt, key.UpdatedAt, environmentID, projectID)
 	if err != nil {
@@ -57,8 +57,8 @@ func (r *ProjectAPIKeyRepository) List(ctx context.Context, environmentID, proje
 SELECT k.*
 FROM project_api_keys AS k
 INNER JOIN projects AS p ON p.id = k.project_id AND p.deleted_at IS NULL
-INNER JOIN environments AS e ON e.id = p.environment_id AND e.deleted_at IS NULL
-WHERE p.environment_id = ? AND p.id = ?
+INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
+WHERE e.id = ? AND p.id = ?
 ORDER BY k.id DESC`, []any{environmentID, projectID}, &items)
 	return items, err
 }
@@ -79,8 +79,8 @@ const scopedProjectKeyLookupSQL = `
 SELECT k.*
 FROM project_api_keys AS k
 INNER JOIN projects AS p ON p.id = k.project_id AND p.deleted_at IS NULL
-INNER JOIN environments AS e ON e.id = p.environment_id AND e.deleted_at IS NULL
-WHERE p.environment_id = ? AND p.id = ? AND k.id = ?
+INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
+WHERE e.id = ? AND p.id = ? AND k.id = ?
 LIMIT 1`
 
 func (r *ProjectAPIKeyRepository) LockByID(ctx context.Context, tx *xorm.Session, environmentID, projectID, keyID int64) (*model.ProjectAPIKey, error) {
@@ -95,8 +95,8 @@ WHERE k.project_id = ? AND k.id = ?
   AND EXISTS (
       SELECT 1
       FROM projects AS p
-      INNER JOIN environments AS e ON e.id = p.environment_id AND e.deleted_at IS NULL
-      WHERE p.environment_id = ? AND p.id = k.project_id AND p.deleted_at IS NULL
+      INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
+      WHERE e.id = ? AND p.id = k.project_id AND p.deleted_at IS NULL
   )
 LIMIT 1
 FOR UPDATE`, []any{projectID, keyID, environmentID}, &key)
@@ -119,10 +119,10 @@ func (r *ProjectAPIKeyRepository) RotateTx(ctx context.Context, tx *xorm.Session
 	_, err := base.ExecuteTx(ctx, tx, "project API key rotation", `
 UPDATE project_api_keys AS k
 INNER JOIN projects AS p ON p.id = k.project_id AND p.deleted_at IS NULL
-INNER JOIN environments AS e ON e.id = p.environment_id AND e.deleted_at IS NULL
+INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
 SET k.public_id = ?, k.secret_hash = ?, k.secret_suffix = ?,
     k.last_used_at = NULL, k.updated_at = ?
-WHERE p.environment_id = ? AND p.id = ? AND k.id = ?
+WHERE e.id = ? AND p.id = ? AND k.id = ?
   AND k.public_id = ? AND k.revoked_at IS NULL`,
 		replacement.PublicID, replacement.SecretHash, replacement.SecretSuffix, replacement.UpdatedAt,
 		environmentID, projectID, keyID, currentPublicID)
@@ -139,9 +139,9 @@ func (r *ProjectAPIKeyRepository) RevokeTx(ctx context.Context, tx *xorm.Session
 	_, err := base.ExecuteTx(ctx, tx, "project API key revocation", `
 UPDATE project_api_keys AS k
 INNER JOIN projects AS p ON p.id = k.project_id AND p.deleted_at IS NULL
-INNER JOIN environments AS e ON e.id = p.environment_id AND e.deleted_at IS NULL
+INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
 SET k.revoked_at = ?, k.updated_at = ?
-WHERE p.environment_id = ? AND p.id = ? AND k.id = ?
+WHERE e.id = ? AND p.id = ? AND k.id = ?
   AND k.public_id = ? AND k.revoked_at IS NULL`,
 		revokedAt, revokedAt, environmentID, projectID, keyID, currentPublicID)
 	return err
@@ -175,7 +175,7 @@ func (r *ProjectAPIKeyRepository) FindRuntimeProjectTx(ctx context.Context, tx *
 	err := base.LockOne(ctx, tx, "runtime project", `
 SELECT p.*
 FROM projects AS p
-INNER JOIN environments AS e ON e.id = p.environment_id AND e.deleted_at IS NULL AND e.enabled = TRUE
+INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL AND e.enabled = TRUE
 WHERE p.id = ? AND p.deleted_at IS NULL
 LIMIT 1
 FOR SHARE`, []any{projectID}, &project)

@@ -29,23 +29,14 @@ type ProjectRepository interface {
 }
 
 func (r *ProjectRepositoryImpl) CreateTx(ctx context.Context, tx *xorm.Session, environmentID int64, project *model.Project) error {
-	if err := base.ValidateID("environment_id", environmentID); err != nil {
-		return err
-	}
 	if project == nil {
 		return base.InvalidArgument("project is nil")
 	}
-	if project.EnvironmentID != 0 && project.EnvironmentID != environmentID {
-		return base.InvalidArgument("project.environment_id does not match environment_id")
-	}
-	project.EnvironmentID = environmentID
 	result, err := base.ExecuteTx(ctx, tx, "project", `
 INSERT INTO projects
-    (environment_id, `+"`key`"+`, name, description, created_by, updated_by)
-SELECT e.id, ?, ?, ?, ?, ?
-FROM environments AS e
-WHERE e.id = ? AND e.deleted_at IS NULL`,
-		project.Key, project.Name, project.Description, project.CreatedBy, project.UpdatedBy, environmentID)
+    (`+"`key`"+`, name, description, created_by, updated_by)
+VALUES (?, ?, ?, ?, ?)`,
+		project.Key, project.Name, project.Description, project.CreatedBy, project.UpdatedBy)
 	if err != nil {
 		return err
 	}
@@ -65,23 +56,14 @@ func NewProjectRepository(engine *xorm.Engine) *ProjectRepositoryImpl {
 }
 
 func (r *ProjectRepositoryImpl) Create(ctx context.Context, environmentID int64, project *model.Project) error {
-	if err := base.ValidateID("environment_id", environmentID); err != nil {
-		return err
-	}
 	if project == nil {
 		return base.InvalidArgument("project is nil")
 	}
-	if project.EnvironmentID != 0 && project.EnvironmentID != environmentID {
-		return base.InvalidArgument("project.environment_id does not match environment_id")
-	}
-	project.EnvironmentID = environmentID
 	result, err := base.Execute(ctx, r.engine, "project", `
 INSERT INTO projects
-    (environment_id, `+"`key`"+`, name, description, created_by, updated_by)
-SELECT e.id, ?, ?, ?, ?, ?
-FROM environments AS e
-WHERE e.id = ? AND e.deleted_at IS NULL`,
-		project.Key, project.Name, project.Description, project.CreatedBy, project.UpdatedBy, environmentID)
+    (`+"`key`"+`, name, description, created_by, updated_by)
+VALUES (?, ?, ?, ?, ?)`,
+		project.Key, project.Name, project.Description, project.CreatedBy, project.UpdatedBy)
 	if err != nil {
 		return err
 	}
@@ -93,25 +75,34 @@ WHERE e.id = ? AND e.deleted_at IS NULL`,
 }
 
 func (r *ProjectRepositoryImpl) FindByID(ctx context.Context, environmentID, projectID int64) (*model.Project, error) {
-	if err := validateEnvironmentResource(environmentID, "project_id", projectID); err != nil {
+	if err := base.ValidateID("project_id", projectID); err != nil {
 		return nil, err
 	}
 	var project model.Project
-	err := base.FindOne(ctx, r.engine, "project", `
+	query := `
 SELECT p.*
 FROM projects AS p
-WHERE p.environment_id = ? AND p.id = ? AND p.deleted_at IS NULL
-LIMIT 1`, []any{environmentID, projectID}, &project)
+WHERE p.id = ? AND p.deleted_at IS NULL
+LIMIT 1`
+	args := []any{projectID}
+	if environmentID > 0 {
+		query = `
+SELECT p.*
+FROM projects AS p
+INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
+WHERE e.id = ? AND p.id = ? AND p.deleted_at IS NULL
+LIMIT 1`
+		args = []any{environmentID, projectID}
+	}
+	err := base.FindOne(ctx, r.engine, "project", query, args, &project)
 	if err != nil {
 		return nil, err
 	}
+	project.EnvironmentID = environmentID
 	return &project, nil
 }
 
 func (r *ProjectRepositoryImpl) FindByKey(ctx context.Context, environmentID int64, key string) (*model.Project, error) {
-	if err := base.ValidateID("environment_id", environmentID); err != nil {
-		return nil, err
-	}
 	if strings.TrimSpace(key) == "" {
 		return nil, base.InvalidArgument("project key is empty")
 	}
@@ -119,25 +110,31 @@ func (r *ProjectRepositoryImpl) FindByKey(ctx context.Context, environmentID int
 	err := base.FindOne(ctx, r.engine, "project", `
 SELECT p.*
 FROM projects AS p
-WHERE p.environment_id = ? AND p.`+"`key`"+` = ? AND p.deleted_at IS NULL
-LIMIT 1`, []any{environmentID, key}, &project)
+WHERE p.`+"`key`"+` = ? AND p.deleted_at IS NULL
+LIMIT 1`, []any{key}, &project)
 	if err != nil {
 		return nil, err
 	}
+	project.EnvironmentID = environmentID
 	return &project, nil
 }
 
 func (r *ProjectRepositoryImpl) List(ctx context.Context, environmentID int64, keyword string, page base.PageRequest) (base.PageResult[model.Project], error) {
-	if err := base.ValidateID("environment_id", environmentID); err != nil {
-		return base.PageResult[model.Project]{}, err
-	}
 	page = base.NormalizePage(page)
 	pattern := "%" + keyword + "%"
+	scope := ""
+	argsPrefix := []any{}
+	if environmentID > 0 {
+		scope = "INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL\nWHERE e.id = ? AND "
+		argsPrefix = append(argsPrefix, environmentID)
+	} else {
+		scope = "WHERE "
+	}
 	total, err := base.Count(ctx, r.engine, "projects", `
 SELECT COUNT(*) AS total
 FROM projects AS p
-WHERE p.environment_id = ? AND p.deleted_at IS NULL
-  AND (p.name LIKE ? OR p.description LIKE ?)`, environmentID, pattern, pattern)
+	`+scope+`p.deleted_at IS NULL
+  AND (p.name LIKE ? OR p.description LIKE ?)`, append(argsPrefix, pattern, pattern)...)
 	if err != nil {
 		return base.PageResult[model.Project]{}, err
 	}
@@ -145,18 +142,19 @@ WHERE p.environment_id = ? AND p.deleted_at IS NULL
 	if total == 0 {
 		return result, nil
 	}
+	listArgs := append(argsPrefix, pattern, pattern, page.Limit, page.Offset)
 	err = base.FindAll(ctx, r.engine, "projects", `
 SELECT p.*
 FROM projects AS p
-WHERE p.environment_id = ? AND p.deleted_at IS NULL
+`+scope+`p.deleted_at IS NULL
   AND (p.name LIKE ? OR p.description LIKE ?)
 ORDER BY p.id DESC
-LIMIT ? OFFSET ?`, []any{environmentID, pattern, pattern, page.Limit, page.Offset}, &result.Items)
+LIMIT ? OFFSET ?`, listArgs, &result.Items)
 	return result, err
 }
 
 func (r *ProjectRepositoryImpl) Update(ctx context.Context, environmentID, projectID int64, update ProjectUpdate) error {
-	if err := validateEnvironmentResource(environmentID, "project_id", projectID); err != nil {
+	if err := base.ValidateID("project_id", projectID); err != nil {
 		return err
 	}
 	if update.Version < 0 {
@@ -166,13 +164,13 @@ func (r *ProjectRepositoryImpl) Update(ctx context.Context, environmentID, proje
 UPDATE projects
 SET name = ?, description = ?, updated_by = ?,
     updated_at = UTC_TIMESTAMP(6), version = version + 1
-WHERE environment_id = ? AND id = ? AND version = ? AND deleted_at IS NULL`,
-		update.Name, update.Description, update.UpdatedBy, environmentID, projectID, update.Version)
+WHERE id = ? AND version = ? AND deleted_at IS NULL`,
+		update.Name, update.Description, update.UpdatedBy, projectID, update.Version)
 	return err
 }
 
 func (r *ProjectRepositoryImpl) UpdateTx(ctx context.Context, tx *xorm.Session, environmentID, projectID int64, update ProjectUpdate) error {
-	if err := validateEnvironmentResource(environmentID, "project_id", projectID); err != nil {
+	if err := base.ValidateID("project_id", projectID); err != nil {
 		return err
 	}
 	if update.Version < 0 {
@@ -182,32 +180,30 @@ func (r *ProjectRepositoryImpl) UpdateTx(ctx context.Context, tx *xorm.Session, 
 UPDATE projects
 SET name = ?, description = ?, updated_by = ?,
     updated_at = UTC_TIMESTAMP(6), version = version + 1
-WHERE environment_id = ? AND id = ? AND version = ? AND deleted_at IS NULL`,
-		update.Name, update.Description, update.UpdatedBy, environmentID, projectID, update.Version)
+WHERE id = ? AND version = ? AND deleted_at IS NULL`,
+		update.Name, update.Description, update.UpdatedBy, projectID, update.Version)
 	return err
 }
 
 func (r *ProjectRepositoryImpl) LockByID(ctx context.Context, tx *xorm.Session, environmentID, projectID int64) (*model.Project, error) {
-	if err := validateEnvironmentResource(environmentID, "project_id", projectID); err != nil {
+	if err := base.ValidateID("project_id", projectID); err != nil {
 		return nil, err
 	}
 	var project model.Project
 	err := base.LockOne(ctx, tx, "project", `
 SELECT p.*
 FROM projects AS p
-WHERE p.environment_id = ? AND p.id = ? AND p.deleted_at IS NULL
+WHERE p.id = ? AND p.deleted_at IS NULL
 LIMIT 1
-FOR UPDATE`, []any{environmentID, projectID}, &project)
+FOR UPDATE`, []any{projectID}, &project)
 	if err != nil {
 		return nil, err
 	}
+	project.EnvironmentID = environmentID
 	return &project, nil
 }
 
 func validateEnvironmentResource(environmentID int64, resourceName string, resourceID int64) error {
-	if err := base.ValidateID("environment_id", environmentID); err != nil {
-		return err
-	}
 	return base.ValidateID(resourceName, resourceID)
 }
 

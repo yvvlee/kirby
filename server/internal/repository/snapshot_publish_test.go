@@ -50,11 +50,11 @@ func TestSnapshotPublicationWritesAreEnvironmentVersionAndStatusGuarded(t *testi
 	t.Cleanup(func() { _ = tx.Close() })
 	require.NoError(t, tx.Begin())
 	changedAt := time.Date(2026, time.August, 17, 4, 5, 6, 0, time.UTC)
-	mock.ExpectExec(`(?s)UPDATE snapshots AS s.*SET s\.status = \?, s\.published_at = \?.*WHERE p\.environment_id = \? AND c\.id = \? AND s\.id = \?.*s\.status = \? AND s\.version = \?`).
+	mock.ExpectExec(`(?s)UPDATE snapshots AS s.*SET s\.status = \?, s\.published_at = \?.*WHERE e\.id = \? AND c\.id = \? AND s\.id = \?.*s\.status = \? AND s\.version = \?`).
 		WithArgs(model.SnapshotStatusReleased, sqlmock.AnyArg(), int64(6), int64(6), sqlmock.AnyArg(),
 			int64(5), int64(9), int64(12), model.SnapshotStatusUnreleased, int64(3)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
-	mock.ExpectExec(`(?s)UPDATE snapshots AS s.*SET s\.status = \?, s\.published_at = NULL.*WHERE p\.environment_id = \? AND c\.id = \? AND s\.id = \?.*s\.status = \? AND s\.version = \?`).
+	mock.ExpectExec(`(?s)UPDATE snapshots AS s.*SET s\.status = \?, s\.published_at = NULL.*WHERE e\.id = \? AND c\.id = \? AND s\.id = \?.*s\.status = \? AND s\.version = \?`).
 		WithArgs(model.SnapshotStatusUnreleased, int64(6), sqlmock.AnyArg(),
 			int64(5), int64(9), int64(12), model.SnapshotStatusReleased, int64(4)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
@@ -74,7 +74,7 @@ func TestSnapshotPublicationRejectsConcurrentGuardFailure(t *testing.T) {
 	t.Cleanup(func() { _ = tx.Close() })
 	require.NoError(t, tx.Begin())
 	changedAt := time.Date(2026, time.August, 17, 4, 5, 6, 0, time.UTC)
-	mock.ExpectExec(`(?s)UPDATE snapshots AS s.*p\.environment_id = \?.*s\.version = \?`).
+	mock.ExpectExec(`(?s)UPDATE snapshots AS s.*e\.id = \?.*s\.version = \?`).
 		WithArgs(model.SnapshotStatusReleased, sqlmock.AnyArg(), int64(6), int64(6), sqlmock.AnyArg(),
 			int64(5), int64(9), int64(12), model.SnapshotStatusUnreleased, int64(3)).
 		WillReturnResult(sqlmock.NewResult(0, 0))
@@ -93,7 +93,7 @@ func TestSnapshotPublicationIncrementsOnlyScopedRuntimeVersion(t *testing.T) {
 	tx := engine.NewSession()
 	t.Cleanup(func() { _ = tx.Close() })
 	require.NoError(t, tx.Begin())
-	mock.ExpectExec(`(?s)UPDATE configs AS c.*SET c\.runtime_version = c\.runtime_version \+ 1.*p\.environment_id = \? AND c\.id = \?.*runtime_version < 9223372036854775807`).
+	mock.ExpectExec(`(?s)UPDATE configs AS c.*SET c\.runtime_version = c\.runtime_version \+ 1.*e\.id = \? AND c\.id = \?.*runtime_version < 9223372036854775807`).
 		WithArgs(int64(5), int64(9)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()

@@ -110,12 +110,11 @@ export function normalizeEnums(reply: unknown): ConfigEnum[] {
 export function useProjectsQuery(environmentId: Identifier | null, keyword: string) {
   const filter = { keyword }
   return useQuery({
-    queryKey: environmentId === null ? ['environment', 'none', 'projects', filter] : queryKeys.projects(environmentId, filter),
+    queryKey: environmentId === null ? queryKeys.globalProjects(filter) : queryKeys.projects(environmentId, filter),
     queryFn: async () => {
-      if (environmentId === null) throw new Error('当前没有可用环境')
       return requireList<Project>(await listProjects(environmentId, filter), 'project list')
     },
-    enabled: environmentId !== null,
+    enabled: true,
   })
 }
 

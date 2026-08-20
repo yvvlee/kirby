@@ -40,7 +40,8 @@ SELECT s.*
 FROM snapshots AS s
 INNER JOIN configs AS c ON c.id = s.config_id AND c.project_id = s.project_id AND c.deleted_at IS NULL
 INNER JOIN projects AS p ON p.id = s.project_id AND p.deleted_at IS NULL
-WHERE p.environment_id = ? AND c.id = ? AND s.deleted_at IS NULL
+INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
+WHERE e.id = ? AND c.id = ? AND s.deleted_at IS NULL
 ORDER BY s.id ASC
 FOR UPDATE`
 
@@ -55,9 +56,10 @@ func (r *SnapshotPublicationRepository) SetReleased(ctx context.Context, tx *xor
 UPDATE snapshots AS s
 INNER JOIN configs AS c ON c.id = s.config_id AND c.project_id = s.project_id AND c.deleted_at IS NULL
 INNER JOIN projects AS p ON p.id = s.project_id AND p.deleted_at IS NULL
+INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
 SET s.status = ?, s.published_at = ?, s.published_by = ?, s.updated_by = ?,
     s.updated_at = ?, s.version = s.version + 1
-WHERE p.environment_id = ? AND c.id = ? AND s.id = ?
+WHERE e.id = ? AND c.id = ? AND s.id = ?
   AND s.status = ? AND s.version = ? AND s.deleted_at IS NULL`,
 		model.SnapshotStatusReleased, publishedAt, updatedBy, updatedBy, publishedAt,
 		environmentID, configID, snapshotID, model.SnapshotStatusUnreleased, expectedVersion)
@@ -75,9 +77,10 @@ func (r *SnapshotPublicationRepository) SetUnreleased(ctx context.Context, tx *x
 UPDATE snapshots AS s
 INNER JOIN configs AS c ON c.id = s.config_id AND c.project_id = s.project_id AND c.deleted_at IS NULL
 INNER JOIN projects AS p ON p.id = s.project_id AND p.deleted_at IS NULL
+INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
 SET s.status = ?, s.published_at = NULL, s.published_by = NULL, s.updated_by = ?,
     s.updated_at = ?, s.version = s.version + 1
-WHERE p.environment_id = ? AND c.id = ? AND s.id = ?
+WHERE e.id = ? AND c.id = ? AND s.id = ?
   AND s.status = ? AND s.version = ? AND s.deleted_at IS NULL`,
 		model.SnapshotStatusUnreleased, updatedBy, updatedAt, environmentID, configID,
 		snapshotID, model.SnapshotStatusReleased, expectedVersion)
@@ -91,8 +94,9 @@ func (r *SnapshotPublicationRepository) IncrementRuntimeVersion(ctx context.Cont
 	_, err := base.ExecuteTx(ctx, tx, "config runtime version", `
 UPDATE configs AS c
 INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
+INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
 SET c.runtime_version = c.runtime_version + 1
-WHERE p.environment_id = ? AND c.id = ? AND c.deleted_at IS NULL
+WHERE e.id = ? AND c.id = ? AND c.deleted_at IS NULL
   AND c.runtime_version < 9223372036854775807`, environmentID, configID)
 	return err
 }

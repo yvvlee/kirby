@@ -33,10 +33,10 @@ type ProjectServiceHTTPServer interface {
 
 func RegisterProjectServiceHTTPServer(s *http.Server, srv ProjectServiceHTTPServer) {
 	r := s.Route("/")
-	r.POST("/admin/environments/{environment_id}/project/create", _ProjectService_CreateProject0_HTTP_Handler(srv))
-	r.POST("/admin/environments/{environment_id}/project/update", _ProjectService_UpdateProject0_HTTP_Handler(srv))
-	r.POST("/admin/environments/{environment_id}/project/list", _ProjectService_ListProject0_HTTP_Handler(srv))
-	r.POST("/admin/environments/{environment_id}/project/detail", _ProjectService_ProjectDetail0_HTTP_Handler(srv))
+	r.POST("/admin/projects", _ProjectService_CreateProject0_HTTP_Handler(srv))
+	r.PUT("/admin/projects/{id}", _ProjectService_UpdateProject0_HTTP_Handler(srv))
+	r.GET("/admin/projects", _ProjectService_ListProject0_HTTP_Handler(srv))
+	r.GET("/admin/projects/{id}", _ProjectService_ProjectDetail0_HTTP_Handler(srv))
 }
 
 func _ProjectService_CreateProject0_HTTP_Handler(srv ProjectServiceHTTPServer) func(ctx http.Context) error {
@@ -46,9 +46,6 @@ func _ProjectService_CreateProject0_HTTP_Handler(srv ProjectServiceHTTPServer) f
 			return err
 		}
 		if err := ctx.BindQuery(&in); err != nil {
-			return err
-		}
-		if err := ctx.BindVars(&in); err != nil {
 			return err
 		}
 		http.SetOperation(ctx, OperationProjectServiceCreateProject)
@@ -92,13 +89,7 @@ func _ProjectService_UpdateProject0_HTTP_Handler(srv ProjectServiceHTTPServer) f
 func _ProjectService_ListProject0_HTTP_Handler(srv ProjectServiceHTTPServer) func(ctx http.Context) error {
 	return func(ctx http.Context) error {
 		var in ListProjectRequest
-		if err := ctx.Bind(&in); err != nil {
-			return err
-		}
 		if err := ctx.BindQuery(&in); err != nil {
-			return err
-		}
-		if err := ctx.BindVars(&in); err != nil {
 			return err
 		}
 		http.SetOperation(ctx, OperationProjectServiceListProject)
@@ -117,9 +108,6 @@ func _ProjectService_ListProject0_HTTP_Handler(srv ProjectServiceHTTPServer) fun
 func _ProjectService_ProjectDetail0_HTTP_Handler(srv ProjectServiceHTTPServer) func(ctx http.Context) error {
 	return func(ctx http.Context) error {
 		var in ProjectIDRequest
-		if err := ctx.Bind(&in); err != nil {
-			return err
-		}
 		if err := ctx.BindQuery(&in); err != nil {
 			return err
 		}
@@ -156,7 +144,7 @@ func NewProjectServiceHTTPClient(client *http.Client) ProjectServiceHTTPClient {
 
 func (c *ProjectServiceHTTPClientImpl) CreateProject(ctx context.Context, in *CreateProjectRequest, opts ...http.CallOption) (*ProjectReply, error) {
 	var out ProjectReply
-	pattern := "/admin/environments/{environment_id}/project/create"
+	pattern := "/admin/projects"
 	path := binding.EncodeURL(pattern, in, false)
 	opts = append(opts, http.Operation(OperationProjectServiceCreateProject))
 	opts = append(opts, http.PathTemplate(pattern))
@@ -169,11 +157,11 @@ func (c *ProjectServiceHTTPClientImpl) CreateProject(ctx context.Context, in *Cr
 
 func (c *ProjectServiceHTTPClientImpl) ListProject(ctx context.Context, in *ListProjectRequest, opts ...http.CallOption) (*ListProjectReply, error) {
 	var out ListProjectReply
-	pattern := "/admin/environments/{environment_id}/project/list"
-	path := binding.EncodeURL(pattern, in, false)
+	pattern := "/admin/projects"
+	path := binding.EncodeURL(pattern, in, true)
 	opts = append(opts, http.Operation(OperationProjectServiceListProject))
 	opts = append(opts, http.PathTemplate(pattern))
-	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
+	err := c.cc.Invoke(ctx, "GET", path, nil, &out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -182,11 +170,11 @@ func (c *ProjectServiceHTTPClientImpl) ListProject(ctx context.Context, in *List
 
 func (c *ProjectServiceHTTPClientImpl) ProjectDetail(ctx context.Context, in *ProjectIDRequest, opts ...http.CallOption) (*ProjectReply, error) {
 	var out ProjectReply
-	pattern := "/admin/environments/{environment_id}/project/detail"
-	path := binding.EncodeURL(pattern, in, false)
+	pattern := "/admin/projects/{id}"
+	path := binding.EncodeURL(pattern, in, true)
 	opts = append(opts, http.Operation(OperationProjectServiceProjectDetail))
 	opts = append(opts, http.PathTemplate(pattern))
-	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
+	err := c.cc.Invoke(ctx, "GET", path, nil, &out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -195,11 +183,11 @@ func (c *ProjectServiceHTTPClientImpl) ProjectDetail(ctx context.Context, in *Pr
 
 func (c *ProjectServiceHTTPClientImpl) UpdateProject(ctx context.Context, in *UpdateProjectRequest, opts ...http.CallOption) (*ProjectReply, error) {
 	var out ProjectReply
-	pattern := "/admin/environments/{environment_id}/project/update"
+	pattern := "/admin/projects/{id}"
 	path := binding.EncodeURL(pattern, in, false)
 	opts = append(opts, http.Operation(OperationProjectServiceUpdateProject))
 	opts = append(opts, http.PathTemplate(pattern))
-	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
+	err := c.cc.Invoke(ctx, "PUT", path, in, &out, opts...)
 	if err != nil {
 		return nil, err
 	}

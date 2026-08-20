@@ -5,6 +5,9 @@ export const queryKeys = {
   users: ['users'] as const,
   roles: ['roles'] as const,
   permissions: ['permissions'] as const,
+  globalProjects: (filter?: unknown) => filter === undefined
+    ? ['projects'] as const
+    : ['projects', filter] as const,
   environment: (environmentId: Identifier) =>
     ['environment', String(environmentId)] as const,
   environmentPermissions: (environmentId: Identifier) =>

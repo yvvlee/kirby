@@ -40,7 +40,7 @@ func (s *Service) CreateProject(ctx context.Context, request *adminv1.CreateProj
 	if err != nil {
 		return nil, entity.APIError(err)
 	}
-	item, err := s.logic.Create(ctx, actor, request.EnvironmentId, &model.Project{Key: request.Key, Name: request.Name, Description: request.Description})
+	item, err := s.logic.Create(ctx, actor, 0, &model.Project{Key: request.Key, Name: request.Name, Description: request.Description})
 	return projectReply(item, err)
 }
 
@@ -52,7 +52,7 @@ func (s *Service) UpdateProject(ctx context.Context, request *adminv1.UpdateProj
 	if err != nil {
 		return nil, entity.APIError(err)
 	}
-	item, err := s.logic.Update(ctx, actor, request.EnvironmentId, request.Id, repository.ProjectUpdate{Name: request.Name, Description: request.Description, Version: int64(request.Version)})
+	item, err := s.logic.Update(ctx, actor, 0, request.Id, repository.ProjectUpdate{Name: request.Name, Description: request.Description, Version: int64(request.Version)})
 	return projectReply(item, err)
 }
 
@@ -64,7 +64,11 @@ func (s *Service) ListProject(ctx context.Context, request *adminv1.ListProjectR
 	if err != nil {
 		return nil, entity.APIError(err)
 	}
-	items, err := s.logic.List(ctx, actor, request.EnvironmentId, request.Keyword)
+	environmentID := int64(0)
+	if request.EnvironmentId != nil {
+		environmentID = *request.EnvironmentId
+	}
+	items, err := s.logic.List(ctx, actor, environmentID, request.Keyword)
 	if err != nil {
 		return nil, entity.APIError(err)
 	}
@@ -87,7 +91,11 @@ func (s *Service) ProjectDetail(ctx context.Context, request *adminv1.ProjectIDR
 	if err != nil {
 		return nil, entity.APIError(err)
 	}
-	item, err := s.logic.Detail(ctx, actor, request.EnvironmentId, request.Id)
+	environmentID := int64(0)
+	if request.EnvironmentId != nil {
+		environmentID = *request.EnvironmentId
+	}
+	item, err := s.logic.Detail(ctx, actor, environmentID, request.Id)
 	return projectReply(item, err)
 }
 

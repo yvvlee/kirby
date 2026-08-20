@@ -25,6 +25,7 @@ export type User = ApiEntity & {
 }
 
 export type Environment = ApiEntity & {
+  project_id?: Identifier
   key: string
   name: string
   description?: string

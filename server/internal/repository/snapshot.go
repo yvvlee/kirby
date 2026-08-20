@@ -112,7 +112,8 @@ INSERT INTO snapshots
 SELECT p.id, c.id, c.` + "`key`" + `, ?, ?, ?, ?, FALSE, ?, ?
 FROM configs AS c
 INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
-WHERE p.id = ? AND p.environment_id = ? AND c.id = ? AND c.deleted_at IS NULL`
+INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
+WHERE p.id = ? AND e.id = ? AND c.id = ? AND c.deleted_at IS NULL`
 
 func snapshotCreateArgs(environmentID, projectID, configID int64, snapshot *model.Snapshot) []any {
 	return []any{
@@ -140,7 +141,7 @@ func (r *SnapshotRepositoryImpl) List(ctx context.Context, environmentID int64, 
 	if err := base.ValidateID("config_id", filter.ConfigID); err != nil {
 		return base.PageResult[model.Snapshot]{}, err
 	}
-	where := "p.environment_id = ? AND p.id = ? AND c.id = ? AND s.deleted_at IS NULL"
+	where := "e.id = ? AND p.id = ? AND c.id = ? AND s.deleted_at IS NULL"
 	args := []any{environmentID, filter.ProjectID, filter.ConfigID}
 	if filter.Status != nil {
 		if !validSnapshotStatus(*filter.Status) {
@@ -158,6 +159,7 @@ func (r *SnapshotRepositoryImpl) List(ctx context.Context, environmentID int64, 
 FROM snapshots AS s
 INNER JOIN configs AS c ON c.id = s.config_id AND c.project_id = s.project_id AND c.deleted_at IS NULL
 INNER JOIN projects AS p ON p.id = s.project_id AND p.deleted_at IS NULL
+INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
 WHERE ` + where
 	total, err := base.Count(ctx, r.engine, "snapshots", "SELECT COUNT(*) AS total"+from, args...)
 	if err != nil {
@@ -208,7 +210,8 @@ SELECT s.*
 FROM snapshots AS s
 INNER JOIN configs AS c ON c.id = s.config_id AND c.project_id = s.project_id AND c.deleted_at IS NULL
 INNER JOIN projects AS p ON p.id = s.project_id AND p.deleted_at IS NULL
-WHERE p.environment_id = ? AND c.id = ? AND s.deleted_at IS NULL AND `+condition+`
+INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
+WHERE e.id = ? AND c.id = ? AND s.deleted_at IS NULL AND `+condition+`
 ORDER BY s.id DESC
 LIMIT 1`, args, &snapshot)
 	if err != nil {
@@ -231,7 +234,8 @@ SELECT s.*
 FROM snapshots AS s
 INNER JOIN configs AS c ON c.id = s.config_id AND c.project_id = s.project_id AND c.deleted_at IS NULL
 INNER JOIN projects AS p ON p.id = s.project_id AND p.deleted_at IS NULL
-WHERE p.environment_id = ? AND c.id = ? AND s.deleted_at IS NULL AND `+condition+`
+INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
+WHERE e.id = ? AND c.id = ? AND s.deleted_at IS NULL AND `+condition+`
 ORDER BY s.id DESC
 LIMIT 1
 FOR UPDATE`, args, &snapshot)
@@ -253,7 +257,8 @@ SELECT DISTINCT s.config_id
 FROM snapshots AS s
 INNER JOIN configs AS c ON c.id = s.config_id AND c.project_id = s.project_id AND c.deleted_at IS NULL
 INNER JOIN projects AS p ON p.id = s.project_id AND p.deleted_at IS NULL
-WHERE p.environment_id = ? AND p.id = ? AND s.status = ? AND s.deleted_at IS NULL
+INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
+WHERE e.id = ? AND p.id = ? AND s.status = ? AND s.deleted_at IS NULL
 ORDER BY s.config_id ASC`, []any{environmentID, projectID, model.SnapshotStatusReleased}, &rows)
 	if err != nil {
 		return nil, err
@@ -276,7 +281,8 @@ SET s.deleted_at = UTC_TIMESTAMP(6), s.updated_by = ?,
 WHERE s.id = ? AND s.status = ? AND s.deleted_at IS NULL
   AND EXISTS (
       SELECT 1 FROM projects AS p
-      WHERE p.id = s.project_id AND p.environment_id = ? AND p.deleted_at IS NULL
+      INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
+      WHERE p.id = s.project_id AND e.id = ? AND p.deleted_at IS NULL
   )`, updatedBy, snapshotID, model.SnapshotStatusUnreleased, environmentID)
 	return err
 }
@@ -292,7 +298,8 @@ SET s.deleted_at = UTC_TIMESTAMP(6), s.updated_by = ?,
 WHERE s.id = ? AND s.status = ? AND s.deleted_at IS NULL
   AND EXISTS (
       SELECT 1 FROM projects AS p
-      WHERE p.id = s.project_id AND p.environment_id = ? AND p.deleted_at IS NULL
+      INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
+      WHERE p.id = s.project_id AND e.id = ? AND p.deleted_at IS NULL
   )`, updatedBy, snapshotID, model.SnapshotStatusUnreleased, environmentID)
 	return err
 }
@@ -320,12 +327,13 @@ func (r *SnapshotRepositoryImpl) SetCurrent(ctx context.Context, tx *xorm.Sessio
 UPDATE snapshots AS s
 INNER JOIN configs AS c ON c.id = s.config_id AND c.project_id = s.project_id AND c.deleted_at IS NULL
 INNER JOIN projects AS p ON p.id = s.project_id AND p.deleted_at IS NULL
+INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
 INNER JOIN snapshots AS target
     ON target.id = ? AND target.config_id = c.id AND target.project_id = p.id
    AND target.deleted_at IS NULL
 SET s.is_using = (s.id = ?), s.updated_by = ?,
     s.updated_at = UTC_TIMESTAMP(6), s.version = s.version + 1
-WHERE p.environment_id = ? AND c.id = ? AND s.deleted_at IS NULL`,
+WHERE e.id = ? AND c.id = ? AND s.deleted_at IS NULL`,
 		snapshotID, snapshotID, updatedBy, environmentID, configID)
 	return err
 }
@@ -335,7 +343,8 @@ SELECT s.*
 FROM snapshots AS s
 INNER JOIN configs AS c ON c.id = s.config_id AND c.project_id = s.project_id AND c.deleted_at IS NULL
 INNER JOIN projects AS p ON p.id = s.project_id AND p.deleted_at IS NULL
-WHERE p.environment_id = ? AND s.id = ? AND s.deleted_at IS NULL
+INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
+WHERE e.id = ? AND s.id = ? AND s.deleted_at IS NULL
 LIMIT 1`
 
 func validSnapshotStatus(status model.SnapshotStatus) bool {

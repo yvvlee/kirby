@@ -9,6 +9,7 @@ SET time_zone = '+00:00';
 
 CREATE TABLE `environments` (
   `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `project_id` BIGINT UNSIGNED NOT NULL,
   `key` VARCHAR(64) NOT NULL,
   `name` VARCHAR(64) NOT NULL,
   `description` VARCHAR(255) NOT NULL DEFAULT '',
@@ -20,7 +21,8 @@ CREATE TABLE `environments` (
   `version` BIGINT UNSIGNED NOT NULL DEFAULT 0,
   `deleted_at` DATETIME(6) NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `ux_environments_key` (`key`),
+  UNIQUE KEY `ux_environments_project_key` (`project_id`, `key`),
+  KEY `ix_environments_project_deleted` (`project_id`, `deleted_at`),
   KEY `ix_environments_enabled_deleted` (`enabled`, `deleted_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
@@ -125,7 +127,6 @@ CREATE TABLE `refresh_tokens` (
 
 CREATE TABLE `projects` (
   `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `environment_id` BIGINT UNSIGNED NOT NULL,
   `key` VARCHAR(128) NOT NULL,
   `name` VARCHAR(64) NOT NULL,
   `description` VARCHAR(255) NOT NULL DEFAULT '',
@@ -136,10 +137,12 @@ CREATE TABLE `projects` (
   `version` BIGINT UNSIGNED NOT NULL DEFAULT 0,
   `deleted_at` DATETIME(6) NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `ux_projects_environment_key` (`environment_id`, `key`),
-  KEY `ix_projects_environment_deleted` (`environment_id`, `deleted_at`),
-  CONSTRAINT `fk_projects_environment` FOREIGN KEY (`environment_id`) REFERENCES `environments` (`id`) ON DELETE RESTRICT
+  UNIQUE KEY `ux_projects_key` (`key`),
+  KEY `ix_projects_deleted` (`deleted_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+ALTER TABLE `environments`
+  ADD CONSTRAINT `fk_environments_project` FOREIGN KEY (`project_id`) REFERENCES `projects` (`id`) ON DELETE RESTRICT;
 
 CREATE TABLE `project_api_keys` (
   `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -302,8 +305,8 @@ CREATE TABLE `audit_logs` (
 START TRANSACTION;
 
 INSERT INTO `permissions` (`id`, `key`, `name`, `description`) VALUES
-  (1,  'project:read',               '读取项目',       '查看环境内的项目'),
-  (2,  'project:write',              '管理项目',       '创建和修改环境内的项目'),
+  (1,  'project:read',               '读取项目',       '查看项目'),
+  (2,  'project:write',              '管理项目',       '创建和修改项目'),
   (3,  'project:api_key:read',       '读取项目密钥',   '查看项目 API Key 元数据'),
   (4,  'project:api_key:manage',     '管理项目密钥',   '创建、轮换和撤销项目 API Key'),
   (5,  'config:read',                '读取配置',       '查看配置内容'),
@@ -321,7 +324,8 @@ INSERT INTO `permissions` (`id`, `key`, `name`, `description`) VALUES
   (17, 'environment:member:manage',  '管理环境成员',   '调整当前环境的成员角色'),
   (18, 'system:user:manage',         '管理系统用户',   '创建、修改和停用系统用户'),
   (19, 'system:role:manage',         '管理系统角色',   '创建、修改角色和权限'),
-  (20, 'system:environment:manage',  '管理系统环境',   '创建和修改环境');
+  (20, 'system:environment:manage',  '管理系统环境',   '创建和修改环境'),
+  (21, 'system:project:manage',      '管理系统项目',   '创建和修改项目');
 
 INSERT INTO `roles` (`id`, `key`, `name`, `description`, `builtin`, `created_by`, `updated_by`) VALUES
   (1, 'viewer',    '只读成员', '可以读取和导出环境内的配置', TRUE, 0, 0),
@@ -347,7 +351,7 @@ INSERT INTO `role_permissions` (`role_id`, `permission_id`, `created_by`) VALUES
   (4, 2, 0), (4, 6, 0), (4, 8, 0), (4, 10, 0), (4, 12, 0), (4, 15, 0), (4, 16, 0),
   (4, 13, 0), (4, 4, 0), (4, 17, 0);
 
--- System permissions (18-20) are deliberately not assigned to an environment
+-- System permissions (18-21) are deliberately not assigned to an environment
 -- role. They require users.is_system_admin and are checked separately.
 
 COMMIT;

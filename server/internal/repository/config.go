@@ -96,7 +96,8 @@ func (r *ConfigRepositoryImpl) CreateTx(ctx context.Context, tx *xorm.Session, e
 	if err := base.LockOne(ctx, tx, "project", `
 SELECT p.id
 FROM projects AS p
-WHERE p.environment_id = ? AND p.id = ? AND p.deleted_at IS NULL
+INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
+WHERE e.id = ? AND p.id = ? AND p.deleted_at IS NULL
 LIMIT 1
 FOR UPDATE`, []any{environmentID, projectID}, &project); err != nil {
 		return err
@@ -182,7 +183,8 @@ INSERT INTO configs
     (project_id, ` + "`key`" + `, description, is_array, type_json, value, runtime_version, created_by, updated_by)
 SELECT p.id, ?, ?, ?, ?, ?, ?, ?, ?
 FROM projects AS p
-WHERE p.id = ? AND p.environment_id = ? AND p.deleted_at IS NULL`
+INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
+WHERE p.id = ? AND e.id = ? AND p.deleted_at IS NULL`
 
 func configCreateArgs(environmentID, projectID int64, config *model.Config) []any {
 	return []any{
@@ -215,7 +217,8 @@ func (r *ConfigRepositoryImpl) FindByKey(ctx context.Context, environmentID, pro
 SELECT c.*
 FROM configs AS c
 INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
-WHERE p.environment_id = ? AND p.id = ? AND c.`+"`key`"+` = ? AND c.deleted_at IS NULL
+INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
+WHERE e.id = ? AND p.id = ? AND c.`+"`key`"+` = ? AND c.deleted_at IS NULL
 LIMIT 1`, []any{environmentID, projectID, key}, &config)
 	if err != nil {
 		return nil, err
@@ -236,6 +239,7 @@ func (r *ConfigRepositoryImpl) List(ctx context.Context, environmentID int64, fi
 SELECT COUNT(*) AS total
 FROM configs AS c
 INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
+INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
 WHERE `+where, args...)
 	if err != nil {
 		return base.PageResult[model.Config]{}, err
@@ -249,6 +253,7 @@ WHERE `+where, args...)
 SELECT c.*
 FROM configs AS c
 INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
+INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
 WHERE `+where+`
 ORDER BY c.id DESC
 LIMIT ? OFFSET ?`, listArgs, &result.Items)
@@ -266,7 +271,8 @@ SET c.description = ?, c.is_array = ?, c.type_json = ?, c.updated_by = ?,
 WHERE c.id = ? AND c.version = ? AND c.deleted_at IS NULL
   AND EXISTS (
       SELECT 1 FROM projects AS p
-      WHERE p.id = c.project_id AND p.environment_id = ? AND p.deleted_at IS NULL
+      INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
+      WHERE p.id = c.project_id AND e.id = ? AND p.deleted_at IS NULL
   )`, update.Description, update.IsArray, update.TypeJSON, update.UpdatedBy,
 		configID, update.Version, environmentID)
 	return err
@@ -283,7 +289,8 @@ SET c.description = ?, c.is_array = ?, c.type_json = ?, c.updated_by = ?,
 WHERE c.id = ? AND c.version = ? AND c.deleted_at IS NULL
   AND EXISTS (
       SELECT 1 FROM projects AS p
-      WHERE p.id = c.project_id AND p.environment_id = ? AND p.deleted_at IS NULL
+      INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
+      WHERE p.id = c.project_id AND e.id = ? AND p.deleted_at IS NULL
   )`, update.Description, update.IsArray, update.TypeJSON, update.UpdatedBy,
 		configID, update.Version, environmentID)
 	return err
@@ -299,7 +306,8 @@ SET c.value = ?, c.updated_by = ?, c.updated_at = UTC_TIMESTAMP(6), c.version = 
 WHERE c.id = ? AND c.version = ? AND c.deleted_at IS NULL
   AND EXISTS (
       SELECT 1 FROM projects AS p
-      WHERE p.id = c.project_id AND p.environment_id = ? AND p.deleted_at IS NULL
+      INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
+      WHERE p.id = c.project_id AND e.id = ? AND p.deleted_at IS NULL
   )`, update.Value, update.UpdatedBy, configID, update.Version, environmentID)
 	return err
 }
@@ -314,7 +322,8 @@ SET c.value = ?, c.updated_by = ?, c.updated_at = UTC_TIMESTAMP(6), c.version = 
 WHERE c.id = ? AND c.version = ? AND c.deleted_at IS NULL
   AND EXISTS (
       SELECT 1 FROM projects AS p
-      WHERE p.id = c.project_id AND p.environment_id = ? AND p.deleted_at IS NULL
+      INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
+      WHERE p.id = c.project_id AND e.id = ? AND p.deleted_at IS NULL
   )`, update.Value, update.UpdatedBy, configID, update.Version, environmentID)
 	return err
 }
@@ -330,7 +339,8 @@ SET c.deleted_at = UTC_TIMESTAMP(6), c.updated_by = ?,
 WHERE c.id = ? AND c.deleted_at IS NULL
   AND EXISTS (
       SELECT 1 FROM projects AS p
-      WHERE p.id = c.project_id AND p.environment_id = ? AND p.deleted_at IS NULL
+      INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
+      WHERE p.id = c.project_id AND e.id = ? AND p.deleted_at IS NULL
   )`, updatedBy, configID, environmentID)
 	return err
 }
@@ -346,7 +356,8 @@ SET c.deleted_at = UTC_TIMESTAMP(6), c.updated_by = ?,
 WHERE c.id = ? AND c.deleted_at IS NULL
   AND EXISTS (
       SELECT 1 FROM projects AS p
-      WHERE p.id = c.project_id AND p.environment_id = ? AND p.deleted_at IS NULL
+      INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
+      WHERE p.id = c.project_id AND e.id = ? AND p.deleted_at IS NULL
   )`, updatedBy, configID, environmentID)
 	return err
 }
@@ -367,11 +378,12 @@ const configByIDSQL = `
 SELECT c.*
 FROM configs AS c
 INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
-WHERE p.environment_id = ? AND c.id = ? AND c.deleted_at IS NULL
+INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
+WHERE e.id = ? AND c.id = ? AND c.deleted_at IS NULL
 LIMIT 1`
 
 func configListFilter(environmentID int64, filter ConfigFilter) (string, []any, error) {
-	where := "p.environment_id = ? AND c.deleted_at IS NULL"
+	where := "e.id = ? AND c.deleted_at IS NULL"
 	args := []any{environmentID}
 	if filter.ProjectID != nil {
 		if err := base.ValidateID("project_id", *filter.ProjectID); err != nil {

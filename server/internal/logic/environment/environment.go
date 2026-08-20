@@ -88,6 +88,20 @@ func (l *Logic) Update(ctx context.Context, actor permission.Actor, environmentI
 	return l.environments.FindByID(ctx, environmentID)
 }
 
+// VerifyProject checks the project path parameter before a scoped environment
+// update. The HTTP route contains both IDs, so accepting a mismatched pair
+// would allow an environment to be edited through another project's URL.
+func (l *Logic) VerifyProject(ctx context.Context, environmentID, projectID int64) error {
+	item, err := l.environments.FindByID(ctx, environmentID)
+	if err != nil {
+		return err
+	}
+	if item.ProjectID != projectID {
+		return fmt.Errorf("environment does not belong to project")
+	}
+	return nil
+}
+
 func (l *Logic) Permissions(ctx context.Context, actor permission.Actor, environmentID int64) ([]string, error) {
 	keys, _, err := l.permissions.Resolve(ctx, actor.UserID, environmentID)
 	return keys, err

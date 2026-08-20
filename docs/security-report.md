@@ -48,6 +48,8 @@ Run the same checks with:
 scripts/security-check.sh
 ```
 
-`KIRBY_GO_PROXY` may select another public Go proxy. `KIRBY_TRIVY_DB_IMAGE`
-may select another trusted mirror of the official Trivy database artifact.
+`KIRBY_GO_PROXY` may select another public Go proxy.
+`KIRBY_TRIVY_DB_REPOSITORY` may select another trusted OCI repository for the
+official Trivy database artifact. The former `KIRBY_TRIVY_DB_IMAGE` name remains
+accepted for compatibility.
 Checksum, lockfile, severity, and failure behavior are unchanged.

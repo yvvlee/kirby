@@ -35,7 +35,7 @@ func TestConfigFindRejectsResourceFromAnotherEnvironment(t *testing.T) {
 
 func TestConfigUpdateCannotCrossEnvironment(t *testing.T) {
 	engine, mock := newRepositoryMockEngine(t)
-	mock.ExpectExec(`(?s)UPDATE configs AS c.*p\.environment_id = \?`).
+	mock.ExpectExec(`(?s)UPDATE configs AS c.*e\.id = \?`).
 		WithArgs("description", false, `{}`, int64(7), int64(42), int64(3), int64(99)).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 
@@ -56,7 +56,7 @@ func TestConfigMetadataUpdateTxNeverWritesValue(t *testing.T) {
 	tx := engine.NewSession()
 	t.Cleanup(func() { _ = tx.Close() })
 	require.NoError(t, tx.Begin())
-	mock.ExpectExec(`(?s)UPDATE configs AS c\s+SET c\.description = \?, c\.is_array = \?, c\.type_json = \?, c\.updated_by = \?.*p\.environment_id = \?`).
+	mock.ExpectExec(`(?s)UPDATE configs AS c\s+SET c\.description = \?, c\.is_array = \?, c\.type_json = \?, c\.updated_by = \?.*e\.id = \?`).
 		WithArgs("description", true, `{"baseType":"INT"}`, int64(7), int64(42), int64(3), int64(99)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
@@ -80,7 +80,7 @@ func TestConfigCreateTxLocksProjectThenRestoresSoftDeletedKey(t *testing.T) {
 	tx := engine.NewSession()
 	t.Cleanup(func() { _ = tx.Close() })
 	require.NoError(t, tx.Begin())
-	mock.ExpectQuery(`(?s)SELECT p\.id.*p\.environment_id = \?.*FOR UPDATE`).
+	mock.ExpectQuery(`(?s)SELECT p\.id.*e\.id = \?.*FOR UPDATE`).
 		WithArgs(int64(5), int64(3)).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(3))
 	mock.ExpectQuery(`(?s)SELECT c\.\*.*c\.project_id = \?.*c\.`+"`key`"+` = \?.*FOR UPDATE`).
@@ -169,7 +169,7 @@ func TestStructureCreateTxRestoresSoftDeletedKeyAndRejectsActiveKey(t *testing.T
 			tx := engine.NewSession()
 			t.Cleanup(func() { _ = tx.Close() })
 			require.NoError(t, tx.Begin())
-			mock.ExpectQuery(`(?s)SELECT c\.id.*p\.environment_id = \?.*FOR UPDATE`).WithArgs(int64(5), int64(7)).
+			mock.ExpectQuery(`(?s)SELECT c\.id.*e\.id = \?.*FOR UPDATE`).WithArgs(int64(5), int64(7)).
 				WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(7))
 			mock.ExpectQuery(`(?s)SELECT s\.\*.*s\.config_id = \?.*FOR UPDATE`).WithArgs(int64(7), "User").
 				WillReturnRows(sqlmock.NewRows([]string{"id", "config_id", "key", "version", "deleted_at"}).AddRow(8, 7, "User", 2, test.deletedAt))
@@ -212,7 +212,7 @@ func TestConfigEnumCreateTxRestoresSoftDeletedKeyAndRejectsActiveKey(t *testing.
 			tx := engine.NewSession()
 			t.Cleanup(func() { _ = tx.Close() })
 			require.NoError(t, tx.Begin())
-			mock.ExpectQuery(`(?s)SELECT c\.id.*p\.environment_id = \?.*FOR UPDATE`).WithArgs(int64(5), int64(7)).
+			mock.ExpectQuery(`(?s)SELECT c\.id.*e\.id = \?.*FOR UPDATE`).WithArgs(int64(5), int64(7)).
 				WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(7))
 			mock.ExpectQuery(`(?s)SELECT e\.\*.*e\.config_id = \?.*FOR UPDATE`).WithArgs(int64(7), "Status").
 				WillReturnRows(sqlmock.NewRows([]string{"id", "config_id", "key", "version", "deleted_at"}).AddRow(8, 7, "Status", 2, test.deletedAt))
@@ -242,7 +242,7 @@ func TestConfigEnumCreateTxRestoresSoftDeletedKeyAndRejectsActiveKey(t *testing.
 
 func TestNestedCreateUsesEnvironmentInInsertQuery(t *testing.T) {
 	engine, mock := newRepositoryMockEngine(t)
-	mock.ExpectExec(`(?s)INSERT INTO structures.*p\.environment_id = \?`).
+	mock.ExpectExec(`(?s)INSERT INTO structures.*e\.id = \?`).
 		WithArgs("User", "User", "", `[]`, int64(7), int64(7), int64(11), int64(99)).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 
@@ -263,7 +263,7 @@ func TestStructureReconcileSoftDeletesRowsMissingFromSnapshot(t *testing.T) {
 	tx := engine.NewSession()
 	t.Cleanup(func() { _ = tx.Close() })
 	require.NoError(t, tx.Begin())
-	mock.ExpectQuery(`(?s)SELECT c\.id.*p\.environment_id = \?.*FOR UPDATE`).
+	mock.ExpectQuery(`(?s)SELECT c\.id.*e\.id = \?.*FOR UPDATE`).
 		WithArgs(int64(5), int64(9)).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(9))
 	mock.ExpectQuery(`(?s)SELECT s\.\*.*WHERE s\.config_id = \?.*FOR UPDATE`).
@@ -287,12 +287,14 @@ func TestProjectListCapsPageSizeAndOrdersDeterministically(t *testing.T) {
 	countSQL := `
 SELECT COUNT(*) AS total
 FROM projects AS p
-WHERE p.environment_id = ? AND p.deleted_at IS NULL
+INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
+WHERE e.id = ? AND p.deleted_at IS NULL
   AND (p.name LIKE ? OR p.description LIKE ?)`
 	listSQL := `
 SELECT p.*
 FROM projects AS p
-WHERE p.environment_id = ? AND p.deleted_at IS NULL
+INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
+WHERE e.id = ? AND p.deleted_at IS NULL
   AND (p.name LIKE ? OR p.description LIKE ?)
 ORDER BY p.id DESC
 LIMIT ? OFFSET ?`
@@ -301,8 +303,8 @@ LIMIT ? OFFSET ?`
 		WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(150))
 	mock.ExpectQuery(regexp.QuoteMeta(listSQL)).
 		WithArgs(int64(5), "%search%", "%search%", base.MaxPageSize, 0).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "environment_id", "key", "name"}).
-			AddRow(10, 5, "demo", "Demo"))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "key", "name"}).
+			AddRow(10, "demo", "Demo"))
 
 	result, err := NewProjectRepository(engine).List(context.Background(), 5, "search", base.PageRequest{Limit: 1000})
 

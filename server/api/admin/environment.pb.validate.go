@@ -148,6 +148,123 @@ var _ interface {
 	ErrorName() string
 } = EnvironmentIDRequestValidationError{}
 
+// Validate checks the field values on ListEnvironmentsRequest with the rules
+// defined in the proto definition for this message. If any rules are
+// violated, the first error encountered is returned, or nil if there are no violations.
+func (m *ListEnvironmentsRequest) Validate() error {
+	return m.validate(false)
+}
+
+// ValidateAll checks the field values on ListEnvironmentsRequest with the
+// rules defined in the proto definition for this message. If any rules are
+// violated, the result is a list of violation errors wrapped in
+// ListEnvironmentsRequestMultiError, or nil if none found.
+func (m *ListEnvironmentsRequest) ValidateAll() error {
+	return m.validate(true)
+}
+
+func (m *ListEnvironmentsRequest) validate(all bool) error {
+	if m == nil {
+		return nil
+	}
+
+	var errors []error
+
+	if m.ProjectId != nil {
+
+		if m.GetProjectId() <= 0 {
+			err := ListEnvironmentsRequestValidationError{
+				field:  "ProjectId",
+				reason: "value must be greater than 0",
+			}
+			if !all {
+				return err
+			}
+			errors = append(errors, err)
+		}
+
+	}
+
+	if len(errors) > 0 {
+		return ListEnvironmentsRequestMultiError(errors)
+	}
+
+	return nil
+}
+
+// ListEnvironmentsRequestMultiError is an error wrapping multiple validation
+// errors returned by ListEnvironmentsRequest.ValidateAll() if the designated
+// constraints aren't met.
+type ListEnvironmentsRequestMultiError []error
+
+// Error returns a concatenation of all the error messages it wraps.
+func (m ListEnvironmentsRequestMultiError) Error() string {
+	msgs := make([]string, 0, len(m))
+	for _, err := range m {
+		msgs = append(msgs, err.Error())
+	}
+	return strings.Join(msgs, "; ")
+}
+
+// AllErrors returns a list of validation violation errors.
+func (m ListEnvironmentsRequestMultiError) AllErrors() []error { return m }
+
+// ListEnvironmentsRequestValidationError is the validation error returned by
+// ListEnvironmentsRequest.Validate if the designated constraints aren't met.
+type ListEnvironmentsRequestValidationError struct {
+	field  string
+	reason string
+	cause  error
+	key    bool
+}
+
+// Field function returns field value.
+func (e ListEnvironmentsRequestValidationError) Field() string { return e.field }
+
+// Reason function returns reason value.
+func (e ListEnvironmentsRequestValidationError) Reason() string { return e.reason }
+
+// Cause function returns cause value.
+func (e ListEnvironmentsRequestValidationError) Cause() error { return e.cause }
+
+// Key function returns key value.
+func (e ListEnvironmentsRequestValidationError) Key() bool { return e.key }
+
+// ErrorName returns error name.
+func (e ListEnvironmentsRequestValidationError) ErrorName() string {
+	return "ListEnvironmentsRequestValidationError"
+}
+
+// Error satisfies the builtin error interface
+func (e ListEnvironmentsRequestValidationError) Error() string {
+	cause := ""
+	if e.cause != nil {
+		cause = fmt.Sprintf(" | caused by: %v", e.cause)
+	}
+
+	key := ""
+	if e.key {
+		key = "key for "
+	}
+
+	return fmt.Sprintf(
+		"invalid %sListEnvironmentsRequest.%s: %s%s",
+		key,
+		e.field,
+		e.reason,
+		cause)
+}
+
+var _ error = ListEnvironmentsRequestValidationError{}
+
+var _ interface {
+	Field() string
+	Reason() string
+	Key() bool
+	Cause() error
+	ErrorName() string
+} = ListEnvironmentsRequestValidationError{}
+
 // Validate checks the field values on CreateEnvironmentRequest with the rules
 // defined in the proto definition for this message. If any rules are
 // violated, the first error encountered is returned, or nil if there are no violations.
@@ -169,6 +286,17 @@ func (m *CreateEnvironmentRequest) validate(all bool) error {
 	}
 
 	var errors []error
+
+	if m.GetProjectId() <= 0 {
+		err := CreateEnvironmentRequestValidationError{
+			field:  "ProjectId",
+			reason: "value must be greater than 0",
+		}
+		if !all {
+			return err
+		}
+		errors = append(errors, err)
+	}
 
 	if l := utf8.RuneCountInString(m.GetKey()); l < 1 || l > 64 {
 		err := CreateEnvironmentRequestValidationError{
@@ -317,6 +445,17 @@ func (m *UpdateEnvironmentRequest) validate(all bool) error {
 	}
 
 	var errors []error
+
+	if m.GetProjectId() <= 0 {
+		err := UpdateEnvironmentRequestValidationError{
+			field:  "ProjectId",
+			reason: "value must be greater than 0",
+		}
+		if !all {
+			return err
+		}
+		errors = append(errors, err)
+	}
 
 	if m.GetEnvironmentId() <= 0 {
 		err := UpdateEnvironmentRequestValidationError{

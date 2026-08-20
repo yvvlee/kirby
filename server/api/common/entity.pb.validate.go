@@ -67,6 +67,8 @@ func (m *Environment) validate(all bool) error {
 
 	// no validation rules for Enabled
 
+	// no validation rules for ProjectId
+
 	// no validation rules for CreatedAt
 
 	// no validation rules for UpdatedAt
@@ -706,8 +708,6 @@ func (m *Project) validate(all bool) error {
 	var errors []error
 
 	// no validation rules for Id
-
-	// no validation rules for EnvironmentId
 
 	// no validation rules for Key
 

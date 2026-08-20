@@ -220,6 +220,7 @@ type Environment struct {
 	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
 	Description   string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
 	Enabled       bool                   `protobuf:"varint,5,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	ProjectId     int64                  `protobuf:"varint,6,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
 	CreatedAt     string                 `protobuf:"bytes,51,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt     string                 `protobuf:"bytes,52,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	Version       uint32                 `protobuf:"varint,55,opt,name=version,proto3" json:"version,omitempty"`
@@ -290,6 +291,13 @@ func (x *Environment) GetEnabled() bool {
 		return x.Enabled
 	}
 	return false
+}
+
+func (x *Environment) GetProjectId() int64 {
+	if x != nil {
+		return x.ProjectId
+	}
+	return 0
 }
 
 func (x *Environment) GetCreatedAt() string {
@@ -644,7 +652,6 @@ func (x *EnvironmentMember) GetRoles() []*Role {
 type Project struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	EnvironmentId int64                  `protobuf:"varint,2,opt,name=environment_id,json=environmentId,proto3" json:"environment_id,omitempty"`
 	Key           string                 `protobuf:"bytes,3,opt,name=key,proto3" json:"key,omitempty"`
 	Name          string                 `protobuf:"bytes,4,opt,name=name,proto3" json:"name,omitempty"`
 	Description   string                 `protobuf:"bytes,5,opt,name=description,proto3" json:"description,omitempty"`
@@ -690,13 +697,6 @@ func (*Project) Descriptor() ([]byte, []int) {
 func (x *Project) GetId() int64 {
 	if x != nil {
 		return x.Id
-	}
-	return 0
-}
-
-func (x *Project) GetEnvironmentId() int64 {
-	if x != nil {
-		return x.EnvironmentId
 	}
 	return 0
 }
@@ -1833,13 +1833,15 @@ var File_common_entity_proto protoreflect.FileDescriptor
 
 const file_common_entity_proto_rawDesc = "" +
 	"\n" +
-	"\x13common/entity.proto\x12\x0fkirby.common.v1\x1a\x17common/annotation.proto\x1a\x12common/types.proto\"\xd7\x01\n" +
+	"\x13common/entity.proto\x12\x0fkirby.common.v1\x1a\x17common/annotation.proto\x1a\x12common/types.proto\"\xf6\x01\n" +
 	"\vEnvironment\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x10\n" +
 	"\x03key\x18\x02 \x01(\tR\x03key\x12\x12\n" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x04 \x01(\tR\vdescription\x12\x18\n" +
 	"\aenabled\x18\x05 \x01(\bR\aenabled\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x06 \x01(\x03R\tprojectId\x12\x1d\n" +
 	"\n" +
 	"created_at\x183 \x01(\tR\tcreatedAt\x12\x1d\n" +
 	"\n" +
@@ -1876,10 +1878,9 @@ const file_common_entity_proto_rawDesc = "" +
 	"\vdescription\x18\x04 \x01(\tR\vdescription\"k\n" +
 	"\x11EnvironmentMember\x12)\n" +
 	"\x04user\x18\x01 \x01(\v2\x15.kirby.common.v1.UserR\x04user\x12+\n" +
-	"\x05roles\x18\x02 \x03(\v2\x15.kirby.common.v1.RoleR\x05roles\"\x9e\x02\n" +
+	"\x05roles\x18\x02 \x03(\v2\x15.kirby.common.v1.RoleR\x05roles\"\xf7\x01\n" +
 	"\aProject\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\x03R\x02id\x12%\n" +
-	"\x0eenvironment_id\x18\x02 \x01(\x03R\renvironmentId\x12\x10\n" +
+	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x10\n" +
 	"\x03key\x18\x03 \x01(\tR\x03key\x12\x12\n" +
 	"\x04name\x18\x04 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x05 \x01(\tR\vdescription\x12\x1d\n" +

@@ -37,7 +37,7 @@ func New(logic *logic.Logic) (*Service, error) {
 
 var _ adminv1.EnvironmentServiceHTTPServer = (*Service)(nil)
 
-func (s *Service) ListEnvironments(ctx context.Context, _ *emptypb.Empty) (*adminv1.ListEnvironmentsReply, error) {
+func (s *Service) ListEnvironments(ctx context.Context, request *adminv1.ListEnvironmentsRequest) (*adminv1.ListEnvironmentsReply, error) {
 	actor, err := permission.ActorFromContext(ctx)
 	if err != nil {
 		return nil, permission.APIError(err)
@@ -45,6 +45,15 @@ func (s *Service) ListEnvironments(ctx context.Context, _ *emptypb.Empty) (*admi
 	items, err := s.logic.List(ctx, actor)
 	if err != nil {
 		return nil, permission.APIError(err)
+	}
+	if request != nil && request.ProjectId != nil {
+		filtered := items[:0]
+		for _, item := range items {
+			if item.ProjectID == *request.ProjectId {
+				filtered = append(filtered, item)
+			}
+		}
+		items = filtered
 	}
 	result := make([]*commonv1.Environment, 0, len(items))
 	for index := range items {
@@ -65,7 +74,7 @@ func (s *Service) CreateEnvironment(ctx context.Context, request *adminv1.Create
 	if err != nil {
 		return nil, permission.APIError(err)
 	}
-	created, err := s.logic.Create(ctx, actor, &model.Environment{Key: request.Key, Name: request.Name, Description: request.Description})
+	created, err := s.logic.Create(ctx, actor, &model.Environment{ProjectID: request.ProjectId, Key: request.Key, Name: request.Name, Description: request.Description})
 	if err != nil {
 		return nil, permission.APIError(err)
 	}
@@ -83,6 +92,13 @@ func (s *Service) UpdateEnvironment(ctx context.Context, request *adminv1.Update
 	actor, err := permission.ActorFromContext(ctx)
 	if err != nil {
 		return nil, permission.APIError(err)
+	}
+	if verifier, ok := s.logic.(interface {
+		VerifyProject(context.Context, int64, int64) error
+	}); ok {
+		if err := verifier.VerifyProject(ctx, request.EnvironmentId, request.ProjectId); err != nil {
+			return nil, permission.APIError(err)
+		}
 	}
 	updated, err := s.logic.Update(ctx, actor, request.EnvironmentId, repository.EnvironmentUpdate{
 		Name: request.Name, Description: request.Description, Enabled: request.Enabled, Version: int64(request.Version),
@@ -158,7 +174,7 @@ func environmentToProto(item *model.Environment) (*commonv1.Environment, error) 
 		return nil, fmt.Errorf("invalid environment record")
 	}
 	return &commonv1.Environment{
-		Id: item.ID, Key: item.Key, Name: item.Name, Description: item.Description, Enabled: item.Enabled,
+		Id: item.ID, ProjectId: item.ProjectID, Key: item.Key, Name: item.Name, Description: item.Description, Enabled: item.Enabled,
 		CreatedAt: formatTime(item.CreatedAt), UpdatedAt: formatTime(item.UpdatedAt), Version: version,
 	}, nil
 }

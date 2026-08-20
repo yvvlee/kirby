@@ -123,7 +123,8 @@ func TestSchemaKeepsCriticalDatabaseGuarantees(t *testing.T) {
 	schema := string(schemaBytes)
 
 	required := []string{
-		"UNIQUE KEY `ux_projects_environment_key` (`environment_id`, `key`)",
+		"UNIQUE KEY `ux_projects_key` (`key`)",
+		"CONSTRAINT `fk_environments_project` FOREIGN KEY (`project_id`) REFERENCES `projects` (`id`)",
 		"UNIQUE KEY `ux_import_records_idempotency` (`user_id`, `target_environment_id`, `idempotency_key`)",
 		"`runtime_version` BIGINT NOT NULL DEFAULT 0",
 		"`is_system_admin` BOOLEAN NOT NULL DEFAULT FALSE",
@@ -131,7 +132,7 @@ func TestSchemaKeepsCriticalDatabaseGuarantees(t *testing.T) {
 		"`secret_hash` BINARY(32) NOT NULL",
 		"`secret_suffix` CHAR(4) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
 		"CONSTRAINT `ck_snapshots_status` CHECK (`status` IN (1, 3))",
-		"System permissions (18-20) are deliberately not assigned to an environment",
+		"System permissions (18-21) are deliberately not assigned to an environment",
 	}
 	for _, fragment := range required {
 		if !strings.Contains(schema, fragment) {

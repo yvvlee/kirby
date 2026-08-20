@@ -36,6 +36,7 @@ const (
 	SystemUserManage        = "system:user:manage"
 	SystemRoleManage        = "system:role:manage"
 	SystemEnvironmentManage = "system:environment:manage"
+	SystemProjectManage     = "system:project:manage"
 
 	cacheTTL        = time.Minute
 	maxResolveRetry = 3

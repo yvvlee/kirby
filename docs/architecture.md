@@ -29,10 +29,11 @@ Redis and S3.
 
 ## Environment isolation
 
-One Kirby deployment contains many environments. Environment IDs are part of
-repository queries as well as authorization checks. Projects, configs,
-snapshots, imports, API keys, and object paths are checked against their owning
-environment.
+One Kirby deployment contains many projects, and each project contains many
+environments. The durable hierarchy is `project -> environment -> config`.
+Environment IDs are part of repository queries and authorization checks.
+Projects, configs, snapshots, imports, API keys, and object paths are checked
+against the owning project and environment.
 
 A user has one identity and one JWT session. The user's roles are separate for
 each environment. A system administrator can manage users, roles, and
