@@ -97,6 +97,13 @@ The included Compose stack is a local deployment example with MySQL, Redis,
 MinIO, and one Kirby container. The Kirby process serves the React application,
 HTTP APIs, runtime gRPC, and the same-origin object-storage path.
 
+MinIO and its `mc` client are built together from fixed official Go module
+versions in `deploy/minio/Dockerfile`. CI uses the same image. MinIO is now
+[distributed as source only](https://github.com/minio/minio#source-only-distribution),
+and the previously pinned images no longer allow anonymous pulls. The first
+startup compiles these tools and takes longer. The build requires access to
+Docker Hub, the Go module proxy and checksum database, and Alpine packages.
+
 ```sh
 cp deploy/.env.example deploy/.env
 cp deploy/config.compose.yaml deploy/config.compose.local.yaml
@@ -107,7 +114,7 @@ consistent. Then start the dependencies:
 
 ```sh
 docker compose --env-file deploy/.env --project-directory deploy \
-  -f deploy/docker-compose.yml up -d mysql redis minio
+  -f deploy/docker-compose.yml up -d --build mysql redis minio
 docker compose --env-file deploy/.env --project-directory deploy \
   -f deploy/docker-compose.yml --profile init run --rm minio-init
 ```

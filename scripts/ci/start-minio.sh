@@ -1,8 +1,10 @@
 #!/bin/sh
 set -eu
 
-minio_image='quay.io/minio/minio@sha256:a1ea29fa28355559ef137d71fc570e508a214ec84ff8083e39bc5428980b015e'
-mc_image='quay.io/minio/mc@sha256:aead63c77f9db9107f1696fb08ecb0faeda23729cde94b0f663edf4fe09728e3'
+repo_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd)
+minio_image='kirby-minio:local'
+
+docker build --tag "$minio_image" "$repo_dir/deploy/minio"
 
 docker run -d --name kirby-ci-minio --publish 127.0.0.1:9000:9000 \
   -e MINIO_ROOT_USER=kirby-ci-minio \
@@ -19,7 +21,7 @@ until curl -fsS http://127.0.0.1:9000/minio/health/live >/dev/null; do
   sleep 1
 done
 
-docker run --rm --network host --entrypoint /bin/sh "$mc_image" -ec '
+docker run --rm --network container:kirby-ci-minio --entrypoint /bin/sh "$minio_image" -ec '
   mc alias set local http://127.0.0.1:9000 kirby-ci-minio kirby-ci-minio-password
   mc mb --ignore-existing local/kirby
 '

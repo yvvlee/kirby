@@ -18,7 +18,7 @@ compose() {
 }
 
 compose config --quiet
-compose up -d --wait --wait-timeout 180 mysql redis minio
+compose up -d --build --wait --wait-timeout 180 mysql redis minio
 compose --profile init run --rm minio-init
 
 compose up -d --build --wait --wait-timeout 180
