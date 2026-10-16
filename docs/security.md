@@ -4,6 +4,14 @@ Kirby treats the backend as the only authorization boundary. The web client
 may hide unavailable actions, but every management request is authenticated and
 authorized again by the server.
 
+## First administrator
+
+New installations have no default account or password. The deployer creates the
+first system administrator on `/setup` through a controlled network or ingress.
+The database permanently records completion, so deleting all administrators
+does not reopen setup. `create-admin` supports automation and account recovery;
+its first administrator also closes browser setup.
+
 ## Credentials
 
 - Administrator passwords use Argon2id. Only encoded hashes are stored.
@@ -12,8 +20,8 @@ authorized again by the server.
   `HttpOnly` cookies. Reuse revokes the session.
 - Project API keys contain a public ID and one-time secret. The database stores
   a peppered digest and a short display suffix, never the original secret.
-- Configuration secrets are wrapped in a redacting type. The structured logger
-  also removes known credential forms from messages, attributes, and errors.
+- Application log messages and fields are passed through unchanged. The log
+  collection component handles auditing and redaction.
 
 ## Authorization
 
@@ -45,12 +53,17 @@ of disabling the limit.
 
 ## Operational requirements
 
-- Terminate public TLS at the ingress and forward only from configured proxy
-  addresses.
-- Use independent random JWT keys, API-key pepper, database credentials, Redis
-  credentials, and object-storage credentials.
-- Keep refresh-cookie origins exact. Do not use wildcard origins.
-- Apply `deploy/schema.sql` manually. The service never migrates the database.
+- Terminate public TLS at the ingress. Proxies are trusted by default and must
+  overwrite client forwarding headers. Optionally restrict proxy CIDRs with
+  `security.trusted_proxies`.
+- JWT signing keys and the API-key pepper are generated in the database and
+  loaded at startup. Protect `application_secrets` and database backups. Use
+  independent database, Redis, and object-storage credentials.
+- Serve the web application and management API from the same origin. Preserve
+  the original Host, send `X-Forwarded-Proto` and `X-Forwarded-For`, and overwrite
+  client forwarding headers at the proxy for browser-origin checks.
+- Review database changes before deployment. The service initializes model
+  tables from embedded SQL on the first startup.
 - Keep the pinned build and runtime images current, then run
   `scripts/security-check.sh` before release.
 

@@ -29,11 +29,18 @@ type configSnapshotJSON struct {
 
 // EncodeConfigSnapshot uses protobuf JSON for every nested message. The Go
 // encoding/json package cannot safely round-trip protobuf oneof fields.
+//
+// Parameters: value contains the configuration and its supporting definitions.
+// Returns: the canonical encoded snapshot.
+// Throws: an error for invalid content or encoding failure.
 func EncodeConfigSnapshot(value *ConfigSnapshot) (string, error) {
 	if value == nil || value.Config == nil || value.Tree == nil {
 		return "", Invalid("snapshot content is incomplete")
 	}
-	wire := configSnapshotJSON{Structures: make([]json.RawMessage, 0, len(value.Structures)), Enums: make([]json.RawMessage, 0, len(value.Enums))}
+	wire := configSnapshotJSON{
+		Structures: make([]json.RawMessage, 0, len(value.Structures)),
+		Enums:      make([]json.RawMessage, 0, len(value.Enums)),
+	}
 	var err error
 	if wire.Config, err = marshalProto(value.Config); err != nil {
 		return "", err
@@ -62,6 +69,11 @@ func EncodeConfigSnapshot(value *ConfigSnapshot) (string, error) {
 	return string(encoded), nil
 }
 
+// DecodeConfigSnapshot strictly decodes stored or imported protobuf JSON.
+//
+// Parameters: content is the encoded snapshot document.
+// Returns: the decoded snapshot for subsequent domain validation.
+// Throws: an error for malformed JSON, unknown fields, trailing content, or missing messages.
 func DecodeConfigSnapshot(content string) (*ConfigSnapshot, error) {
 	decoder := json.NewDecoder(bytes.NewBufferString(content))
 	decoder.DisallowUnknownFields()
@@ -75,7 +87,12 @@ func DecodeConfigSnapshot(content string) (*ConfigSnapshot, error) {
 		}
 		return nil, fmt.Errorf("decode snapshot content: %w", err)
 	}
-	result := &ConfigSnapshot{Config: new(commonv1.Config), Tree: new(commonv1.TreeNode), Structures: make([]*commonv1.Structure, 0, len(wire.Structures)), Enums: make([]*commonv1.ConfigEnum, 0, len(wire.Enums))}
+	result := &ConfigSnapshot{
+		Config:     new(commonv1.Config),
+		Tree:       new(commonv1.TreeNode),
+		Structures: make([]*commonv1.Structure, 0, len(wire.Structures)),
+		Enums:      make([]*commonv1.ConfigEnum, 0, len(wire.Enums)),
+	}
 	if err := unmarshalProto(wire.Config, result.Config); err != nil {
 		return nil, err
 	}

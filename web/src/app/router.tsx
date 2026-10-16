@@ -5,6 +5,7 @@ import { AuthGate, PermissionGate } from './guards'
 import { SYSTEM_PERMISSIONS } from '@/domain/access'
 
 const LoginPage = lazy(() => import('@/routes/LoginPage'))
+const SetupPage = lazy(() => import('@/routes/SetupPage'))
 const ForbiddenPage = lazy(() => import('@/routes/ForbiddenPage'))
 const NotFoundPage = lazy(() => import('@/routes/NotFoundPage'))
 const AppLayout = lazy(() => import('@/layout/AppLayout'))
@@ -27,6 +28,7 @@ export function ApplicationRouter() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/setup" element={<SetupPage />} />
       <Route
         element={
           <AuthGate>

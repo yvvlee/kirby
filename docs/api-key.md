@@ -11,9 +11,10 @@ contains the full secret once. Store it immediately in the runtime client's
 secret manager. Later list responses contain only metadata, the public ID, and
 the last four secret characters.
 
-Kirby stores an HMAC digest made with `security.api_key_pepper`. It never stores
-the plaintext credential. The pepper must be identical on every backend
-instance and must be protected like a signing key.
+Kirby stores an HMAC digest made with the API-key pepper from
+`application_secrets`. It never stores the plaintext credential. The pepper is
+generated during database initialization and loaded into each backend instance
+at startup. Protect the database and its backups like signing keys.
 
 ## Use
 
@@ -56,5 +57,6 @@ If a key may have leaked:
 2. Create a replacement with a new name.
 3. Update the affected client through its secret manager.
 4. Review audit records and runtime access logs by key public ID and time.
-5. Rotate `security.api_key_pepper` only if the pepper itself leaked. That
-   operation invalidates every project key.
+5. If the stored API-key pepper leaked, replace it through a reviewed database
+   maintenance procedure and restart every backend instance. This invalidates
+   every project key, so issue replacement keys after the change.

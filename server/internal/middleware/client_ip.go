@@ -6,30 +6,37 @@ import (
 	"net/netip"
 	"strings"
 
-	"github.com/yvvlee/kirby/server/internal/config"
+	"github.com/yvvlee/kirby/server/internal/conf"
 )
 
 // MaxForwardedForHops bounds work and memory used to parse one proxy chain.
 const MaxForwardedForHops = 32
 
-// ClientIPResolver resolves a client address without trusting forwarding
-// headers sent by untrusted peers.
+// ClientIPResolver reads the client address supplied by a reverse proxy.
+// Forwarding headers are accepted by default for Nginx and ingress deployments.
 type ClientIPResolver struct {
 	trusted []netip.Prefix
 }
 
-// NewClientIPResolver constructs a resolver from strict trusted proxy CIDRs.
-// An empty list means every request is treated as a direct connection.
+// NewClientIPResolver permits proxy deployments without mandatory network configuration.
+//
+// Parameters: trustedCIDRs optionally limits proxy networks; nil trusts all
+// IPv4 and IPv6 peers, while an explicit empty list selects direct connections.
+// Returns: the client address resolver or a CIDR configuration error.
+// Throws: none.
 func NewClientIPResolver(trustedCIDRs []string) (*ClientIPResolver, error) {
-	prefixes, err := config.ParseTrustedProxyCIDRs(trustedCIDRs)
+	prefixes, err := conf.ParseTrustedProxyCIDRs(trustedCIDRs)
 	if err != nil {
 		return nil, err
 	}
 	return &ClientIPResolver{trusted: prefixes}, nil
 }
 
-// Resolve returns the canonical client IP. A trusted peer must supply a valid
-// X-Forwarded-For chain; an untrusted peer's header is ignored completely.
+// Resolve supports both forwarded requests and direct health or browser requests.
+//
+// Parameters: request contains the peer address and optional X-Forwarded-For.
+// Returns: the resolved client address, or an invalid address/header error.
+// Throws: none.
 func (resolver *ClientIPResolver) Resolve(request *http.Request) (netip.Addr, error) {
 	if resolver == nil {
 		return netip.Addr{}, fmt.Errorf("client IP resolver is nil")
@@ -47,7 +54,7 @@ func (resolver *ClientIPResolver) Resolve(request *http.Request) (netip.Addr, er
 
 	values := request.Header.Values("X-Forwarded-For")
 	if len(values) == 0 {
-		return netip.Addr{}, fmt.Errorf("trusted proxy did not supply X-Forwarded-For")
+		return remote, nil
 	}
 	parts := strings.Split(strings.Join(values, ","), ",")
 	if len(parts) == 0 || len(parts) > MaxForwardedForHops {

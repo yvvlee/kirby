@@ -10,7 +10,8 @@ grpc:
   address: ":9090"
   timeout: 10s
 
-mysql:
+database:
+  driver: mysql
   dsn: CHANGE_ME_MYSQL_USER:CHANGE_ME_MYSQL_PASSWORD@tcp(mysql:3306)/kirby?charset=utf8mb4&parseTime=true&loc=UTC
   max_open_conns: 50
   max_idle_conns: 10
@@ -27,17 +28,8 @@ cache:
 
 jwt:
   issuer: kirby
-  active_kid: primary
   access_ttl: 15m
   refresh_ttl: 168h
-  keys:
-    primary: CHANGE_ME_AT_LEAST_32_RANDOM_BYTES
-
-security:
-  api_key_pepper: CHANGE_ME_AT_LEAST_32_RANDOM_BYTES
-  allowed_origins:
-    - http://localhost:8000
-  trusted_proxies: []
 
 object_storage:
   driver: s3
@@ -45,15 +37,11 @@ object_storage:
     directory: ""
   s3:
     endpoint: minio:9000
-    presign_endpoint: localhost:8000
     region: us-east-1
     bucket: kirby
     access_key: CHANGE_ME_MINIO_USER
     secret_key: CHANGE_ME_MINIO_PASSWORD
     use_ssl: false
-    presign_use_ssl: false
-    public_base_url: http://localhost:8000/kirby
 
 log:
   level: info
-  format: json

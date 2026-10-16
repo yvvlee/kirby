@@ -140,6 +140,7 @@ test('runs the standalone management and runtime journey against the real backen
   })
   let upload
   if (ticket.upload_method === 'POST') {
+    expect(ticket.upload_url).toMatch(/^\/[^/]+\/$/)
     upload = await request.post(ticket.upload_url, {
       multipart: {
         ...ticket.form_fields,
@@ -159,6 +160,9 @@ test('runs the standalone management and runtime journey against the real backen
     environment_id: source.id, project_id: sourceProject.id, object_key: ticket.object_key,
   })
   expect(completed.asset.size).toBe(String(assetBody.length))
+  const assetResponse = await request.get(completed.asset.url)
+  expect(assetResponse.ok(), await assetResponse.text()).toBeTruthy()
+  expect(await assetResponse.body()).toEqual(assetBody)
 
   const snapshotReply = await api(request, token, 'POST', `/admin/environments/${source.id}/snapshot/create`, {
     environment_id: source.id, project_id: sourceProject.id, config_id: configReply.config.id,

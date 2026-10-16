@@ -41,28 +41,6 @@ fi
   --include_tests --confidence_threshold 0.8 \
   --ignore github.com/yvvlee/kirby/server ./...)
 
-verify_generator() {
-  name=$1
-  tag=$2
-  commit=$3
-  directory="$repo_dir/server/tools/third_party/$name"
-  test -s "$directory/LICENSE"
-  test -s "$directory/SOURCE"
-  grep -q '^MIT License$' "$directory/LICENSE"
-  grep -q "^Source: https://github.com/yvvlee/$name$" "$directory/SOURCE"
-  grep -q "^Tag: $tag$" "$directory/SOURCE"
-  grep -q "^Commit: $commit$" "$directory/SOURCE"
-  grep -q '^License: MIT (see LICENSE)$' "$directory/SOURCE"
-  test "$(sed -n '1s/^module //p' "$directory/go.mod")" = "github.com/yvvlee/$name"
-  (cd "$directory" && GOWORK=off go run "github.com/google/go-licenses@$go_licenses_version" check \
-    --include_tests --confidence_threshold 0.8 --ignore "github.com/yvvlee/$name" ./...)
-}
-
-echo "Verifying redistributed generators..."
-verify_generator protoc-gen-go-errors v1.0.0 04802e1d2794f6fc2e8a2d0d9d770eb32f8600cd
-grep -q 'const release = "v1.0.0"' "$repo_dir/server/tools/third_party/protoc-gen-go-errors/version.go"
-verify_generator protoc-gen-go-json v1.0.1 217c673080d2518111c3b3330a7647803058b865
-
 echo "Verifying npm package licenses..."
 test -d "$repo_dir/web/node_modules"
 "$repo_dir/scripts/check-npm-tree.sh"

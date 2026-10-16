@@ -3,12 +3,13 @@ package repository
 import (
 	"context"
 	"strconv"
+	"time"
 
-	"xorm.io/xorm"
+	"github.com/yvvlee/lorm"
+	"github.com/yvvlee/lorm/builder"
 
+	"github.com/yvvlee/kirby/server/internal/infra"
 	"github.com/yvvlee/kirby/server/internal/model"
-	"github.com/yvvlee/kirby/server/internal/repository/base"
-	"github.com/yvvlee/kirby/server/internal/storage/database"
 )
 
 type EnvironmentUpdate struct {
@@ -20,88 +21,110 @@ type EnvironmentUpdate struct {
 }
 
 type EnvironmentRepository interface {
-	List(context.Context) ([]model.Environment, error)
-	FindByID(context.Context, int64) (*model.Environment, error)
-	Create(context.Context, *model.Environment, *model.AuditLog) error
-	Update(context.Context, int64, EnvironmentUpdate, *model.AuditLog) error
+	List(ctx context.Context) ([]model.Environment, error)
+	FindByID(ctx context.Context, environmentID int64) (*model.Environment, error)
+	Create(ctx context.Context, environment *model.Environment, audit *model.AuditLog) error
+	Update(ctx context.Context, environmentID int64, update EnvironmentUpdate, audit *model.AuditLog) error
 }
 
 type EnvironmentRepositoryImpl struct {
-	engine *xorm.Engine
+	*lorm.Repository[*model.Environment]
 	audits AuditLogRepository
 }
 
-func NewEnvironmentRepository(engine *xorm.Engine, audits AuditLogRepository) *EnvironmentRepositoryImpl {
-	return &EnvironmentRepositoryImpl{engine: engine, audits: audits}
-}
-
-func (r *EnvironmentRepositoryImpl) List(ctx context.Context) ([]model.Environment, error) {
-	environments := make([]model.Environment, 0)
-	err := base.FindAll(ctx, r.engine, "environments", `
-SELECT e.*
-FROM environments AS e
-WHERE e.deleted_at IS NULL
-ORDER BY e.id ASC`, nil, &environments)
-	return environments, err
-}
-
-func (r *EnvironmentRepositoryImpl) FindByID(ctx context.Context, environmentID int64) (*model.Environment, error) {
-	if err := base.ValidateID("environment_id", environmentID); err != nil {
-		return nil, err
+// NewEnvironmentRepository binds the EnvironmentRepository to the application database.
+//
+// Parameters: storage supplies the shared CoreDB engine and its transaction context.
+// Returns: the configured EnvironmentRepository.
+// Throws: none.
+func NewEnvironmentRepository(storage *infra.Storage) *EnvironmentRepositoryImpl {
+	return &EnvironmentRepositoryImpl{
+		Repository: storage.CoreDB.Repository[*model.Environment](),
+		audits:     NewAuditLogRepository(storage),
 	}
-	var environment model.Environment
-	err := base.FindOne(ctx, r.engine, "environment", `
-SELECT e.*
-FROM environments AS e
-WHERE e.id = ? AND e.deleted_at IS NULL
-LIMIT 1`, []any{environmentID}, &environment)
-	return &environment, err
 }
 
+// Create creates an enabled environment and its mandatory audit in one transaction.
+//
+// Parameters: ctx carries the transaction; environment supplies project ownership and fields; audit records the creation.
+// Returns: nil after insertion and audit, or a database or audit error.
+// Throws: none; failures are returned as errors.
 func (r *EnvironmentRepositoryImpl) Create(ctx context.Context, environment *model.Environment, audit *model.AuditLog) error {
-	if environment == nil || audit == nil || r.audits == nil {
-		return base.InvalidArgument("environment and audit log are required")
+	environment.PrepareInsert()
+	environment.Enabled = true
+	if _, err := r.Insert(ctx, environment); err != nil {
+		return WrapDatabaseError(err)
 	}
-	return database.WithTx(ctx, r.engine, func(tx *xorm.Session) error {
-		if err := base.ValidateID("project_id", environment.ProjectID); err != nil {
-			return err
-		}
-		result, err := base.ExecuteTx(ctx, tx, "environment", `
-INSERT INTO environments
-    (project_id, `+"`key`"+`, name, description, enabled, created_by, updated_by)
-VALUES (?, ?, ?, ?, TRUE, ?, ?)`, environment.ProjectID, environment.Key, environment.Name, environment.Description, environment.CreatedBy, environment.UpdatedBy)
-		if err != nil {
-			return err
-		}
-		environment.ID, err = result.LastInsertId()
-		if err != nil {
-			return base.Wrap("read inserted environment id", err)
-		}
-		audit.ResourceID = strconv.FormatInt(environment.ID, 10)
-		return r.audits.RecordForEnvironmentTx(ctx, tx, environment.ID, audit)
-	})
+	return r.recordAudit(ctx, environment.ID, audit)
 }
 
+// Update guards environment edits with the expected version and records the audit atomically.
+//
+// Parameters: ctx carries the transaction; environmentID selects the row; update supplies fields, actor, and expected version; audit records the edit.
+// Returns: nil after the guarded write and audit, ErrNoRowsAffected on a missing or stale row, or a persistence error.
+// Throws: none; failures are returned as errors.
 func (r *EnvironmentRepositoryImpl) Update(ctx context.Context, environmentID int64, update EnvironmentUpdate, audit *model.AuditLog) error {
-	if err := base.ValidateID("environment_id", environmentID); err != nil {
-		return err
+	fields := new(model.Environment).LormCols()
+	affected, err := r.Engine.Update[*model.Environment]().ID(environmentID).
+		Where(builder.And{
+			builder.Eq{
+				fields.Version(): update.Version,
+			},
+			builder.IsNull(fields.DeletedAt()),
+		}).
+		SetMap(map[string]any{
+			fields.Name():        update.Name,
+			fields.Description(): update.Description,
+			fields.Enabled():     update.Enabled,
+			fields.UpdatedBy():   update.UpdatedBy,
+			fields.UpdatedAt():   time.Now().UTC(),
+			fields.Version():     update.Version + 1,
+		}).Exec(ctx)
+	if err != nil {
+		return WrapDatabaseError(err)
 	}
-	if update.Version < 0 || audit == nil || r.audits == nil {
-		return base.InvalidArgument("valid version and audit log are required")
+	if affected == 0 {
+		return Unchanged("environment")
 	}
-	return database.WithTx(ctx, r.engine, func(tx *xorm.Session) error {
-		_, err := base.ExecuteTx(ctx, tx, "environment", `
-UPDATE environments
-SET name = ?, description = ?, enabled = ?, updated_by = ?,
-    updated_at = UTC_TIMESTAMP(6), version = version + 1
-WHERE id = ? AND version = ? AND deleted_at IS NULL`,
-			update.Name, update.Description, update.Enabled, update.UpdatedBy, environmentID, update.Version)
-		if err != nil {
-			return err
-		}
-		audit.ResourceID = strconv.FormatInt(environmentID, 10)
-		return r.audits.RecordForEnvironmentTx(ctx, tx, environmentID, audit)
-	})
+	return r.recordAudit(ctx, environmentID, audit)
+}
+
+// List returns live environments in stable ID order for administration.
+//
+// Parameters: ctx controls the database read.
+// Returns: live environments ordered by ID, or a database error.
+// Throws: none; failures are returned as errors.
+func (r *EnvironmentRepositoryImpl) List(ctx context.Context) ([]model.Environment, error) {
+	fields := new(model.Environment).LormCols()
+	environments, err := r.Engine.Query[*model.Environment]().
+		Where(builder.IsNull(fields.DeletedAt())).Asc(fields.ID()).Find(ctx)
+	if err != nil {
+		return nil, WrapDatabaseError(err)
+	}
+	return modelValues(environments), nil
+}
+
+// FindByID excludes deleted environments from subsequent authorization and editing.
+//
+// Parameters: ctx controls the read; environmentID identifies the environment.
+// Returns: the live environment, ErrNotFound, or a database error.
+// Throws: none; failures are returned as errors.
+func (r *EnvironmentRepositoryImpl) FindByID(ctx context.Context, environmentID int64) (*model.Environment, error) {
+	fields := new(model.Environment).LormCols()
+	environment, found, err := r.Engine.Query[*model.Environment]().ID(environmentID).
+		Where(builder.IsNull(fields.DeletedAt())).Get(ctx)
+	if err != nil {
+		return nil, WrapDatabaseError(err)
+	}
+	if !found {
+		return nil, Missing("environment")
+	}
+	return environment, nil
+}
+
+func (r *EnvironmentRepositoryImpl) recordAudit(ctx context.Context, environmentID int64, audit *model.AuditLog) error {
+	audit.ResourceID = strconv.FormatInt(environmentID, 10)
+	return r.audits.RecordForEnvironment(ctx, environmentID, audit)
 }
 
 var _ EnvironmentRepository = (*EnvironmentRepositoryImpl)(nil)

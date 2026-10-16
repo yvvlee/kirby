@@ -1,11 +1,21 @@
 -- Kirby schema for MySQL 8.0.
 --
--- Run this file manually against an empty database exactly once. The Kirby
--- service never creates or alters tables. This file intentionally does not use
--- IF NOT EXISTS so an accidental second execution fails immediately.
+-- The service runs this embedded schema for an empty database and generates
+-- installation secrets in the seed transaction. This file is also a schema
+-- reference. IF NOT EXISTS is omitted so incomplete initialization fails early.
 
 SET NAMES utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 SET time_zone = '+00:00';
+
+CREATE TABLE `application_secrets` (
+  `id` BIGINT UNSIGNED NOT NULL,
+  `jwt_key_id` VARCHAR(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `jwt_signing_key` VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `api_key_pepper` VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `admin_initialized` BOOLEAN NOT NULL DEFAULT FALSE,
+  PRIMARY KEY (`id`),
+  CONSTRAINT `ck_application_secrets_singleton` CHECK (`id` = 1)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE `environments` (
   `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -33,6 +43,7 @@ CREATE TABLE `users` (
   `password_hash` VARCHAR(255) NOT NULL,
   `enabled` BOOLEAN NOT NULL DEFAULT TRUE,
   `is_system_admin` BOOLEAN NOT NULL DEFAULT FALSE,
+  `must_change_password` BOOLEAN NOT NULL DEFAULT FALSE,
   `last_login_at` DATETIME(6) NULL,
   `created_by` BIGINT UNSIGNED NOT NULL DEFAULT 0,
   `updated_by` BIGINT UNSIGNED NOT NULL DEFAULT 0,
@@ -85,10 +96,7 @@ CREATE TABLE `user_environment_roles` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `ux_user_environment_roles_assignment` (`user_id`, `environment_id`, `role_id`),
   KEY `ix_user_environment_roles_environment_user` (`environment_id`, `user_id`),
-  KEY `ix_user_environment_roles_role` (`role_id`),
-  CONSTRAINT `fk_user_environment_roles_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
-  CONSTRAINT `fk_user_environment_roles_environment` FOREIGN KEY (`environment_id`) REFERENCES `environments` (`id`) ON DELETE CASCADE,
-  CONSTRAINT `fk_user_environment_roles_role` FOREIGN KEY (`role_id`) REFERENCES `roles` (`id`) ON DELETE RESTRICT
+  KEY `ix_user_environment_roles_role` (`role_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE `role_permissions` (
@@ -100,9 +108,7 @@ CREATE TABLE `role_permissions` (
   `updated_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
   PRIMARY KEY (`id`),
   UNIQUE KEY `ux_role_permissions_assignment` (`role_id`, `permission_id`),
-  KEY `ix_role_permissions_permission` (`permission_id`),
-  CONSTRAINT `fk_role_permissions_role` FOREIGN KEY (`role_id`) REFERENCES `roles` (`id`) ON DELETE CASCADE,
-  CONSTRAINT `fk_role_permissions_permission` FOREIGN KEY (`permission_id`) REFERENCES `permissions` (`id`) ON DELETE CASCADE
+  KEY `ix_role_permissions_permission` (`permission_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE `refresh_tokens` (
@@ -120,9 +126,7 @@ CREATE TABLE `refresh_tokens` (
   UNIQUE KEY `ux_refresh_tokens_hash` (`token_hash`),
   KEY `ix_refresh_tokens_user_session` (`user_id`, `session_id`),
   KEY `ix_refresh_tokens_active_expiry` (`revoked_at`, `expires_at`),
-  KEY `ix_refresh_tokens_replaced_by` (`replaced_by_id`),
-  CONSTRAINT `fk_refresh_tokens_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
-  CONSTRAINT `fk_refresh_tokens_replaced_by` FOREIGN KEY (`replaced_by_id`) REFERENCES `refresh_tokens` (`id`) ON DELETE SET NULL
+  KEY `ix_refresh_tokens_replaced_by` (`replaced_by_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE `projects` (
@@ -141,9 +145,6 @@ CREATE TABLE `projects` (
   KEY `ix_projects_deleted` (`deleted_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
-ALTER TABLE `environments`
-  ADD CONSTRAINT `fk_environments_project` FOREIGN KEY (`project_id`) REFERENCES `projects` (`id`) ON DELETE RESTRICT;
-
 CREATE TABLE `project_api_keys` (
   `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `project_id` BIGINT UNSIGNED NOT NULL,
@@ -158,8 +159,7 @@ CREATE TABLE `project_api_keys` (
   `updated_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
   PRIMARY KEY (`id`),
   UNIQUE KEY `ux_project_api_keys_public_id` (`public_id`),
-  KEY `ix_project_api_keys_project_active` (`project_id`, `revoked_at`),
-  CONSTRAINT `fk_project_api_keys_project` FOREIGN KEY (`project_id`) REFERENCES `projects` (`id`) ON DELETE CASCADE
+  KEY `ix_project_api_keys_project_active` (`project_id`, `revoked_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE `configs` (
@@ -181,7 +181,6 @@ CREATE TABLE `configs` (
   UNIQUE KEY `ux_configs_project_key` (`project_id`, `key`),
   KEY `ix_configs_project_deleted` (`project_id`, `deleted_at`),
   KEY `ix_configs_runtime_version` (`project_id`, `key`, `runtime_version`),
-  CONSTRAINT `fk_configs_project` FOREIGN KEY (`project_id`) REFERENCES `projects` (`id`) ON DELETE RESTRICT,
   CONSTRAINT `ck_configs_runtime_version` CHECK (`runtime_version` >= 0)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
@@ -200,8 +199,7 @@ CREATE TABLE `structures` (
   `deleted_at` DATETIME(6) NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `ux_structures_config_key` (`config_id`, `key`),
-  KEY `ix_structures_config_deleted` (`config_id`, `deleted_at`),
-  CONSTRAINT `fk_structures_config` FOREIGN KEY (`config_id`) REFERENCES `configs` (`id`) ON DELETE RESTRICT
+  KEY `ix_structures_config_deleted` (`config_id`, `deleted_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE `config_enums` (
@@ -219,8 +217,7 @@ CREATE TABLE `config_enums` (
   `deleted_at` DATETIME(6) NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `ux_config_enums_config_key` (`config_id`, `key`),
-  KEY `ix_config_enums_config_deleted` (`config_id`, `deleted_at`),
-  CONSTRAINT `fk_config_enums_config` FOREIGN KEY (`config_id`) REFERENCES `configs` (`id`) ON DELETE RESTRICT
+  KEY `ix_config_enums_config_deleted` (`config_id`, `deleted_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE `snapshots` (
@@ -245,8 +242,6 @@ CREATE TABLE `snapshots` (
   KEY `ix_snapshots_config_created` (`config_id`, `created_at`),
   KEY `ix_snapshots_project_config_status` (`project_id`, `config_id`, `status`, `deleted_at`),
   KEY `ix_snapshots_runtime_lookup` (`config_id`, `status`, `is_using`, `deleted_at`),
-  CONSTRAINT `fk_snapshots_project` FOREIGN KEY (`project_id`) REFERENCES `projects` (`id`) ON DELETE RESTRICT,
-  CONSTRAINT `fk_snapshots_config` FOREIGN KEY (`config_id`) REFERENCES `configs` (`id`) ON DELETE RESTRICT,
   CONSTRAINT `ck_snapshots_status` CHECK (`status` IN (1, 3))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
@@ -273,12 +268,6 @@ CREATE TABLE `import_records` (
   KEY `ix_import_records_source` (`source_environment_id`, `source_snapshot_id`),
   KEY `ix_import_records_target` (`target_environment_id`, `target_project_id`, `created_at`),
   KEY `ix_import_records_target_snapshot` (`target_snapshot_id`),
-  CONSTRAINT `fk_import_records_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE RESTRICT,
-  CONSTRAINT `fk_import_records_source_environment` FOREIGN KEY (`source_environment_id`) REFERENCES `environments` (`id`) ON DELETE RESTRICT,
-  CONSTRAINT `fk_import_records_target_environment` FOREIGN KEY (`target_environment_id`) REFERENCES `environments` (`id`) ON DELETE RESTRICT,
-  CONSTRAINT `fk_import_records_source_snapshot` FOREIGN KEY (`source_snapshot_id`) REFERENCES `snapshots` (`id`) ON DELETE RESTRICT,
-  CONSTRAINT `fk_import_records_target_project` FOREIGN KEY (`target_project_id`) REFERENCES `projects` (`id`) ON DELETE RESTRICT,
-  CONSTRAINT `fk_import_records_target_snapshot` FOREIGN KEY (`target_snapshot_id`) REFERENCES `snapshots` (`id`) ON DELETE SET NULL,
   CONSTRAINT `ck_import_records_status` CHECK (`status` IN ('pending', 'succeeded', 'failed'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
@@ -303,6 +292,7 @@ CREATE TABLE `audit_logs` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 START TRANSACTION;
+
 
 INSERT INTO `permissions` (`id`, `key`, `name`, `description`) VALUES
   (1,  'project:read',               '读取项目',       '查看项目'),

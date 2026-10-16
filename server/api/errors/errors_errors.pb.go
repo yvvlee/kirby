@@ -4,166 +4,165 @@ package errorsv1
 
 import (
 	fmt "fmt"
-	errors1 "github.com/go-kratos/kratos/v2/errors"
-	errors "github.com/pkg/errors"
+	errors "github.com/go-kratos/kratos/v2/errors"
 )
 
 // This is a compile-time assertion to ensure that this generated file
 // is compatible with the kratos package it is being compiled against.
-const _ = errors1.SupportPackageIsVersion1
+const _ = errors.SupportPackageIsVersion1
 
 func IsUnknown(err error) bool {
 	if err == nil {
 		return false
 	}
-	e := errors1.FromError(err)
+	e := errors.FromError(err)
 	return e.Reason == Error_Unknown.String() && e.Code == 400
 }
 
-func ErrorUnknown(format string, args ...interface{}) error {
-	return errors.WithStack(errors1.New(400, Error_Unknown.String(), fmt.Sprintf(format, args...)))
+func ErrorUnknown(format string, args ...interface{}) *errors.Error {
+	return errors.New(400, Error_Unknown.String(), fmt.Sprintf(format, args...))
 }
 
 func IsDatabaseError(err error) bool {
 	if err == nil {
 		return false
 	}
-	e := errors1.FromError(err)
+	e := errors.FromError(err)
 	return e.Reason == Error_DatabaseError.String() && e.Code == 500
 }
 
-func ErrorDatabaseError(format string, args ...interface{}) error {
-	return errors.WithStack(errors1.New(500, Error_DatabaseError.String(), fmt.Sprintf(format, args...)))
+func ErrorDatabaseError(format string, args ...interface{}) *errors.Error {
+	return errors.New(500, Error_DatabaseError.String(), fmt.Sprintf(format, args...))
 }
 
 func IsUnimplemented(err error) bool {
 	if err == nil {
 		return false
 	}
-	e := errors1.FromError(err)
+	e := errors.FromError(err)
 	return e.Reason == Error_Unimplemented.String() && e.Code == 501
 }
 
-func ErrorUnimplemented(format string, args ...interface{}) error {
-	return errors.WithStack(errors1.New(501, Error_Unimplemented.String(), fmt.Sprintf(format, args...)))
+func ErrorUnimplemented(format string, args ...interface{}) *errors.Error {
+	return errors.New(501, Error_Unimplemented.String(), fmt.Sprintf(format, args...))
 }
 
 func IsNoneRecordUpdated(err error) bool {
 	if err == nil {
 		return false
 	}
-	e := errors1.FromError(err)
+	e := errors.FromError(err)
 	return e.Reason == Error_NoneRecordUpdated.String() && e.Code == 409
 }
 
-func ErrorNoneRecordUpdated(format string, args ...interface{}) error {
-	return errors.WithStack(errors1.New(409, Error_NoneRecordUpdated.String(), fmt.Sprintf(format, args...)))
+func ErrorNoneRecordUpdated(format string, args ...interface{}) *errors.Error {
+	return errors.New(409, Error_NoneRecordUpdated.String(), fmt.Sprintf(format, args...))
 }
 
 func IsInvalidParam(err error) bool {
 	if err == nil {
 		return false
 	}
-	e := errors1.FromError(err)
+	e := errors.FromError(err)
 	return e.Reason == Error_InvalidParam.String() && e.Code == 400
 }
 
-func ErrorInvalidParam(format string, args ...interface{}) error {
-	return errors.WithStack(errors1.New(400, Error_InvalidParam.String(), fmt.Sprintf(format, args...)))
+func ErrorInvalidParam(format string, args ...interface{}) *errors.Error {
+	return errors.New(400, Error_InvalidParam.String(), fmt.Sprintf(format, args...))
 }
 
 func IsInternal(err error) bool {
 	if err == nil {
 		return false
 	}
-	e := errors1.FromError(err)
+	e := errors.FromError(err)
 	return e.Reason == Error_Internal.String() && e.Code == 500
 }
 
-func ErrorInternal(format string, args ...interface{}) error {
-	return errors.WithStack(errors1.New(500, Error_Internal.String(), fmt.Sprintf(format, args...)))
+func ErrorInternal(format string, args ...interface{}) *errors.Error {
+	return errors.New(500, Error_Internal.String(), fmt.Sprintf(format, args...))
 }
 
 func IsInvalidOperation(err error) bool {
 	if err == nil {
 		return false
 	}
-	e := errors1.FromError(err)
+	e := errors.FromError(err)
 	return e.Reason == Error_InvalidOperation.String() && e.Code == 409
 }
 
-func ErrorInvalidOperation(format string, args ...interface{}) error {
-	return errors.WithStack(errors1.New(409, Error_InvalidOperation.String(), fmt.Sprintf(format, args...)))
+func ErrorInvalidOperation(format string, args ...interface{}) *errors.Error {
+	return errors.New(409, Error_InvalidOperation.String(), fmt.Sprintf(format, args...))
 }
 
 func IsBadRequest(err error) bool {
 	if err == nil {
 		return false
 	}
-	e := errors1.FromError(err)
+	e := errors.FromError(err)
 	return e.Reason == Error_BadRequest.String() && e.Code == 400
 }
 
-func ErrorBadRequest(format string, args ...interface{}) error {
-	return errors.WithStack(errors1.New(400, Error_BadRequest.String(), fmt.Sprintf(format, args...)))
+func ErrorBadRequest(format string, args ...interface{}) *errors.Error {
+	return errors.New(400, Error_BadRequest.String(), fmt.Sprintf(format, args...))
 }
 
 func IsUnauthorized(err error) bool {
 	if err == nil {
 		return false
 	}
-	e := errors1.FromError(err)
+	e := errors.FromError(err)
 	return e.Reason == Error_Unauthorized.String() && e.Code == 401
 }
 
-func ErrorUnauthorized(format string, args ...interface{}) error {
-	return errors.WithStack(errors1.New(401, Error_Unauthorized.String(), fmt.Sprintf(format, args...)))
+func ErrorUnauthorized(format string, args ...interface{}) *errors.Error {
+	return errors.New(401, Error_Unauthorized.String(), fmt.Sprintf(format, args...))
 }
 
 func IsForbidden(err error) bool {
 	if err == nil {
 		return false
 	}
-	e := errors1.FromError(err)
+	e := errors.FromError(err)
 	return e.Reason == Error_Forbidden.String() && e.Code == 403
 }
 
-func ErrorForbidden(format string, args ...interface{}) error {
-	return errors.WithStack(errors1.New(403, Error_Forbidden.String(), fmt.Sprintf(format, args...)))
+func ErrorForbidden(format string, args ...interface{}) *errors.Error {
+	return errors.New(403, Error_Forbidden.String(), fmt.Sprintf(format, args...))
 }
 
 func IsNotFound(err error) bool {
 	if err == nil {
 		return false
 	}
-	e := errors1.FromError(err)
+	e := errors.FromError(err)
 	return e.Reason == Error_NotFound.String() && e.Code == 404
 }
 
-func ErrorNotFound(format string, args ...interface{}) error {
-	return errors.WithStack(errors1.New(404, Error_NotFound.String(), fmt.Sprintf(format, args...)))
+func ErrorNotFound(format string, args ...interface{}) *errors.Error {
+	return errors.New(404, Error_NotFound.String(), fmt.Sprintf(format, args...))
 }
 
 func IsConflict(err error) bool {
 	if err == nil {
 		return false
 	}
-	e := errors1.FromError(err)
+	e := errors.FromError(err)
 	return e.Reason == Error_Conflict.String() && e.Code == 409
 }
 
-func ErrorConflict(format string, args ...interface{}) error {
-	return errors.WithStack(errors1.New(409, Error_Conflict.String(), fmt.Sprintf(format, args...)))
+func ErrorConflict(format string, args ...interface{}) *errors.Error {
+	return errors.New(409, Error_Conflict.String(), fmt.Sprintf(format, args...))
 }
 
 func IsTooManyRequests(err error) bool {
 	if err == nil {
 		return false
 	}
-	e := errors1.FromError(err)
+	e := errors.FromError(err)
 	return e.Reason == Error_TooManyRequests.String() && e.Code == 429
 }
 
-func ErrorTooManyRequests(format string, args ...interface{}) error {
-	return errors.WithStack(errors1.New(429, Error_TooManyRequests.String(), fmt.Sprintf(format, args...)))
+func ErrorTooManyRequests(format string, args ...interface{}) *errors.Error {
+	return errors.New(429, Error_TooManyRequests.String(), fmt.Sprintf(format, args...))
 }

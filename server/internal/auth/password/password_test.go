@@ -8,7 +8,13 @@ import (
 )
 
 func testParams() Params {
-	return Params{MemoryKiB: 8 * 1024, Iterations: 1, Parallelism: 1, SaltLength: 16, KeyLength: 32}
+	return Params{
+		MemoryKiB:   8 * 1024,
+		Iterations:  1,
+		Parallelism: 1,
+		SaltLength:  16,
+		KeyLength:   32,
+	}
 }
 
 func TestHashAndVerify(t *testing.T) {

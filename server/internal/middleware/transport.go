@@ -2,8 +2,9 @@ package middleware
 
 import (
 	"context"
-	"log/slog"
 	"time"
+
+	"github.com/yvvlee/kirby/server/internal/infra"
 
 	kratosmiddleware "github.com/go-kratos/kratos/v2/middleware"
 	"github.com/go-kratos/kratos/v2/transport"
@@ -11,11 +12,15 @@ import (
 )
 
 // TransportLog assigns a request ID and logs only transport metadata.
-func TransportLog(logger *slog.Logger) kratosmiddleware.Middleware {
+//
+// Parameters: logger is the process logger.
+// Returns: middleware that logs duration, operation, and status.
+// Throws: propagates downstream handler errors.
+func TransportLog(logger *infra.Logger) kratosmiddleware.Middleware {
 	return func(next kratosmiddleware.Handler) kratosmiddleware.Handler {
 		return func(ctx context.Context, request any) (reply any, err error) {
 			serverTransport, ok := transport.FromServerContext(ctx)
-			if !ok || logger == nil {
+			if !ok {
 				return next(ctx, request)
 			}
 			requestID := serverTransport.RequestHeader().Get("X-Request-ID")
@@ -26,7 +31,7 @@ func TransportLog(logger *slog.Logger) kratosmiddleware.Middleware {
 			serverTransport.ReplyHeader().Set("X-Request-ID", requestID)
 			started := time.Now()
 			reply, err = next(ctx, request)
-			logger.Info("transport request", "request_id", requestID, "kind", serverTransport.Kind().String(), "operation", serverTransport.Operation(), "duration", time.Since(started), "error", err)
+			logger.WithContext(ctx).Infow("msg", "transport request", "request_id", requestID, "kind", serverTransport.Kind().String(), "operation", serverTransport.Operation(), "duration", time.Since(started), "error", err)
 			return reply, err
 		}
 	}

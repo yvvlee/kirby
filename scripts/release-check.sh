@@ -24,7 +24,7 @@ release_dir="$repo_dir/dist/release"
 head_commit=$(git -C "$repo_dir" rev-parse HEAD)
 version=${tag#v}
 build_date=$(git -C "$repo_dir" show -s --format=%cI "$head_commit")
-go_image='golang:1.25.13-bookworm@sha256:e401dae1bf814e29204a8cb7915682e1780951e609ca0dd8865ee1937f510c48'
+go_image='golang:1.27.2-bookworm@sha256:5cf287a799e6b94384bad13d16b14904c531f51ba65792237e122ce42b392f61'
 
 for command_name in cmp docker git grep shasum; do
   if ! command -v "$command_name" >/dev/null 2>&1; then

@@ -9,6 +9,11 @@ import (
 	commonv1 "github.com/yvvlee/kirby/server/api/common"
 )
 
+// EncodeFieldType encodes the typed value using the persisted JSON representation.
+//
+// Parameters: value contains the value to encode or decode.
+// Returns: string; malformed JSON or unsupported protobuf values return an encoding/decoding error.
+// Throws: none.
 func EncodeFieldType(value *commonv1.Field_Type) (string, error) {
 	if value == nil {
 		return "", fmt.Errorf("field type is nil")
@@ -20,6 +25,11 @@ func EncodeFieldType(value *commonv1.Field_Type) (string, error) {
 	return string(encoded), nil
 }
 
+// DecodeFieldType decodes persisted JSON and reports malformed content.
+//
+// Parameters: value contains the value to encode or decode.
+// Returns: *commonv1.Field_Type; malformed JSON or unsupported protobuf values return an encoding/decoding error.
+// Throws: none.
 func DecodeFieldType(value string) (*commonv1.Field_Type, error) {
 	result := new(commonv1.Field_Type)
 	if err := protojson.Unmarshal([]byte(value), result); err != nil {
@@ -28,6 +38,11 @@ func DecodeFieldType(value string) (*commonv1.Field_Type, error) {
 	return result, nil
 }
 
+// EncodeFields encodes the typed value using the persisted JSON representation.
+//
+// Parameters: values contains the values to encode.
+// Returns: string; malformed JSON or unsupported protobuf values return an encoding/decoding error.
+// Throws: none.
 func EncodeFields(values []*commonv1.Field) (string, error) {
 	encodedValues := make([]json.RawMessage, 0, len(values))
 	for _, value := range values {
@@ -47,6 +62,11 @@ func EncodeFields(values []*commonv1.Field) (string, error) {
 	return string(encoded), nil
 }
 
+// DecodeFields decodes persisted JSON and reports malformed content.
+//
+// Parameters: value contains the value to encode or decode.
+// Returns: []*commonv1.Field; malformed JSON or unsupported protobuf values return an encoding/decoding error.
+// Throws: none.
 func DecodeFields(value string) ([]*commonv1.Field, error) {
 	encodedValues := make([]json.RawMessage, 0)
 	if err := json.Unmarshal([]byte(value), &encodedValues); err != nil {
@@ -63,6 +83,11 @@ func DecodeFields(value string) ([]*commonv1.Field, error) {
 	return result, nil
 }
 
+// EncodeOptions encodes the typed value using the persisted JSON representation.
+//
+// Parameters: values contains the values to encode.
+// Returns: string; malformed JSON or unsupported protobuf values return an encoding/decoding error.
+// Throws: none.
 func EncodeOptions(values []*commonv1.SelectOption) (string, error) {
 	encoded, err := json.Marshal(values)
 	if err != nil {
@@ -71,6 +96,11 @@ func EncodeOptions(values []*commonv1.SelectOption) (string, error) {
 	return string(encoded), nil
 }
 
+// DecodeOptions decodes persisted JSON and reports malformed content.
+//
+// Parameters: value contains the value to encode or decode.
+// Returns: []*commonv1.SelectOption; malformed JSON or unsupported protobuf values return an encoding/decoding error.
+// Throws: none.
 func DecodeOptions(value string) ([]*commonv1.SelectOption, error) {
 	result := make([]*commonv1.SelectOption, 0)
 	if err := json.Unmarshal([]byte(value), &result); err != nil {
@@ -79,6 +109,11 @@ func DecodeOptions(value string) ([]*commonv1.SelectOption, error) {
 	return result, nil
 }
 
+// EncodeTags encodes the typed value using the persisted JSON representation.
+//
+// Parameters: values contains the values to encode.
+// Returns: string; malformed JSON or unsupported protobuf values return an encoding/decoding error.
+// Throws: none.
 func EncodeTags(values []commonv1.Snapshot_Tag) (string, error) {
 	encoded, err := json.Marshal(values)
 	if err != nil {
@@ -87,6 +122,11 @@ func EncodeTags(values []commonv1.Snapshot_Tag) (string, error) {
 	return string(encoded), nil
 }
 
+// DecodeTags decodes persisted JSON and reports malformed content.
+//
+// Parameters: value contains the value to encode or decode.
+// Returns: []commonv1.Snapshot_Tag; malformed JSON or unsupported protobuf values return an encoding/decoding error.
+// Throws: none.
 func DecodeTags(value string) ([]commonv1.Snapshot_Tag, error) {
 	result := make([]commonv1.Snapshot_Tag, 0)
 	if err := json.Unmarshal([]byte(value), &result); err != nil {

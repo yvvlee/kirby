@@ -8,7 +8,7 @@ import (
 	kratosmiddleware "github.com/go-kratos/kratos/v2/middleware"
 	"github.com/go-kratos/kratos/v2/transport"
 
-	"github.com/yvvlee/kirby/server/api/errors"
+	errorsv1 "github.com/yvvlee/kirby/server/api/errors"
 	authjwt "github.com/yvvlee/kirby/server/internal/auth/jwt"
 	"github.com/yvvlee/kirby/server/internal/model"
 	"github.com/yvvlee/kirby/server/internal/repository"
@@ -24,27 +24,32 @@ type Principal struct {
 }
 
 // PrincipalFromContext returns the authenticated administrator identity.
+//
+// Parameters: ctx is the incoming request context.
+// Returns: the administrator principal and whether it exists.
+// Throws: none.
 func PrincipalFromContext(ctx context.Context) (Principal, bool) {
 	principal, ok := ctx.Value(principalKey{}).(Principal)
 	return principal, ok
 }
 
 type AccessTokenVerifier interface {
-	Verify(string) (*authjwt.Claims, error)
+	Verify(encoded string) (*authjwt.Claims, error)
 }
 
 type AuthenticatedUserReader interface {
-	GetByID(context.Context, int64) (*model.User, error)
+	GetByID(ctx context.Context, userID int64) (*model.User, error)
 }
 
 // AdminAuth validates access JWTs and current user status. A later selector
 // must omit this middleware from login and refresh endpoints.
+//
+// Parameters: tokens verifies access tokens; users reads current users.
+// Returns: the authentication middleware.
+// Throws: returns unauthorized, forbidden, or unavailable responses from the handler.
 func AdminAuth(tokens AccessTokenVerifier, users AuthenticatedUserReader) kratosmiddleware.Middleware {
 	return func(next kratosmiddleware.Handler) kratosmiddleware.Handler {
 		return func(ctx context.Context, request any) (any, error) {
-			if tokens == nil || users == nil {
-				return nil, errorsv1.ErrorInternal("authentication is unavailable")
-			}
 			serverTransport, ok := transport.FromServerContext(ctx)
 			if !ok {
 				return nil, errorsv1.ErrorUnauthorized("authentication failed")
@@ -71,7 +76,13 @@ func AdminAuth(tokens AccessTokenVerifier, users AuthenticatedUserReader) kratos
 			if !user.Enabled {
 				return nil, errorsv1.ErrorUnauthorized("authentication failed")
 			}
-			ctx = context.WithValue(ctx, principalKey{}, Principal{UserID: userID, SessionID: claims.SessionID})
+			if user.MustChangePassword && serverTransport.Operation() != "/kirby.admin.v1.UserService/UpdateUserPassword" {
+				return nil, errorsv1.ErrorForbidden("password change required")
+			}
+			ctx = context.WithValue(ctx, principalKey{}, Principal{
+				UserID:    userID,
+				SessionID: claims.SessionID,
+			})
 			return next(ctx, request)
 		}
 	}

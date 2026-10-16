@@ -1,68 +1,70 @@
 package model
 
-import "time"
+import (
+	"time"
+
+	"github.com/yvvlee/lorm"
+)
 
 type Project struct {
-	Meta `xorm:"extends"`
-	// EnvironmentID is retained in memory for the current environment-scoped
-	// authorization path. It is no longer persisted; project ownership is
-	// represented by environments.project_id.
-	EnvironmentID int64  `xorm:"-"`
-	Key           string `xorm:"VARCHAR(128) notnull 'key'"`
-	Name          string `xorm:"VARCHAR(64) notnull 'name'"`
-	Description   string `xorm:"VARCHAR(255) notnull default '' 'description'"`
+	lorm.UnimplementedTable `lorm:"projects"`
+	Meta
+	projectScope
+	Key         string `lorm:"key"`
+	Name        string `lorm:"name"`
+	Description string `lorm:"description"`
 }
 
-func (*Project) TableName() string { return "projects" }
+// lormgen excludes private embedded fields. EnvironmentID is request scope,
+// while the persisted project ownership lives in environments.project_id.
+type projectScope struct {
+	EnvironmentID int64
+}
 
 type ProjectAPIKey struct {
-	RecordMeta   `xorm:"extends"`
-	ProjectID    int64      `xorm:"notnull 'project_id'"`
-	PublicID     string     `xorm:"VARCHAR(64) notnull 'public_id'"`
-	Name         string     `xorm:"VARCHAR(64) notnull 'name'"`
-	SecretHash   []byte     `xorm:"BINARY(32) notnull 'secret_hash'"`
-	SecretSuffix string     `xorm:"CHAR(4) notnull 'secret_suffix'"`
-	CreatedBy    int64      `xorm:"notnull 'created_by'"`
-	LastUsedAt   *time.Time `xorm:"'last_used_at'"`
-	RevokedAt    *time.Time `xorm:"'revoked_at'"`
+	lorm.UnimplementedTable `lorm:"project_api_keys"`
+	RecordMeta
+	ProjectID    int64      `lorm:"project_id"`
+	PublicID     string     `lorm:"public_id"`
+	Name         string     `lorm:"name"`
+	SecretHash   []byte     `lorm:"secret_hash"`
+	SecretSuffix string     `lorm:"secret_suffix"`
+	CreatedBy    int64      `lorm:"created_by"`
+	LastUsedAt   *time.Time `lorm:"last_used_at"`
+	RevokedAt    *time.Time `lorm:"revoked_at"`
 }
-
-func (*ProjectAPIKey) TableName() string { return "project_api_keys" }
 
 type Config struct {
-	Meta           `xorm:"extends"`
-	ProjectID      int64  `xorm:"notnull 'project_id'"`
-	Key            string `xorm:"VARCHAR(128) notnull 'key'"`
-	Description    string `xorm:"VARCHAR(255) notnull default '' 'description'"`
-	IsArray        bool   `xorm:"notnull default false 'is_array'"`
-	TypeJSON       string `xorm:"JSON notnull 'type_json'"`
-	Value          string `xorm:"MEDIUMTEXT notnull 'value'"`
-	RuntimeVersion int64  `xorm:"BIGINT notnull default 0 'runtime_version'"`
+	lorm.UnimplementedTable `lorm:"configs"`
+	Meta
+	ProjectID      int64  `lorm:"project_id"`
+	Key            string `lorm:"key"`
+	Description    string `lorm:"description"`
+	IsArray        bool   `lorm:"is_array"`
+	TypeJSON       string `lorm:"type_json"`
+	Value          string `lorm:"value"`
+	RuntimeVersion int64  `lorm:"runtime_version"`
 }
-
-func (*Config) TableName() string { return "configs" }
 
 type Structure struct {
-	Meta        `xorm:"extends"`
-	ConfigID    int64  `xorm:"notnull 'config_id'"`
-	Key         string `xorm:"VARCHAR(128) notnull 'key'"`
-	Name        string `xorm:"VARCHAR(64) notnull 'name'"`
-	Description string `xorm:"VARCHAR(255) notnull default '' 'description'"`
-	FieldsJSON  string `xorm:"JSON notnull 'fields_json'"`
+	lorm.UnimplementedTable `lorm:"structures"`
+	Meta
+	ConfigID    int64  `lorm:"config_id"`
+	Key         string `lorm:"key"`
+	Name        string `lorm:"name"`
+	Description string `lorm:"description"`
+	FieldsJSON  string `lorm:"fields_json"`
 }
-
-func (*Structure) TableName() string { return "structures" }
 
 type ConfigEnum struct {
-	Meta        `xorm:"extends"`
-	ConfigID    int64  `xorm:"notnull 'config_id'"`
-	Key         string `xorm:"VARCHAR(128) notnull 'key'"`
-	Name        string `xorm:"VARCHAR(64) notnull 'name'"`
-	Description string `xorm:"VARCHAR(255) notnull default '' 'description'"`
-	ValuesJSON  string `xorm:"JSON notnull 'values_json'"`
+	lorm.UnimplementedTable `lorm:"config_enums"`
+	Meta
+	ConfigID    int64  `lorm:"config_id"`
+	Key         string `lorm:"key"`
+	Name        string `lorm:"name"`
+	Description string `lorm:"description"`
+	ValuesJSON  string `lorm:"values_json"`
 }
-
-func (*ConfigEnum) TableName() string { return "config_enums" }
 
 type SnapshotStatus int8
 
@@ -72,17 +74,16 @@ const (
 )
 
 type Snapshot struct {
-	Meta        `xorm:"extends"`
-	ProjectID   int64          `xorm:"notnull 'project_id'"`
-	ConfigID    int64          `xorm:"notnull 'config_id'"`
-	ConfigKey   string         `xorm:"VARCHAR(128) notnull 'config_key'"`
-	Description string         `xorm:"VARCHAR(255) notnull 'description'"`
-	Content     string         `xorm:"MEDIUMTEXT notnull 'content'"`
-	Status      SnapshotStatus `xorm:"TINYINT notnull 'status'"`
-	TagsJSON    string         `xorm:"JSON notnull 'tags_json'"`
-	IsUsing     bool           `xorm:"notnull default false 'is_using'"`
-	PublishedAt *time.Time     `xorm:"'published_at'"`
-	PublishedBy *int64         `xorm:"'published_by'"`
+	lorm.UnimplementedTable `lorm:"snapshots"`
+	Meta
+	ProjectID   int64          `lorm:"project_id"`
+	ConfigID    int64          `lorm:"config_id"`
+	ConfigKey   string         `lorm:"config_key"`
+	Description string         `lorm:"description"`
+	Content     string         `lorm:"content"`
+	Status      SnapshotStatus `lorm:"status"`
+	TagsJSON    string         `lorm:"tags_json"`
+	IsUsing     bool           `lorm:"is_using"`
+	PublishedAt *time.Time     `lorm:"published_at"`
+	PublishedBy *int64         `lorm:"published_by"`
 }
-
-func (*Snapshot) TableName() string { return "snapshots" }

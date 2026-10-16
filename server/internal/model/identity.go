@@ -1,77 +1,75 @@
 package model
 
-import "time"
+import (
+	"time"
+
+	"github.com/yvvlee/lorm"
+)
 
 type Environment struct {
-	Meta        `xorm:"extends"`
-	ProjectID   int64  `xorm:"notnull 'project_id'"`
-	Key         string `xorm:"VARCHAR(64) notnull 'key'"`
-	Name        string `xorm:"VARCHAR(64) notnull 'name'"`
-	Description string `xorm:"VARCHAR(255) notnull default '' 'description'"`
-	Enabled     bool   `xorm:"notnull default true 'enabled'"`
+	lorm.UnimplementedTable `lorm:"environments"`
+	Meta
+	ProjectID   int64  `lorm:"project_id"`
+	Key         string `lorm:"key"`
+	Name        string `lorm:"name"`
+	Description string `lorm:"description"`
+	Enabled     bool   `lorm:"enabled"`
 }
-
-func (*Environment) TableName() string { return "environments" }
 
 type User struct {
-	Meta          `xorm:"extends"`
-	Username      string     `xorm:"VARCHAR(128) notnull 'username'"`
-	DisplayName   string     `xorm:"VARCHAR(128) notnull 'display_name'"`
-	PasswordHash  string     `xorm:"VARCHAR(255) notnull 'password_hash'"`
-	Enabled       bool       `xorm:"notnull default true 'enabled'"`
-	IsSystemAdmin bool       `xorm:"notnull default false 'is_system_admin'"`
-	LastLoginAt   *time.Time `xorm:"'last_login_at'"`
+	lorm.UnimplementedTable `lorm:"users"`
+	Meta
+	Username           string     `lorm:"username"`
+	DisplayName        string     `lorm:"display_name"`
+	PasswordHash       string     `lorm:"password_hash"`
+	Enabled            bool       `lorm:"enabled"`
+	IsSystemAdmin      bool       `lorm:"is_system_admin"`
+	MustChangePassword bool       `lorm:"must_change_password"`
+	LastLoginAt        *time.Time `lorm:"last_login_at"`
 }
-
-func (*User) TableName() string { return "users" }
 
 type Role struct {
-	Meta        `xorm:"extends"`
-	Key         string `xorm:"VARCHAR(64) notnull 'key'"`
-	Name        string `xorm:"VARCHAR(64) notnull 'name'"`
-	Description string `xorm:"VARCHAR(255) notnull default '' 'description'"`
-	Builtin     bool   `xorm:"notnull default false 'builtin'"`
+	lorm.UnimplementedTable `lorm:"roles"`
+	Meta
+	Key         string `lorm:"key"`
+	Name        string `lorm:"name"`
+	Description string `lorm:"description"`
+	Builtin     bool   `lorm:"builtin"`
 }
-
-func (*Role) TableName() string { return "roles" }
 
 type Permission struct {
-	RecordMeta  `xorm:"extends"`
-	Key         string `xorm:"VARCHAR(128) notnull 'key'"`
-	Name        string `xorm:"VARCHAR(128) notnull 'name'"`
-	Description string `xorm:"VARCHAR(255) notnull default '' 'description'"`
+	lorm.UnimplementedTable `lorm:"permissions"`
+	RecordMeta
+	Key         string `lorm:"key"`
+	Name        string `lorm:"name"`
+	Description string `lorm:"description"`
 }
-
-func (*Permission) TableName() string { return "permissions" }
 
 type UserEnvironmentRole struct {
-	RecordMeta    `xorm:"extends"`
-	UserID        int64 `xorm:"notnull 'user_id'"`
-	EnvironmentID int64 `xorm:"notnull 'environment_id'"`
-	RoleID        int64 `xorm:"notnull 'role_id'"`
-	CreatedBy     int64 `xorm:"notnull default 0 'created_by'"`
+	lorm.UnimplementedTable `lorm:"user_environment_roles"`
+	RecordMeta
+	UserID        int64 `lorm:"user_id"`
+	EnvironmentID int64 `lorm:"environment_id"`
+	RoleID        int64 `lorm:"role_id"`
+	CreatedBy     int64 `lorm:"created_by"`
 }
-
-func (*UserEnvironmentRole) TableName() string { return "user_environment_roles" }
 
 type RolePermission struct {
-	RecordMeta   `xorm:"extends"`
-	RoleID       int64 `xorm:"notnull 'role_id'"`
-	PermissionID int64 `xorm:"notnull 'permission_id'"`
-	CreatedBy    int64 `xorm:"notnull default 0 'created_by'"`
+	lorm.UnimplementedTable `lorm:"role_permissions"`
+	RecordMeta
+	RoleID       int64 `lorm:"role_id"`
+	PermissionID int64 `lorm:"permission_id"`
+	CreatedBy    int64 `lorm:"created_by"`
 }
-
-func (*RolePermission) TableName() string { return "role_permissions" }
 
 type RefreshToken struct {
-	RecordMeta   `xorm:"extends"`
-	UserID       int64      `xorm:"notnull 'user_id'"`
-	SessionID    string     `xorm:"VARCHAR(64) notnull 'session_id'"`
-	TokenHash    []byte     `xorm:"BINARY(32) notnull 'token_hash'"`
-	ExpiresAt    time.Time  `xorm:"notnull 'expires_at'"`
-	LastUsedAt   *time.Time `xorm:"'last_used_at'"`
-	RevokedAt    *time.Time `xorm:"'revoked_at'"`
-	ReplacedByID *int64     `xorm:"'replaced_by_id'"`
+	lorm.UnimplementedTable `lorm:"refresh_tokens"`
+	RecordMeta
+	UserID       int64      `lorm:"user_id"`
+	SessionID    string     `lorm:"session_id"`
+	TokenHash    []byte     `lorm:"token_hash"`
+	ExpiresAt    time.Time  `lorm:"expires_at"`
+	LastUsedAt   *time.Time `lorm:"last_used_at"`
+	RevokedAt    *time.Time `lorm:"revoked_at"`
+	ReplacedByID *int64     `lorm:"replaced_by_id"`
 }
-
-func (*RefreshToken) TableName() string { return "refresh_tokens" }

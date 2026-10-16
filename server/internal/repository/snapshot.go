@@ -2,11 +2,13 @@ package repository
 
 import (
 	"context"
+	"time"
 
-	"xorm.io/xorm"
+	"github.com/yvvlee/lorm"
+	"github.com/yvvlee/lorm/builder"
 
+	"github.com/yvvlee/kirby/server/internal/infra"
 	"github.com/yvvlee/kirby/server/internal/model"
-	"github.com/yvvlee/kirby/server/internal/repository/base"
 )
 
 type SnapshotFilter struct {
@@ -17,338 +19,271 @@ type SnapshotFilter struct {
 }
 
 type SnapshotRepository interface {
-	Create(context.Context, int64, int64, int64, *model.Snapshot) error
-	CreateTx(context.Context, *xorm.Session, int64, int64, int64, *model.Snapshot) error
-	FindByID(context.Context, int64, int64) (*model.Snapshot, error)
-	List(context.Context, int64, SnapshotFilter, base.PageRequest) (base.PageResult[model.Snapshot], error)
-	FindReleasedForConfig(context.Context, int64, int64) (*model.Snapshot, error)
-	FindReleasedForConfigTx(context.Context, *xorm.Session, int64, int64) (*model.Snapshot, error)
-	FindCurrentForConfig(context.Context, int64, int64) (*model.Snapshot, error)
-	FindCurrentForConfigTx(context.Context, *xorm.Session, int64, int64) (*model.Snapshot, error)
-	FindAnyForConfigTx(context.Context, *xorm.Session, int64, int64) (*model.Snapshot, error)
-	ListReleasedConfigIDs(context.Context, int64, int64) ([]int64, error)
-	Delete(context.Context, int64, int64, int64) error
-	DeleteTx(context.Context, *xorm.Session, int64, int64, int64) error
-	LockByID(context.Context, *xorm.Session, int64, int64) (*model.Snapshot, error)
-	SetCurrent(context.Context, *xorm.Session, int64, int64, int64, int64) error
+	Create(ctx context.Context, environmentID, projectID, configID int64, snapshot *model.Snapshot) error
+	FindByID(ctx context.Context, environmentID, snapshotID int64) (*model.Snapshot, error)
+	List(ctx context.Context, environmentID int64, filter SnapshotFilter, page PageRequest) (PageResult[model.Snapshot], error)
+	FindReleasedForConfig(ctx context.Context, environmentID, configID int64) (*model.Snapshot, error)
+	FindCurrentForConfig(ctx context.Context, environmentID, configID int64) (*model.Snapshot, error)
+	FindAnyForConfig(ctx context.Context, environmentID, configID int64) (*model.Snapshot, error)
+	ListReleasedConfigIDs(ctx context.Context, environmentID, projectID int64) ([]int64, error)
+	Delete(ctx context.Context, environmentID, snapshotID, updatedBy int64) error
+	LockByID(ctx context.Context, environmentID, snapshotID int64) (*model.Snapshot, error)
+	SetCurrent(ctx context.Context, environmentID, configID, snapshotID, updatedBy int64) error
 }
 
 type SnapshotRepositoryImpl struct {
-	engine *xorm.Engine
+	*lorm.Repository[*model.Snapshot]
 }
 
-func NewSnapshotRepository(engine *xorm.Engine) *SnapshotRepositoryImpl {
-	return &SnapshotRepositoryImpl{engine: engine}
+// NewSnapshotRepository creates SnapshotRepositoryImpl with its shared database engine.
+//
+// Parameters: storage supplies the shared database engine.
+// Returns: *SnapshotRepositoryImpl.
+// Throws: none.
+func NewSnapshotRepository(storage *infra.Storage) *SnapshotRepositoryImpl {
+	return &SnapshotRepositoryImpl{
+		Repository: storage.CoreDB.Repository[*model.Snapshot](),
+	}
 }
 
-func (r *SnapshotRepositoryImpl) Create(ctx context.Context, environmentID, projectID, configID int64, snapshot *model.Snapshot) error {
-	if err := validateEnvironmentResource(environmentID, "project_id", projectID); err != nil {
-		return err
-	}
-	if err := base.ValidateID("config_id", configID); err != nil {
-		return err
-	}
-	if snapshot == nil {
-		return base.InvalidArgument("snapshot is nil")
-	}
-	if snapshot.ProjectID != 0 && snapshot.ProjectID != projectID {
-		return base.InvalidArgument("snapshot.project_id does not match project_id")
-	}
-	if snapshot.ConfigID != 0 && snapshot.ConfigID != configID {
-		return base.InvalidArgument("snapshot.config_id does not match config_id")
-	}
+// Create 创建快照，初始状态为未发布且未启用。
+//
+// Parameters: ctx carries cancellation and transaction state; projectID selects the project; configID selects the configuration; snapshot contains the snapshot content and metadata.
+// Returns: nil after inserting an unreleased, unselected snapshot with its ID, version, and timestamps; insertion failures are returned.
+// Throws: none.
+func (r *SnapshotRepositoryImpl) Create(ctx context.Context, _, projectID, configID int64, snapshot *model.Snapshot) error {
 	snapshot.ProjectID = projectID
 	snapshot.ConfigID = configID
 	snapshot.Status = model.SnapshotStatusUnreleased
 	snapshot.IsUsing = false
-	result, err := base.Execute(ctx, r.engine, "snapshot", insertSnapshotSQL,
-		snapshotCreateArgs(environmentID, projectID, configID, snapshot)...)
-	if err != nil {
-		return err
-	}
-	snapshot.ID, err = result.LastInsertId()
-	if err != nil {
-		return base.Wrap("read inserted snapshot id", err)
-	}
-	return nil
+	snapshot.PrepareInsert()
+	_, err := r.Insert(ctx, snapshot)
+	return err
 }
 
-func (r *SnapshotRepositoryImpl) CreateTx(ctx context.Context, tx *xorm.Session, environmentID, projectID, configID int64, snapshot *model.Snapshot) error {
-	if err := validateEnvironmentResource(environmentID, "project_id", projectID); err != nil {
-		return err
-	}
-	if err := base.ValidateID("config_id", configID); err != nil {
-		return err
-	}
-	if snapshot == nil {
-		return base.InvalidArgument("snapshot is nil")
-	}
-	if snapshot.ProjectID != 0 && snapshot.ProjectID != projectID {
-		return base.InvalidArgument("snapshot.project_id does not match project_id")
-	}
-	if snapshot.ConfigID != 0 && snapshot.ConfigID != configID {
-		return base.InvalidArgument("snapshot.config_id does not match config_id")
-	}
-	snapshot.ProjectID = projectID
-	snapshot.ConfigID = configID
-	snapshot.Status = model.SnapshotStatusUnreleased
-	snapshot.IsUsing = false
-	result, err := base.ExecuteTx(ctx, tx, "snapshot", insertSnapshotSQL,
-		snapshotCreateArgs(environmentID, projectID, configID, snapshot)...)
-	if err != nil {
-		return err
-	}
-	snapshot.ID, err = result.LastInsertId()
-	if err != nil {
-		return base.Wrap("read inserted snapshot id", err)
-	}
-	return nil
-}
-
-const insertSnapshotSQL = `
-INSERT INTO snapshots
-    (project_id, config_id, config_key, description, content, status, tags_json,
-     is_using, created_by, updated_by)
-SELECT p.id, c.id, c.` + "`key`" + `, ?, ?, ?, ?, FALSE, ?, ?
-FROM configs AS c
-INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
-INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
-WHERE p.id = ? AND e.id = ? AND c.id = ? AND c.deleted_at IS NULL`
-
-func snapshotCreateArgs(environmentID, projectID, configID int64, snapshot *model.Snapshot) []any {
-	return []any{
-		snapshot.Description, snapshot.Content, snapshot.Status, snapshot.TagsJSON,
-		snapshot.CreatedBy, snapshot.UpdatedBy, projectID, environmentID, configID,
-	}
-}
-
+// FindByID loads a resource only when it belongs to the requested scope.
+//
+// Parameters: ctx carries cancellation and transaction state; environmentID selects the authorized environment; snapshotID selects the snapshot.
+// Returns: the live row, or ErrNotFound when the ID is missing, deleted, or outside the environment.
+// Throws: none.
 func (r *SnapshotRepositoryImpl) FindByID(ctx context.Context, environmentID, snapshotID int64) (*model.Snapshot, error) {
-	if err := validateEnvironmentResource(environmentID, "snapshot_id", snapshotID); err != nil {
-		return nil, err
-	}
-	var snapshot model.Snapshot
-	err := base.FindOne(ctx, r.engine, "snapshot", snapshotByIDSQL, []any{environmentID, snapshotID}, &snapshot)
+	snapshot, has, err := snapshotScope(r.Engine).
+		Where(builder.Eq{
+			"e.id": environmentID,
+			"s.id": snapshotID,
+		}).
+		Get(ctx)
 	if err != nil {
-		return nil, err
+		return nil, WrapDatabaseError(err)
 	}
-	return &snapshot, nil
+	if !has {
+		return nil, Missing("snapshot")
+	}
+	return snapshot, nil
 }
 
-func (r *SnapshotRepositoryImpl) List(ctx context.Context, environmentID int64, filter SnapshotFilter, page base.PageRequest) (base.PageResult[model.Snapshot], error) {
-	if err := validateEnvironmentResource(environmentID, "project_id", filter.ProjectID); err != nil {
-		return base.PageResult[model.Snapshot]{}, err
+// List returns the resources visible in the selected scope.
+//
+// Parameters: ctx carries cancellation and transaction state; environmentID selects the authorized environment; filter restricts the returned rows; page contains pagination bounds.
+// Returns: the scoped page, total row count, normalized offset and limit, or a database error.
+// Throws: none.
+func (r *SnapshotRepositoryImpl) List(ctx context.Context, environmentID int64, filter SnapshotFilter, page PageRequest) (PageResult[model.Snapshot], error) {
+	cond := builder.And{
+		builder.Eq{
+			"e.id": environmentID,
+			"p.id": filter.ProjectID,
+			"c.id": filter.ConfigID,
+		},
+		eqIf("s.status", filter.Status),
+		eqIf("s.is_using", filter.IsUsing),
 	}
-	if err := base.ValidateID("config_id", filter.ConfigID); err != nil {
-		return base.PageResult[model.Snapshot]{}, err
-	}
-	where := "e.id = ? AND p.id = ? AND c.id = ? AND s.deleted_at IS NULL"
-	args := []any{environmentID, filter.ProjectID, filter.ConfigID}
-	if filter.Status != nil {
-		if !validSnapshotStatus(*filter.Status) {
-			return base.PageResult[model.Snapshot]{}, base.InvalidArgument("invalid snapshot status")
-		}
-		where += " AND s.status = ?"
-		args = append(args, *filter.Status)
-	}
-	if filter.IsUsing != nil {
-		where += " AND s.is_using = ?"
-		args = append(args, *filter.IsUsing)
-	}
-	page = base.NormalizePage(page)
-	from := `
-FROM snapshots AS s
-INNER JOIN configs AS c ON c.id = s.config_id AND c.project_id = s.project_id AND c.deleted_at IS NULL
-INNER JOIN projects AS p ON p.id = s.project_id AND p.deleted_at IS NULL
-INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
-WHERE ` + where
-	total, err := base.Count(ctx, r.engine, "snapshots", "SELECT COUNT(*) AS total"+from, args...)
-	if err != nil {
-		return base.PageResult[model.Snapshot]{}, err
-	}
-	result := base.PageResult[model.Snapshot]{Items: []model.Snapshot{}, Total: total, Offset: page.Offset, Limit: page.Limit}
-	if total == 0 {
-		return result, nil
-	}
-	listArgs := append(append([]any{}, args...), page.Limit, page.Offset)
-	err = base.FindAll(ctx, r.engine, "snapshots", "SELECT s.*"+from+`
-ORDER BY s.id DESC
-LIMIT ? OFFSET ?`, listArgs, &result.Items)
-	return result, err
+	return paginate[model.Snapshot](ctx, snapshotScope(r.Engine).Where(cond).OrderBy("s.id DESC"), page)
 }
 
+// FindReleasedForConfig finds the published snapshot in the requested configuration scope.
+//
+// Parameters: ctx carries cancellation and transaction state; environmentID selects the authorized environment; configID selects the configuration.
+// Returns: the newest released snapshot, or ErrNotFound if none is visible in the scope.
+// Throws: none.
 func (r *SnapshotRepositoryImpl) FindReleasedForConfig(ctx context.Context, environmentID, configID int64) (*model.Snapshot, error) {
-	return r.findForConfig(ctx, environmentID, configID, "s.status = ?", model.SnapshotStatusReleased, "released snapshot")
+	return r.findForConfig(ctx, environmentID, configID, builder.Eq{"s.status": model.SnapshotStatusReleased}, "released snapshot")
 }
 
+// FindCurrentForConfig finds the current snapshot in the requested configuration scope.
+//
+// Parameters: ctx carries cancellation and transaction state; environmentID selects the authorized environment; configID selects the configuration.
+// Returns: the current snapshot, or ErrNotFound if no selection is visible in the scope.
+// Throws: none.
 func (r *SnapshotRepositoryImpl) FindCurrentForConfig(ctx context.Context, environmentID, configID int64) (*model.Snapshot, error) {
-	return r.findForConfig(ctx, environmentID, configID, "s.is_using = TRUE", nil, "current snapshot")
+	return r.findForConfig(ctx, environmentID, configID, builder.Eq{"s.is_using": true}, "current snapshot")
 }
 
-func (r *SnapshotRepositoryImpl) FindReleasedForConfigTx(ctx context.Context, tx *xorm.Session, environmentID, configID int64) (*model.Snapshot, error) {
-	return r.findForConfigTx(ctx, tx, environmentID, configID, "s.status = ?", model.SnapshotStatusReleased, "released snapshot")
+// FindAnyForConfig checks for snapshots before allowing configuration deletion.
+//
+// Parameters: ctx carries cancellation and transaction state; environmentID selects the authorized environment; configID selects the configuration.
+// Returns: the newest live snapshot, or ErrNotFound when deletion has no snapshot dependency.
+// Throws: none.
+func (r *SnapshotRepositoryImpl) FindAnyForConfig(ctx context.Context, environmentID, configID int64) (*model.Snapshot, error) {
+	return r.findForConfig(ctx, environmentID, configID, nil, "snapshot")
 }
 
-func (r *SnapshotRepositoryImpl) FindCurrentForConfigTx(ctx context.Context, tx *xorm.Session, environmentID, configID int64) (*model.Snapshot, error) {
-	return r.findForConfigTx(ctx, tx, environmentID, configID, "s.is_using = TRUE", nil, "current snapshot")
-}
-
-func (r *SnapshotRepositoryImpl) FindAnyForConfigTx(ctx context.Context, tx *xorm.Session, environmentID, configID int64) (*model.Snapshot, error) {
-	return r.findForConfigTx(ctx, tx, environmentID, configID, "1 = 1", nil, "snapshot")
-}
-
-func (r *SnapshotRepositoryImpl) findForConfig(ctx context.Context, environmentID, configID int64, condition string, argument any, resource string) (*model.Snapshot, error) {
-	if err := validateEnvironmentResource(environmentID, "config_id", configID); err != nil {
-		return nil, err
+func (r *SnapshotRepositoryImpl) findForConfig(ctx context.Context, environmentID, configID int64, cond builder.Sqlizer, resource string) (*model.Snapshot, error) {
+	db := snapshotScope(r.Engine).Where(builder.Eq{
+		"e.id": environmentID,
+		"c.id": configID,
+	})
+	if cond != nil {
+		db = db.Where(cond)
 	}
-	args := []any{environmentID, configID}
-	if argument != nil {
-		args = append(args, argument)
-	}
-	var snapshot model.Snapshot
-	err := base.FindOne(ctx, r.engine, resource, `
-SELECT s.*
-FROM snapshots AS s
-INNER JOIN configs AS c ON c.id = s.config_id AND c.project_id = s.project_id AND c.deleted_at IS NULL
-INNER JOIN projects AS p ON p.id = s.project_id AND p.deleted_at IS NULL
-INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
-WHERE e.id = ? AND c.id = ? AND s.deleted_at IS NULL AND `+condition+`
-ORDER BY s.id DESC
-LIMIT 1`, args, &snapshot)
+	snapshot, has, err := db.OrderBy("s.id DESC").Get(ctx)
 	if err != nil {
-		return nil, err
+		return nil, WrapDatabaseError(err)
 	}
-	return &snapshot, nil
+	if !has {
+		return nil, Missing(resource)
+	}
+	return snapshot, nil
 }
 
-func (r *SnapshotRepositoryImpl) findForConfigTx(ctx context.Context, tx *xorm.Session, environmentID, configID int64, condition string, argument any, resource string) (*model.Snapshot, error) {
-	if err := validateEnvironmentResource(environmentID, "config_id", configID); err != nil {
-		return nil, err
-	}
-	args := []any{environmentID, configID}
-	if argument != nil {
-		args = append(args, argument)
-	}
-	var snapshot model.Snapshot
-	err := base.LockOne(ctx, tx, resource, `
-SELECT s.*
-FROM snapshots AS s
-INNER JOIN configs AS c ON c.id = s.config_id AND c.project_id = s.project_id AND c.deleted_at IS NULL
-INNER JOIN projects AS p ON p.id = s.project_id AND p.deleted_at IS NULL
-INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
-WHERE e.id = ? AND c.id = ? AND s.deleted_at IS NULL AND `+condition+`
-ORDER BY s.id DESC
-LIMIT 1
-FOR UPDATE`, args, &snapshot)
-	if err != nil {
-		return nil, err
-	}
-	return &snapshot, nil
-}
-
+// ListReleasedConfigIDs lists configuration IDs that have a visible published snapshot.
+//
+// Parameters: ctx carries cancellation and transaction state; environmentID selects the authorized environment; projectID selects the project.
+// Returns: distinct configuration IDs with live released snapshots, in ascending order.
+// Throws: none.
 func (r *SnapshotRepositoryImpl) ListReleasedConfigIDs(ctx context.Context, environmentID, projectID int64) ([]int64, error) {
-	if err := validateEnvironmentResource(environmentID, "project_id", projectID); err != nil {
-		return nil, err
-	}
-	rows := make([]struct {
-		ConfigID int64 `xorm:"config_id"`
-	}, 0)
-	err := base.FindAll(ctx, r.engine, "released config ids", `
-SELECT DISTINCT s.config_id
-FROM snapshots AS s
-INNER JOIN configs AS c ON c.id = s.config_id AND c.project_id = s.project_id AND c.deleted_at IS NULL
-INNER JOIN projects AS p ON p.id = s.project_id AND p.deleted_at IS NULL
-INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
-WHERE e.id = ? AND p.id = ? AND s.status = ? AND s.deleted_at IS NULL
-ORDER BY s.config_id ASC`, []any{environmentID, projectID, model.SnapshotStatusReleased}, &rows)
+	ids, err := snapshotScope(r.Engine).Select("s.config_id").Distinct().Where(builder.Eq{
+		"e.id":     environmentID,
+		"p.id":     projectID,
+		"s.status": model.SnapshotStatusReleased,
+	}).Asc("s.config_id").FindCols[int64](ctx)
 	if err != nil {
-		return nil, err
-	}
-	ids := make([]int64, len(rows))
-	for i := range rows {
-		ids[i] = rows[i].ConfigID
+		return nil, WrapDatabaseError(err)
 	}
 	return ids, nil
 }
 
+// Delete removes the resource after checking ownership and dependent state.
+//
+// Parameters: ctx carries cancellation and transaction state; environmentID selects the authorized environment; snapshotID selects the snapshot; updatedBy identifies the actor recorded on the write.
+// Returns: nil after soft deletion; ErrNotFound for an inaccessible row or ErrNoRowsAffected for a rejected write.
+// Throws: none.
 func (r *SnapshotRepositoryImpl) Delete(ctx context.Context, environmentID, snapshotID, updatedBy int64) error {
-	if err := validateEnvironmentResource(environmentID, "snapshot_id", snapshotID); err != nil {
+	fields := new(model.Snapshot).LormCols()
+	if _, err := r.FindByID(ctx, environmentID, snapshotID); err != nil {
 		return err
 	}
-	_, err := base.Execute(ctx, r.engine, "snapshot", `
-UPDATE snapshots AS s
-SET s.deleted_at = UTC_TIMESTAMP(6), s.updated_by = ?,
-    s.updated_at = UTC_TIMESTAMP(6), s.version = s.version + 1
-WHERE s.id = ? AND s.status = ? AND s.deleted_at IS NULL
-  AND EXISTS (
-      SELECT 1 FROM projects AS p
-      INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
-      WHERE p.id = s.project_id AND e.id = ? AND p.deleted_at IS NULL
-  )`, updatedBy, snapshotID, model.SnapshotStatusUnreleased, environmentID)
-	return err
-}
-
-func (r *SnapshotRepositoryImpl) DeleteTx(ctx context.Context, tx *xorm.Session, environmentID, snapshotID, updatedBy int64) error {
-	if err := validateEnvironmentResource(environmentID, "snapshot_id", snapshotID); err != nil {
-		return err
-	}
-	_, err := base.ExecuteTx(ctx, tx, "snapshot", `
-UPDATE snapshots AS s
-SET s.deleted_at = UTC_TIMESTAMP(6), s.updated_by = ?,
-    s.updated_at = UTC_TIMESTAMP(6), s.version = s.version + 1
-WHERE s.id = ? AND s.status = ? AND s.deleted_at IS NULL
-  AND EXISTS (
-      SELECT 1 FROM projects AS p
-      INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
-      WHERE p.id = s.project_id AND e.id = ? AND p.deleted_at IS NULL
-  )`, updatedBy, snapshotID, model.SnapshotStatusUnreleased, environmentID)
-	return err
-}
-
-func (r *SnapshotRepositoryImpl) LockByID(ctx context.Context, tx *xorm.Session, environmentID, snapshotID int64) (*model.Snapshot, error) {
-	if err := validateEnvironmentResource(environmentID, "snapshot_id", snapshotID); err != nil {
-		return nil, err
-	}
-	var snapshot model.Snapshot
-	err := base.LockOne(ctx, tx, "snapshot", snapshotByIDSQL+"\nFOR UPDATE", []any{environmentID, snapshotID}, &snapshot)
+	affected, err := r.Engine.Update[*model.Snapshot]().Where(builder.IsNull(fields.DeletedAt())).ID(snapshotID).
+		Where(builder.Eq{fields.Status(): model.SnapshotStatusUnreleased}).
+		Set(fields.Version(), builder.Expr("version + 1")).
+		SetMap(map[string]any{
+			fields.DeletedAt(): time.Now().UTC(),
+			fields.UpdatedBy(): updatedBy,
+			fields.UpdatedAt(): time.Now().UTC(),
+		}).Exec(ctx)
 	if err != nil {
-		return nil, err
+		return WrapDatabaseError(err)
 	}
-	return &snapshot, nil
+	if affected == 0 {
+		return Unchanged("snapshot")
+	}
+	return nil
 }
 
-func (r *SnapshotRepositoryImpl) SetCurrent(ctx context.Context, tx *xorm.Session, environmentID, configID, snapshotID, updatedBy int64) error {
-	if err := validateEnvironmentResource(environmentID, "config_id", configID); err != nil {
-		return err
+// LockByID locks a scoped resource so concurrent writes share the same order.
+//
+// Parameters: ctx carries cancellation and transaction state; environmentID selects the authorized environment; snapshotID selects the snapshot.
+// Returns: the locked live row, or ErrNotFound for a missing or inaccessible resource; requires the caller’s transaction.
+// Throws: none.
+func (r *SnapshotRepositoryImpl) LockByID(ctx context.Context, environmentID, snapshotID int64) (*model.Snapshot, error) {
+	snapshot, has, err := snapshotScope(r.Engine).
+		Where(builder.Eq{
+			"e.id": environmentID,
+			"s.id": snapshotID,
+		}).
+		Suffix("FOR UPDATE").Get(ctx)
+	if err != nil {
+		return nil, WrapDatabaseError(err)
 	}
-	if err := base.ValidateID("snapshot_id", snapshotID); err != nil {
-		return err
+	if !has {
+		return nil, Missing("snapshot")
 	}
-	_, err := base.ExecuteTx(ctx, tx, "current snapshot", `
-UPDATE snapshots AS s
-INNER JOIN configs AS c ON c.id = s.config_id AND c.project_id = s.project_id AND c.deleted_at IS NULL
-INNER JOIN projects AS p ON p.id = s.project_id AND p.deleted_at IS NULL
-INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
-INNER JOIN snapshots AS target
-    ON target.id = ? AND target.config_id = c.id AND target.project_id = p.id
-   AND target.deleted_at IS NULL
-SET s.is_using = (s.id = ?), s.updated_by = ?,
-    s.updated_at = UTC_TIMESTAMP(6), s.version = s.version + 1
-WHERE e.id = ? AND c.id = ? AND s.deleted_at IS NULL`,
-		snapshotID, snapshotID, updatedBy, environmentID, configID)
-	return err
+	return snapshot, nil
 }
 
-const snapshotByIDSQL = `
-SELECT s.*
-FROM snapshots AS s
-INNER JOIN configs AS c ON c.id = s.config_id AND c.project_id = s.project_id AND c.deleted_at IS NULL
-INNER JOIN projects AS p ON p.id = s.project_id AND p.deleted_at IS NULL
-INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
-WHERE e.id = ? AND s.id = ? AND s.deleted_at IS NULL
-LIMIT 1`
+// SetCurrent 将目标快照标记为使用中，同配置下其余快照取消使用。
+//
+// Parameters: ctx carries cancellation and transaction state; environmentID selects the authorized environment; configID selects the configuration; snapshotID selects the snapshot; updatedBy identifies the actor recorded on the write.
+// Returns: nil after clearing the previous selection and selecting the target; returns ownership or write failures.
+// Throws: none.
+func (r *SnapshotRepositoryImpl) SetCurrent(ctx context.Context, environmentID, configID, snapshotID, updatedBy int64) error {
+	fields := new(model.Snapshot).LormCols()
+	config, err := r.findScopedConfig(ctx, environmentID, configID)
+	if err != nil {
+		return err
+	}
+	_, has, err := r.Engine.Query[*model.Snapshot]().Where(builder.IsNull(fields.DeletedAt())).
+		Where(builder.Eq{
+			fields.ID():        snapshotID,
+			fields.ConfigID():  configID,
+			fields.ProjectID(): config.ProjectID,
+		}).
+		Get(ctx)
+	if err != nil {
+		return WrapDatabaseError(err)
+	}
+	if !has {
+		return Missing("snapshot")
+	}
+	now := time.Now().UTC()
+	if _, err = r.Engine.Update[*model.Snapshot]().Where(builder.IsNull(fields.DeletedAt())).
+		Where(builder.Eq{
+			fields.ConfigID():  configID,
+			fields.ProjectID(): config.ProjectID,
+		}).
+		Where(builder.NotEq{fields.ID(): snapshotID}).
+		Where(builder.Eq{fields.IsUsing(): true}).
+		Set(fields.Version(), builder.Expr("version + 1")).
+		SetMap(map[string]any{
+			fields.IsUsing():   false,
+			fields.UpdatedBy(): updatedBy,
+			fields.UpdatedAt(): now,
+		}).Exec(ctx); err != nil {
+		return WrapDatabaseError(err)
+	}
+	affected, err := r.Engine.Update[*model.Snapshot]().Where(builder.IsNull(fields.DeletedAt())).ID(snapshotID).
+		Where(builder.Eq{
+			fields.ConfigID():  configID,
+			fields.ProjectID(): config.ProjectID,
+		}).
+		Set(fields.Version(), builder.Expr("version + 1")).
+		SetMap(map[string]any{
+			fields.IsUsing():   true,
+			fields.UpdatedBy(): updatedBy,
+			fields.UpdatedAt(): now,
+		}).Exec(ctx)
+	if err != nil {
+		return WrapDatabaseError(err)
+	}
+	if affected == 0 {
+		return Unchanged("current snapshot")
+	}
+	return nil
+}
 
-func validSnapshotStatus(status model.SnapshotStatus) bool {
-	return status == model.SnapshotStatusUnreleased || status == model.SnapshotStatusReleased
+func (r *SnapshotRepositoryImpl) findScopedConfig(ctx context.Context, environmentID, configID int64) (*model.Config, error) {
+	config, has, err := configScope(r.Engine).
+		Where(builder.Eq{
+			"e.id": environmentID,
+			"c.id": configID,
+		}).
+		Get(ctx)
+	if err != nil {
+		return nil, WrapDatabaseError(err)
+	}
+	if !has {
+		return nil, Missing("config")
+	}
+	return config, nil
 }
 
 var _ SnapshotRepository = (*SnapshotRepositoryImpl)(nil)

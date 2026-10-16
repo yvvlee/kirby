@@ -2,12 +2,13 @@ package repository
 
 import (
 	"context"
-	"strings"
+	"time"
 
-	"xorm.io/xorm"
+	"github.com/yvvlee/lorm"
+	"github.com/yvvlee/lorm/builder"
 
+	"github.com/yvvlee/kirby/server/internal/infra"
 	"github.com/yvvlee/kirby/server/internal/model"
-	"github.com/yvvlee/kirby/server/internal/repository/base"
 )
 
 type ConfigFilter struct {
@@ -31,389 +32,260 @@ type ConfigValueUpdate struct {
 }
 
 type ConfigRepository interface {
-	Create(context.Context, int64, int64, *model.Config) error
-	CreateTx(context.Context, *xorm.Session, int64, int64, *model.Config) error
-	FindByID(context.Context, int64, int64) (*model.Config, error)
-	FindByKey(context.Context, int64, int64, string) (*model.Config, error)
-	List(context.Context, int64, ConfigFilter, base.PageRequest) (base.PageResult[model.Config], error)
-	Update(context.Context, int64, int64, ConfigUpdate) error
-	UpdateTx(context.Context, *xorm.Session, int64, int64, ConfigUpdate) error
-	UpdateValue(context.Context, int64, int64, ConfigValueUpdate) error
-	UpdateValueTx(context.Context, *xorm.Session, int64, int64, ConfigValueUpdate) error
-	Delete(context.Context, int64, int64, int64) error
-	DeleteTx(context.Context, *xorm.Session, int64, int64, int64) error
-	LockByID(context.Context, *xorm.Session, int64, int64) (*model.Config, error)
+	Create(ctx context.Context, environmentID, projectID int64, config *model.Config) error
+	FindByID(ctx context.Context, environmentID, configID int64) (*model.Config, error)
+	List(ctx context.Context, environmentID int64, filter ConfigFilter, page PageRequest) (PageResult[model.Config], error)
+	Update(ctx context.Context, environmentID, configID int64, update ConfigUpdate) error
+	UpdateValue(ctx context.Context, environmentID, configID int64, update ConfigValueUpdate) error
+	Delete(ctx context.Context, environmentID, configID, updatedBy int64) error
+	LockByID(ctx context.Context, environmentID, configID int64) (*model.Config, error)
 }
 
 type ConfigRepositoryImpl struct {
-	engine *xorm.Engine
+	*lorm.Repository[*model.Config]
 }
 
-func NewConfigRepository(engine *xorm.Engine) *ConfigRepositoryImpl {
-	return &ConfigRepositoryImpl{engine: engine}
+// NewConfigRepository creates ConfigRepositoryImpl with its shared database engine.
+//
+// Parameters: storage supplies the shared database engine.
+// Returns: *ConfigRepositoryImpl.
+// Throws: none.
+func NewConfigRepository(storage *infra.Storage) *ConfigRepositoryImpl {
+	return &ConfigRepositoryImpl{
+		Repository: storage.CoreDB.Repository[*model.Config](),
+	}
 }
 
+// Create 创建配置。软删除的同key记录会被恢复，其下结构与枚举被一并软删除重置。
+//
+// Parameters: ctx carries cancellation and transaction state; environmentID selects the authorized environment; projectID selects the project; config contains the new configuration key, schema, and value.
+// Returns: nil after insertion or restoration; IDs, version, and timestamps are copied into the supplied record. Key conflicts and database failures are returned.
+// Throws: none.
 func (r *ConfigRepositoryImpl) Create(ctx context.Context, environmentID, projectID int64, config *model.Config) error {
-	if err := validateEnvironmentResource(environmentID, "project_id", projectID); err != nil {
+	if err := lockScopedProject(ctx, r.Engine, environmentID, projectID); err != nil {
 		return err
 	}
-	if config == nil {
-		return base.InvalidArgument("config is nil")
+	existing, err := lockConfigByKey(ctx, r.Engine, projectID, config.Key)
+	if err != nil {
+		return err
 	}
-	if config.ProjectID != 0 && config.ProjectID != projectID {
-		return base.InvalidArgument("config.project_id does not match project_id")
+	if existing != nil {
+		return r.restore(ctx, existing, config)
 	}
-	config.ProjectID = projectID
-	result, err := base.Execute(ctx, r.engine, "config", insertConfigSQL,
-		configCreateArgs(environmentID, projectID, config)...)
+	config.PrepareInsert()
+	_, err = r.Insert(ctx, config)
+	return classifyKeyWriteError("config", err)
+}
+
+func (r *ConfigRepositoryImpl) restore(ctx context.Context, existing, config *model.Config) error {
+	fields := new(model.Config).LormCols()
+	if existing.DeletedAt == nil {
+		return keyConflict("config")
+	}
+	if err := resetConfigChildren(ctx, r.Engine, existing.ID, config.UpdatedBy); err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	affected, err := r.Engine.Update[*model.Config]().ID(existing.ID).SetMap(map[string]any{
+		fields.Description():    config.Description,
+		fields.IsArray():        config.IsArray,
+		fields.TypeJSON():       config.TypeJSON,
+		fields.Value():          config.Value,
+		fields.RuntimeVersion(): config.RuntimeVersion,
+		fields.CreatedBy():      config.CreatedBy,
+		fields.UpdatedBy():      config.UpdatedBy,
+		fields.CreatedAt():      now,
+		fields.UpdatedAt():      now,
+		fields.Version():        existing.Version + 1,
+		fields.DeletedAt():      nil,
+	}).Exec(ctx)
 	if err != nil {
 		return classifyKeyWriteError("config", err)
 	}
-	config.ID, err = result.LastInsertId()
-	if err != nil {
-		return base.Wrap("read inserted config id", err)
+	if affected == 0 {
+		return Unchanged("config")
 	}
+	config.ID = existing.ID
+	config.Version = existing.Version + 1
+	config.CreatedAt = now
+	config.UpdatedAt = now
 	return nil
 }
 
-func (r *ConfigRepositoryImpl) CreateTx(ctx context.Context, tx *xorm.Session, environmentID, projectID int64, config *model.Config) error {
-	if err := validateEnvironmentResource(environmentID, "project_id", projectID); err != nil {
-		return err
-	}
-	if config == nil {
-		return base.InvalidArgument("config is nil")
-	}
-	if config.ProjectID != 0 && config.ProjectID != projectID {
-		return base.InvalidArgument("config.project_id does not match project_id")
-	}
-	if tx == nil {
-		return base.InvalidArgument("transaction session is nil")
-	}
-	config.ProjectID = projectID
-	var project struct {
-		ID int64 `xorm:"id"`
-	}
-	if err := base.LockOne(ctx, tx, "project", `
-SELECT p.id
-FROM projects AS p
-INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
-WHERE e.id = ? AND p.id = ? AND p.deleted_at IS NULL
-LIMIT 1
-FOR UPDATE`, []any{environmentID, projectID}, &project); err != nil {
-		return err
-	}
-	var existing model.Config
-	found, err := tx.Context(ctx).SQL(`
-SELECT c.*
-FROM configs AS c
-WHERE c.project_id = ? AND c.`+"`key`"+` = ?
-LIMIT 1
-FOR UPDATE`, projectID, config.Key).Get(&existing)
+// lockConfigByKey 锁定(project_id, key)对应的配置行，包含软删除记录。
+func lockConfigByKey(ctx context.Context, engine *lorm.Engine, projectID int64, key string) (*model.Config, error) {
+	fields := new(model.Config).LormCols()
+	existing, has, err := engine.Query[*model.Config]().
+		Where(builder.Eq{
+			fields.ProjectID(): projectID,
+			fields.Key():       key,
+		}).
+		Suffix("FOR UPDATE").Get(ctx)
 	if err != nil {
-		return base.Wrap("lock config key", err)
+		return nil, WrapDatabaseError(err)
 	}
-	if found {
-		if existing.DeletedAt.IsZero() {
-			return keyConflict("config")
-		}
-		lockedStructures := make([]struct {
-			ID int64 `xorm:"id"`
-		}, 0)
-		if err := tx.Context(ctx).SQL(`
-SELECT s.id
-FROM structures AS s
-WHERE s.config_id = ?
-ORDER BY s.id ASC
-FOR UPDATE`, existing.ID).Find(&lockedStructures); err != nil {
-			return base.Wrap("lock structures before restoring config", err)
-		}
-		lockedEnums := make([]struct {
-			ID int64 `xorm:"id"`
-		}, 0)
-		if err := tx.Context(ctx).SQL(`
-SELECT e.id
-FROM config_enums AS e
-WHERE e.config_id = ?
-ORDER BY e.id ASC
-FOR UPDATE`, existing.ID).Find(&lockedEnums); err != nil {
-			return base.Wrap("lock config enums before restoring config", err)
-		}
-		if _, err := tx.Context(ctx).Exec(`
-UPDATE structures
-SET deleted_at = UTC_TIMESTAMP(6), updated_by = ?,
-    updated_at = UTC_TIMESTAMP(6), version = version + 1
-WHERE config_id = ? AND deleted_at IS NULL`, config.UpdatedBy, existing.ID); err != nil {
-			return base.Wrap("reset structures before restoring config", err)
-		}
-		if _, err := tx.Context(ctx).Exec(`
-UPDATE config_enums
-SET deleted_at = UTC_TIMESTAMP(6), updated_by = ?,
-    updated_at = UTC_TIMESTAMP(6), version = version + 1
-WHERE config_id = ? AND deleted_at IS NULL`, config.UpdatedBy, existing.ID); err != nil {
-			return base.Wrap("reset config enums before restoring config", err)
-		}
-		_, err := base.ExecuteTx(ctx, tx, "restore config", `
-UPDATE configs
-SET description = ?, is_array = ?, type_json = ?, value = ?, runtime_version = ?,
-    created_by = ?, updated_by = ?, created_at = UTC_TIMESTAMP(6),
-    updated_at = UTC_TIMESTAMP(6), version = version + 1, deleted_at = NULL
-WHERE id = ? AND project_id = ? AND deleted_at IS NOT NULL`,
-			config.Description, config.IsArray, config.TypeJSON, config.Value, config.RuntimeVersion,
-			config.CreatedBy, config.UpdatedBy, existing.ID, projectID)
-		if err != nil {
-			return classifyKeyWriteError("config", err)
-		}
-		config.ID, config.Version = existing.ID, existing.Version+1
-		return nil
+	if !has {
+		return nil, nil
 	}
-	result, err := base.ExecuteTx(ctx, tx, "config", insertConfigSQL,
-		configCreateArgs(environmentID, projectID, config)...)
-	if err != nil {
-		return classifyKeyWriteError("config", err)
-	}
-	config.ID, err = result.LastInsertId()
-	if err != nil {
-		return base.Wrap("read inserted config id", err)
-	}
-	return nil
+	return existing, nil
 }
 
-const insertConfigSQL = `
-INSERT INTO configs
-    (project_id, ` + "`key`" + `, description, is_array, type_json, value, runtime_version, created_by, updated_by)
-SELECT p.id, ?, ?, ?, ?, ?, ?, ?, ?
-FROM projects AS p
-INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
-WHERE p.id = ? AND e.id = ? AND p.deleted_at IS NULL`
-
-func configCreateArgs(environmentID, projectID int64, config *model.Config) []any {
-	return []any{
-		config.Key, config.Description, config.IsArray, config.TypeJSON, config.Value,
-		config.RuntimeVersion, config.CreatedBy, config.UpdatedBy, projectID, environmentID,
+// resetConfigChildren 软删除配置下所有存活的结构与枚举。
+func resetConfigChildren(ctx context.Context, engine *lorm.Engine, configID, updatedBy int64) error {
+	now := time.Now().UTC()
+	values := map[string]any{
+		"deleted_at": now,
+		"updated_by": updatedBy,
+		"updated_at": now,
+		"version":    builder.Expr("version + 1"),
 	}
+	_, err := engine.Update[*model.Structure]().Where(builder.IsNull("deleted_at")).
+		Where(builder.Eq{"config_id": configID}).SetMap(values).Exec(ctx)
+	if err != nil {
+		return WrapDatabaseError(err)
+	}
+	_, err = engine.Update[*model.ConfigEnum]().Where(builder.IsNull("deleted_at")).
+		Where(builder.Eq{"config_id": configID}).SetMap(values).Exec(ctx)
+	return WrapDatabaseError(err)
 }
 
+// FindByID loads a resource only when it belongs to the requested scope.
+//
+// Parameters: ctx carries cancellation and transaction state; environmentID selects the authorized environment; configID selects the configuration.
+// Returns: the live row, or ErrNotFound when the ID is missing, deleted, or outside the environment.
+// Throws: none.
 func (r *ConfigRepositoryImpl) FindByID(ctx context.Context, environmentID, configID int64) (*model.Config, error) {
-	if err := validateEnvironmentResource(environmentID, "config_id", configID); err != nil {
-		return nil, err
-	}
-	var config model.Config
-	err := base.FindOne(ctx, r.engine, "config", configByIDSQL, []any{environmentID, configID}, &config)
+	config, has, err := configScope(r.Engine).
+		Where(builder.Eq{
+			"e.id": environmentID,
+			"c.id": configID,
+		}).
+		Get(ctx)
 	if err != nil {
-		return nil, err
+		return nil, WrapDatabaseError(err)
 	}
-	return &config, nil
+	if !has {
+		return nil, Missing("config")
+	}
+	return config, nil
 }
 
-func (r *ConfigRepositoryImpl) FindByKey(ctx context.Context, environmentID, projectID int64, key string) (*model.Config, error) {
-	if err := validateEnvironmentResource(environmentID, "project_id", projectID); err != nil {
-		return nil, err
+// List returns the resources visible in the selected scope.
+//
+// Parameters: ctx carries cancellation and transaction state; environmentID selects the authorized environment; filter restricts the returned rows; page contains pagination bounds.
+// Returns: the scoped page, total row count, normalized offset and limit, or a database error.
+// Throws: none.
+func (r *ConfigRepositoryImpl) List(ctx context.Context, environmentID int64, filter ConfigFilter, page PageRequest) (PageResult[model.Config], error) {
+	cond := builder.And{
+		builder.Eq{"e.id": environmentID},
+		eqIf("p.id", filter.ProjectID),
+		eqIf("p.key", filter.ProjectKey),
+		eqIf("c.key", filter.Key),
 	}
-	if strings.TrimSpace(key) == "" {
-		return nil, base.InvalidArgument("config key is empty")
-	}
-	var config model.Config
-	err := base.FindOne(ctx, r.engine, "config", `
-SELECT c.*
-FROM configs AS c
-INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
-INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
-WHERE e.id = ? AND p.id = ? AND c.`+"`key`"+` = ? AND c.deleted_at IS NULL
-LIMIT 1`, []any{environmentID, projectID, key}, &config)
-	if err != nil {
-		return nil, err
-	}
-	return &config, nil
+	return paginate[model.Config](ctx, configScope(r.Engine).Where(cond).OrderBy("c.id DESC"), page)
 }
 
-func (r *ConfigRepositoryImpl) List(ctx context.Context, environmentID int64, filter ConfigFilter, page base.PageRequest) (base.PageResult[model.Config], error) {
-	if err := base.ValidateID("environment_id", environmentID); err != nil {
-		return base.PageResult[model.Config]{}, err
-	}
-	where, args, err := configListFilter(environmentID, filter)
-	if err != nil {
-		return base.PageResult[model.Config]{}, err
-	}
-	page = base.NormalizePage(page)
-	total, err := base.Count(ctx, r.engine, "configs", `
-SELECT COUNT(*) AS total
-FROM configs AS c
-INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
-INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
-WHERE `+where, args...)
-	if err != nil {
-		return base.PageResult[model.Config]{}, err
-	}
-	result := base.PageResult[model.Config]{Items: []model.Config{}, Total: total, Offset: page.Offset, Limit: page.Limit}
-	if total == 0 {
-		return result, nil
-	}
-	listArgs := append(append([]any{}, args...), page.Limit, page.Offset)
-	err = base.FindAll(ctx, r.engine, "configs", `
-SELECT c.*
-FROM configs AS c
-INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
-INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
-WHERE `+where+`
-ORDER BY c.id DESC
-LIMIT ? OFFSET ?`, listArgs, &result.Items)
-	return result, err
-}
-
+// Update applies changes using the expected version to reject stale writes.
+//
+// Parameters: ctx carries cancellation and transaction state; environmentID selects the authorized environment; configID selects the configuration; update contains the guarded changes and expected version.
+// Returns: nil after one matching live row changes; ErrNoRowsAffected if the expected version is stale.
+// Throws: none.
 func (r *ConfigRepositoryImpl) Update(ctx context.Context, environmentID, configID int64, update ConfigUpdate) error {
-	if err := validateVersionedResource(environmentID, "config_id", configID, update.Version); err != nil {
+	fields := new(model.Config).LormCols()
+	if _, err := r.FindByID(ctx, environmentID, configID); err != nil {
 		return err
 	}
-	_, err := base.Execute(ctx, r.engine, "config", `
-UPDATE configs AS c
-SET c.description = ?, c.is_array = ?, c.type_json = ?, c.updated_by = ?,
-    c.updated_at = UTC_TIMESTAMP(6), c.version = c.version + 1
-WHERE c.id = ? AND c.version = ? AND c.deleted_at IS NULL
-  AND EXISTS (
-      SELECT 1 FROM projects AS p
-      INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
-      WHERE p.id = c.project_id AND e.id = ? AND p.deleted_at IS NULL
-  )`, update.Description, update.IsArray, update.TypeJSON, update.UpdatedBy,
-		configID, update.Version, environmentID)
-	return err
-}
-
-func (r *ConfigRepositoryImpl) UpdateTx(ctx context.Context, tx *xorm.Session, environmentID, configID int64, update ConfigUpdate) error {
-	if err := validateVersionedResource(environmentID, "config_id", configID, update.Version); err != nil {
-		return err
-	}
-	_, err := base.ExecuteTx(ctx, tx, "config", `
-UPDATE configs AS c
-SET c.description = ?, c.is_array = ?, c.type_json = ?, c.updated_by = ?,
-    c.updated_at = UTC_TIMESTAMP(6), c.version = c.version + 1
-WHERE c.id = ? AND c.version = ? AND c.deleted_at IS NULL
-  AND EXISTS (
-      SELECT 1 FROM projects AS p
-      INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
-      WHERE p.id = c.project_id AND e.id = ? AND p.deleted_at IS NULL
-  )`, update.Description, update.IsArray, update.TypeJSON, update.UpdatedBy,
-		configID, update.Version, environmentID)
-	return err
-}
-
-func (r *ConfigRepositoryImpl) UpdateValue(ctx context.Context, environmentID, configID int64, update ConfigValueUpdate) error {
-	if err := validateVersionedResource(environmentID, "config_id", configID, update.Version); err != nil {
-		return err
-	}
-	_, err := base.Execute(ctx, r.engine, "config", `
-UPDATE configs AS c
-SET c.value = ?, c.updated_by = ?, c.updated_at = UTC_TIMESTAMP(6), c.version = c.version + 1
-WHERE c.id = ? AND c.version = ? AND c.deleted_at IS NULL
-  AND EXISTS (
-      SELECT 1 FROM projects AS p
-      INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
-      WHERE p.id = c.project_id AND e.id = ? AND p.deleted_at IS NULL
-  )`, update.Value, update.UpdatedBy, configID, update.Version, environmentID)
-	return err
-}
-
-func (r *ConfigRepositoryImpl) UpdateValueTx(ctx context.Context, tx *xorm.Session, environmentID, configID int64, update ConfigValueUpdate) error {
-	if err := validateVersionedResource(environmentID, "config_id", configID, update.Version); err != nil {
-		return err
-	}
-	_, err := base.ExecuteTx(ctx, tx, "config", `
-UPDATE configs AS c
-SET c.value = ?, c.updated_by = ?, c.updated_at = UTC_TIMESTAMP(6), c.version = c.version + 1
-WHERE c.id = ? AND c.version = ? AND c.deleted_at IS NULL
-  AND EXISTS (
-      SELECT 1 FROM projects AS p
-      INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
-      WHERE p.id = c.project_id AND e.id = ? AND p.deleted_at IS NULL
-  )`, update.Value, update.UpdatedBy, configID, update.Version, environmentID)
-	return err
-}
-
-func (r *ConfigRepositoryImpl) Delete(ctx context.Context, environmentID, configID, updatedBy int64) error {
-	if err := validateEnvironmentResource(environmentID, "config_id", configID); err != nil {
-		return err
-	}
-	_, err := base.Execute(ctx, r.engine, "config", `
-UPDATE configs AS c
-SET c.deleted_at = UTC_TIMESTAMP(6), c.updated_by = ?,
-    c.updated_at = UTC_TIMESTAMP(6), c.version = c.version + 1
-WHERE c.id = ? AND c.deleted_at IS NULL
-  AND EXISTS (
-      SELECT 1 FROM projects AS p
-      INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
-      WHERE p.id = c.project_id AND e.id = ? AND p.deleted_at IS NULL
-  )`, updatedBy, configID, environmentID)
-	return err
-}
-
-func (r *ConfigRepositoryImpl) DeleteTx(ctx context.Context, tx *xorm.Session, environmentID, configID, updatedBy int64) error {
-	if err := validateEnvironmentResource(environmentID, "config_id", configID); err != nil {
-		return err
-	}
-	_, err := base.ExecuteTx(ctx, tx, "config", `
-UPDATE configs AS c
-SET c.deleted_at = UTC_TIMESTAMP(6), c.updated_by = ?,
-    c.updated_at = UTC_TIMESTAMP(6), c.version = c.version + 1
-WHERE c.id = ? AND c.deleted_at IS NULL
-  AND EXISTS (
-      SELECT 1 FROM projects AS p
-      INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
-      WHERE p.id = c.project_id AND e.id = ? AND p.deleted_at IS NULL
-  )`, updatedBy, configID, environmentID)
-	return err
-}
-
-func (r *ConfigRepositoryImpl) LockByID(ctx context.Context, tx *xorm.Session, environmentID, configID int64) (*model.Config, error) {
-	if err := validateEnvironmentResource(environmentID, "config_id", configID); err != nil {
-		return nil, err
-	}
-	var config model.Config
-	err := base.LockOne(ctx, tx, "config", configByIDSQL+"\nFOR UPDATE", []any{environmentID, configID}, &config)
+	affected, err := r.Engine.Update[*model.Config]().Where(builder.IsNull(fields.DeletedAt())).ID(configID).
+		Where(builder.Eq{fields.Version(): update.Version}).
+		SetMap(map[string]any{
+			fields.Description(): update.Description,
+			fields.IsArray():     update.IsArray,
+			fields.TypeJSON():    update.TypeJSON,
+			fields.UpdatedBy():   update.UpdatedBy,
+			fields.UpdatedAt():   time.Now().UTC(),
+			fields.Version():     update.Version + 1,
+		}).Exec(ctx)
 	if err != nil {
-		return nil, err
+		return WrapDatabaseError(err)
 	}
-	return &config, nil
-}
-
-const configByIDSQL = `
-SELECT c.*
-FROM configs AS c
-INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
-INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
-WHERE e.id = ? AND c.id = ? AND c.deleted_at IS NULL
-LIMIT 1`
-
-func configListFilter(environmentID int64, filter ConfigFilter) (string, []any, error) {
-	where := "e.id = ? AND c.deleted_at IS NULL"
-	args := []any{environmentID}
-	if filter.ProjectID != nil {
-		if err := base.ValidateID("project_id", *filter.ProjectID); err != nil {
-			return "", nil, err
-		}
-		where += " AND p.id = ?"
-		args = append(args, *filter.ProjectID)
-	}
-	if filter.ProjectKey != nil {
-		if strings.TrimSpace(*filter.ProjectKey) == "" {
-			return "", nil, base.InvalidArgument("project key is empty")
-		}
-		where += " AND p.`key` = ?"
-		args = append(args, *filter.ProjectKey)
-	}
-	if filter.Key != nil {
-		where += " AND c.`key` = ?"
-		args = append(args, *filter.Key)
-	}
-	return where, args, nil
-}
-
-func validateVersionedResource(environmentID int64, resourceName string, resourceID, version int64) error {
-	if err := validateEnvironmentResource(environmentID, resourceName, resourceID); err != nil {
-		return err
-	}
-	if version < 0 {
-		return base.InvalidArgument("version must not be negative")
+	if affected == 0 {
+		return Unchanged("config")
 	}
 	return nil
+}
+
+// UpdateValue validates and updates the draft configuration value.
+//
+// Parameters: ctx carries cancellation and transaction state; environmentID selects the authorized environment; configID selects the configuration; update contains the guarded changes and expected version.
+// Returns: nil after the guarded value write; ErrNoRowsAffected if the row was deleted or its version changed.
+// Throws: none.
+func (r *ConfigRepositoryImpl) UpdateValue(ctx context.Context, environmentID, configID int64, update ConfigValueUpdate) error {
+	fields := new(model.Config).LormCols()
+	if _, err := r.FindByID(ctx, environmentID, configID); err != nil {
+		return err
+	}
+	affected, err := r.Engine.Update[*model.Config]().Where(builder.IsNull(fields.DeletedAt())).ID(configID).
+		Where(builder.Eq{fields.Version(): update.Version}).
+		SetMap(map[string]any{
+			fields.Value():     update.Value,
+			fields.UpdatedBy(): update.UpdatedBy,
+			fields.UpdatedAt(): time.Now().UTC(),
+			fields.Version():   update.Version + 1,
+		}).Exec(ctx)
+	if err != nil {
+		return WrapDatabaseError(err)
+	}
+	if affected == 0 {
+		return Unchanged("config")
+	}
+	return nil
+}
+
+// Delete removes the resource after checking ownership and dependent state.
+//
+// Parameters: ctx carries cancellation and transaction state; environmentID selects the authorized environment; configID selects the configuration; updatedBy identifies the actor recorded on the write.
+// Returns: nil after soft deletion; ErrNotFound for an inaccessible row or ErrNoRowsAffected for a rejected write.
+// Throws: none.
+func (r *ConfigRepositoryImpl) Delete(ctx context.Context, environmentID, configID, updatedBy int64) error {
+	fields := new(model.Config).LormCols()
+	if _, err := r.FindByID(ctx, environmentID, configID); err != nil {
+		return err
+	}
+	affected, err := r.Engine.Update[*model.Config]().Where(builder.IsNull(fields.DeletedAt())).ID(configID).
+		Set(fields.Version(), builder.Expr("version + 1")).
+		SetMap(map[string]any{
+			fields.DeletedAt(): time.Now().UTC(),
+			fields.UpdatedBy(): updatedBy,
+			fields.UpdatedAt(): time.Now().UTC(),
+		}).Exec(ctx)
+	if err != nil {
+		return WrapDatabaseError(err)
+	}
+	if affected == 0 {
+		return Unchanged("config")
+	}
+	return nil
+}
+
+// LockByID locks a scoped resource so concurrent writes share the same order.
+//
+// Parameters: ctx carries cancellation and transaction state; environmentID selects the authorized environment; configID selects the configuration.
+// Returns: the locked live row, or ErrNotFound for a missing or inaccessible resource; requires the caller’s transaction.
+// Throws: none.
+func (r *ConfigRepositoryImpl) LockByID(ctx context.Context, environmentID, configID int64) (*model.Config, error) {
+	config, has, err := configScope(r.Engine).
+		Where(builder.Eq{
+			"e.id": environmentID,
+			"c.id": configID,
+		}).
+		Suffix("FOR UPDATE").Get(ctx)
+	if err != nil {
+		return nil, WrapDatabaseError(err)
+	}
+	if !has {
+		return nil, Missing("config")
+	}
+	return config, nil
 }
 
 var _ ConfigRepository = (*ConfigRepositoryImpl)(nil)

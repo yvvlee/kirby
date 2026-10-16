@@ -31,7 +31,7 @@ environment. Requests for a nonexistent environment still fail.
 ## Custom roles
 
 System administrators can create custom roles and assign any environment-level
-permission. Built-in role records are seeded by `deploy/schema.sql`. Keep
+permission. Built-in role records are seeded by the service at startup. Keep
 system permissions separate from environment roles.
 
 ## Enforcement
@@ -42,6 +42,6 @@ to the environment. Replacing an environment, project, snapshot, import, key,
 or object ID in a request does not bypass the ownership check.
 
 Role changes increment shared generation state. Other requests resolve the new
-permissions without requiring the user to log in again. MySQL remains
-authoritative during a Redis cache outage, so a cache failure cannot grant
-permissions.
+permissions without requiring the user to log in again. The configured
+relational database remains authoritative during a Redis cache outage, so a
+cache failure cannot grant permissions.

@@ -1,4 +1,4 @@
-package api_key
+package apikey
 
 import (
 	"bytes"
@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/yvvlee/kirby/server/internal/config"
+	"github.com/yvvlee/kirby/server/internal/conf"
 )
 
 func TestGenerateStoresOnlyVerifiableDigestMaterial(t *testing.T) {
@@ -32,7 +32,7 @@ func TestGenerateStoresOnlyVerifiableDigestMaterial(t *testing.T) {
 const sha256DigestBytes = 32
 
 func TestPublicIDRejectsMalformedCredentials(t *testing.T) {
-	manager, err := New(config.NewSecret("01234567890123456789012345678901"))
+	manager, err := New(conf.NewSecret("01234567890123456789012345678901"))
 	require.NoError(t, err)
 	for _, value := range []string{"", " key ", "wrong.value", "kirby_pk_bad.bad", "kirby_pk_a.b.c"} {
 		_, err := manager.PublicID(value)
@@ -42,8 +42,6 @@ func TestPublicIDRejectsMalformedCredentials(t *testing.T) {
 
 func TestManagerFailsFastOnUnsafeDependencies(t *testing.T) {
 	_, err := newManager([]byte("short"), bytes.NewReader(nil))
-	assert.Error(t, err)
-	_, err = newManager(bytes.Repeat([]byte{'p'}, 32), nil)
 	assert.Error(t, err)
 
 	manager, err := newManager(bytes.Repeat([]byte{'p'}, 32), errorReader{})

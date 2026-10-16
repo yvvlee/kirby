@@ -2,16 +2,13 @@ package kirby
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
 
-	"github.com/yvvlee/kirby/server/internal/config"
-	"github.com/yvvlee/kirby/server/internal/observability"
+	"github.com/yvvlee/kirby/server/internal/conf"
 	serverruntime "github.com/yvvlee/kirby/server/internal/server"
-	appwire "github.com/yvvlee/kirby/server/internal/wire"
 )
 
 func newServeCommand() *cobra.Command {
@@ -31,8 +28,8 @@ func newServeCommand() *cobra.Command {
 	return command
 }
 
-func runServer(ctx context.Context, configPath, webRoot string) (err error) {
-	cfg, err := config.Load(configPath, os.LookupEnv)
+func runServer(ctx context.Context, configPath, webRoot string) error {
+	cfg, err := conf.Load(configPath, os.LookupEnv)
 	if err != nil {
 		return err
 	}
@@ -40,19 +37,11 @@ func runServer(ctx context.Context, configPath, webRoot string) (err error) {
 	if err != nil {
 		return fmt.Errorf("load web application: %w", err)
 	}
-	logger, err := observability.NewLogger(os.Stderr, cfg.Log)
-	if err != nil {
-		return fmt.Errorf("create logger: %w", err)
-	}
-	dependencies, err := appwire.Initialize(ctx, cfg, logger)
+	app, cleanup, err := wireServer(ctx, cfg, webHandler)
 	if err != nil {
 		return fmt.Errorf("initialize server: %w", err)
 	}
-	defer func() { err = errors.Join(err, dependencies.Close()) }()
-	app, err := serverruntime.NewApplication(ctx, dependencies, webHandler)
-	if err != nil {
-		return fmt.Errorf("assemble server: %w", err)
-	}
+	defer cleanup()
 	if err := app.Run(); err != nil {
 		return fmt.Errorf("run server: %w", err)
 	}

@@ -5,11 +5,13 @@ import (
 
 	errorsv1 "github.com/yvvlee/kirby/server/api/errors"
 	"github.com/yvvlee/kirby/server/internal/repository"
-	"github.com/yvvlee/kirby/server/internal/repository/base"
 )
 
-// APIError converts internal authorization and persistence classes without
-// exposing database details or foreign-environment resource existence.
+// APIError converts internal authorization failures without revealing database details or foreign resource existence.
+//
+// Parameters: err is the internal authorization or repository error.
+// Returns: nil for no error, otherwise the matching sanitized API error.
+// Throws: none; failures are returned as errors.
 func APIError(err error) error {
 	if err == nil {
 		return nil
@@ -17,11 +19,11 @@ func APIError(err error) error {
 	switch {
 	case errors.Is(err, ErrForbidden):
 		return errorsv1.ErrorForbidden("permission denied")
-	case errors.Is(err, ErrEnvironmentNotFound), errors.Is(err, base.ErrNotFound), errors.Is(err, repository.ErrUserNotFound):
+	case errors.Is(err, ErrEnvironmentNotFound), errors.Is(err, repository.ErrNotFound), errors.Is(err, repository.ErrUserNotFound):
 		return errorsv1.ErrorNotFound("resource not found")
-	case errors.Is(err, base.ErrInvalidArgument):
+	case errors.Is(err, repository.ErrInvalidArgument):
 		return errorsv1.ErrorBadRequest("invalid request")
-	case errors.Is(err, base.ErrNoRowsAffected),
+	case errors.Is(err, repository.ErrNoRowsAffected),
 		errors.Is(err, repository.ErrUserVersionConflict),
 		errors.Is(err, repository.ErrLastSystemAdmin),
 		errors.Is(err, repository.ErrRoleInUse),

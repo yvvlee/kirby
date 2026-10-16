@@ -13,6 +13,9 @@ var (
 )
 
 // String returns stable, human-readable build information.
+// Parameters: none.
+// Returns: the release version, source commit, and build time.
+// Throws: none.
 func String() string {
 	return fmt.Sprintf("%s (commit=%s, built=%s)", Version, Commit, BuildDate)
 }

@@ -1,6 +1,6 @@
-// Package api_key creates and verifies project credentials without retaining
+// Package apikey creates and verifies project credentials without retaining
 // plaintext secrets.
-package api_key
+package apikey
 
 import (
 	"crypto/hmac"
@@ -12,7 +12,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/yvvlee/kirby/server/internal/config"
+	"github.com/yvvlee/kirby/server/internal/conf"
 )
 
 const (
@@ -34,7 +34,12 @@ type Manager struct {
 	random io.Reader
 }
 
-func New(pepper config.Secret) (*Manager, error) {
+// New binds API-key hashing to the persisted installation pepper.
+//
+// Parameters: pepper is the installation-specific hashing secret.
+// Returns: a credential manager.
+// Throws: an error if the pepper is empty or too short.
+func New(pepper conf.Secret) (*Manager, error) {
 	return newManager([]byte(pepper.Value()), rand.Reader)
 }
 
@@ -42,12 +47,17 @@ func newManager(pepper []byte, random io.Reader) (*Manager, error) {
 	if len(pepper) < 32 {
 		return nil, fmt.Errorf("API key pepper must contain at least 32 bytes")
 	}
-	if random == nil {
-		return nil, fmt.Errorf("API key random source is nil")
-	}
-	return &Manager{pepper: append([]byte(nil), pepper...), random: random}, nil
+	return &Manager{
+		pepper: append([]byte(nil), pepper...),
+		random: random,
+	}, nil
 }
 
+// Generate creates one public ID and secret; only its hash and suffix may be stored.
+//
+// Parameters: none.
+// Returns: the full credential, public ID, hash, and display suffix.
+// Throws: an error when cryptographic randomness cannot be read.
 func (m *Manager) Generate() (*Generated, error) {
 	publicEntropy := make([]byte, publicEntropyBytes)
 	secretEntropy := make([]byte, secretEntropyBytes)
@@ -61,18 +71,28 @@ func (m *Manager) Generate() (*Generated, error) {
 	secret := base64.RawURLEncoding.EncodeToString(secretEntropy)
 	full := publicID + "." + secret
 	return &Generated{
-		PublicID: publicID, Full: full, Hash: m.hash(full),
+		PublicID:     publicID,
+		Full:         full,
+		Hash:         m.hash(full),
 		SecretSuffix: secret[len(secret)-secretSuffixLength:],
 	}, nil
 }
 
 // PublicID validates the full credential and returns only its queryable part.
+//
+// Parameters: full is the presented credential.
+// Returns: the public identifier.
+// Throws: an error for an invalid credential format.
 func (m *Manager) PublicID(full string) (string, error) {
 	publicID, _, err := parse(full)
 	return publicID, err
 }
 
 // Verify compares both the public id and HMAC in constant time.
+//
+// Parameters: full is the credential; expectedPublicID and expectedHash are persisted values.
+// Returns: whether the identity and secret both match.
+// Throws: none.
 func (m *Manager) Verify(full, expectedPublicID string, expectedHash []byte) bool {
 	publicID, _, err := parse(full)
 	if err != nil {

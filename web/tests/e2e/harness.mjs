@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, readFileSync, writeFileSync, chmodSync, rmSync } from 'node:fs'
+import { existsSync, writeFileSync, chmodSync, rmSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 
@@ -8,7 +8,8 @@ const repositoryRoot = resolve(webRoot, '..')
 const serverRoot = join(repositoryRoot, 'server')
 const publicRoot = join(webRoot, 'dist')
 const configPath = join(import.meta.dirname, 'fixtures/config.e2e.yaml')
-const containerName = 'kirby-fe08-mysql'
+const setupMode = process.env.KIRBY_E2E_SETUP === '1'
+const containerName = setupMode ? 'kirby-setup-mysql' : 'kirby-fe08-mysql'
 const mysqlCredential = 'kirby-e2e-password'
 const binaryPath = join(tmpdir(), `kirby-e2e-${process.pid}`)
 const passwordPath = join(tmpdir(), `kirby-e2e-password-${process.pid}`)
@@ -76,19 +77,15 @@ await waitFor(() => spawnSync('docker', [
   '-uroot', `-p${mysqlCredential}`, '-e', 'SELECT 1',
 ], { stdio: 'ignore' }).status === 0, 'MySQL')
 
-const schema = readFileSync(join(repositoryRoot, 'deploy/schema.sql'))
-const schemaResult = spawnSync('docker', [
-  'exec', '-i', containerName, 'mysql', '-uroot', `-p${mysqlCredential}`, 'kirby',
-], { input: schema, encoding: 'utf8' })
-if (schemaResult.status !== 0) throw new Error(schemaResult.stderr)
-
 run('go', ['build', '-o', binaryPath, '.'], { cwd: serverRoot })
-writeFileSync(passwordPath, 'kirby-e2e-admin-password\n', { mode: 0o600 })
-chmodSync(passwordPath, 0o600)
-run(binaryPath, [
-  'create-admin', '--config', configPath, '--username', 'admin',
-  '--display-name', 'E2E Admin', '--password-file', passwordPath,
-], { cwd: serverRoot })
+if (!setupMode) {
+  writeFileSync(passwordPath, 'kirby-e2e-admin-password\n', { mode: 0o600 })
+  chmodSync(passwordPath, 0o600)
+  run(binaryPath, [
+    'create-admin', '--config', configPath, '--username', 'admin',
+    '--display-name', 'E2E Admin', '--password-file', passwordPath,
+  ], { cwd: serverRoot })
+}
 
 const backend = spawn(binaryPath, ['serve', '--config', configPath, '--web-root', publicRoot], {
   cwd: serverRoot,

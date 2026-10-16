@@ -18,16 +18,25 @@ type Probe struct {
 }
 
 // NewProbe creates a process probe in the not-ready state.
+// Parameters: none.
+// Returns: a probe that starts refusing traffic until server startup succeeds.
+// Throws: none.
 func NewProbe() *Probe {
 	return &Probe{}
 }
 
 // SetReady changes whether the process is ready to receive traffic.
+// Parameters: ready is the lifecycle state shared with readiness requests.
+// Returns: none.
+// Throws: none.
 func (p *Probe) SetReady(ready bool) {
 	p.ready.Store(ready)
 }
 
 // Register installs liveness and readiness endpoints on the HTTP server.
+// Parameters: server owns the routes; probe supplies the current lifecycle state.
+// Returns: none.
+// Throws: none.
 func Register(server *kratoshttp.Server, probe *Probe) {
 	server.Handle(livenessPath, http.HandlerFunc(liveness))
 	server.Handle(readinessPath, http.HandlerFunc(probe.readiness))

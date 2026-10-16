@@ -1,0 +1,91 @@
+version: "2"
+run:
+  go: "1.27"
+  modules-download-mode: readonly
+linters:
+  enable:
+    - funlen
+    - gocognit
+    - gocyclo
+    - gosec
+    - nestif
+    - revive
+  disable:
+    - dupl
+    - godox
+  settings:
+    funlen:
+      lines: 200
+      statements: 60
+      ignore-comments: true
+    gocognit:
+      min-complexity: 60
+    gocyclo:
+      min-complexity: 30
+    gosec:
+      excludes:
+        - G402
+        - G404
+        - G407
+        - G115
+    govet:
+      disable:
+        - printf
+    nestif:
+      min-complexity: 5
+    revive:
+      rules:
+        - name: unused-parameter
+          disabled: true
+        - name: dot-imports
+          severity: warning
+          disabled: false
+          exclude:
+            - ""
+    staticcheck:
+      checks:
+        - all
+  exclusions:
+    rules:
+      # These declarations implement the published protobuf RPC interface.
+      - path: internal/service/api_key\.go
+        linters:
+          - staticcheck
+        text: '^ST1003: method (ListProjectApiKeys|CreateProjectApiKey|RotateProjectApiKey|RevokeProjectApiKey) should be '
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    paths:
+      - .+_test.go
+      - .+_gen.go
+      - mock_
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    gofmt:
+      simplify: true
+      rewrite-rules:
+        - pattern: interface{}
+          replacement: any
+        - pattern: a[b:len(a)]
+          replacement: a[b:]
+    goimports:
+      local-prefixes:
+        - github.com/yvvlee/kirby/server
+  exclusions:
+    generated: lax
+    paths:
+      - .+_test.go
+      - .+_gen.go
+      - mock_
+      - third_party$
+      - builtin$
+      - examples$

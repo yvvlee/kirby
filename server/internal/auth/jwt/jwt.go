@@ -11,7 +11,7 @@ import (
 	jwtlib "github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 
-	"github.com/yvvlee/kirby/server/internal/config"
+	"github.com/yvvlee/kirby/server/internal/conf"
 )
 
 const Audience = "kirby-admin"
@@ -28,6 +28,10 @@ type Claims struct {
 }
 
 // UserID returns the positive database user ID stored in subject.
+//
+// Parameters: none.
+// Returns: the authenticated user ID.
+// Throws: an error when the subject is not a positive integer.
 func (c *Claims) UserID() (int64, error) {
 	if c == nil {
 		return 0, ErrInvalidToken
@@ -49,29 +53,43 @@ type Manager struct {
 	now       func() time.Time
 }
 
-// New creates a manager from validated application configuration.
-func New(cfg config.JWTConfig) (*Manager, error) {
+// Config combines token policy with the signing keys loaded from shared storage.
+type Config struct {
+	Issuer    string
+	ActiveKID string
+	AccessTTL time.Duration
+	Keys      map[string]conf.Secret
+}
+
+// New creates a manager whose signing keys remain stable across server restarts.
+//
+// Parameters:
+//   - cfg: Token policy and the signing key ring loaded during startup.
+//
+// Returns:
+//   - The manager and any configuration error.
+//
+// Throws:
+//   - None. Invalid configuration is returned as an error.
+func New(cfg Config) (*Manager, error) {
 	return newManager(cfg, Audience, time.Now)
 }
 
-func newManager(cfg config.JWTConfig, audience string, now func() time.Time) (*Manager, error) {
+func newManager(cfg Config, audience string, now func() time.Time) (*Manager, error) {
 	if strings.TrimSpace(cfg.Issuer) == "" {
 		return nil, fmt.Errorf("JWT issuer is required")
 	}
 	if strings.TrimSpace(audience) == "" {
 		return nil, fmt.Errorf("JWT audience is required")
 	}
-	if cfg.AccessTTL.Duration <= 0 {
+	if cfg.AccessTTL <= 0 {
 		return nil, fmt.Errorf("JWT access TTL must be greater than zero")
 	}
-	if cfg.AccessTTL.Duration != AccessTTL {
+	if cfg.AccessTTL != AccessTTL {
 		return nil, fmt.Errorf("JWT access TTL must be %s", AccessTTL)
 	}
 	if strings.TrimSpace(cfg.ActiveKID) == "" {
 		return nil, fmt.Errorf("active JWT key id is required")
-	}
-	if now == nil {
-		return nil, fmt.Errorf("JWT clock is nil")
 	}
 	keys := make(map[string][]byte, len(cfg.Keys))
 	for kid, secret := range cfg.Keys {
@@ -87,25 +105,27 @@ func newManager(cfg config.JWTConfig, audience string, now func() time.Time) (*M
 		issuer:    cfg.Issuer,
 		audience:  audience,
 		activeKID: cfg.ActiveKID,
-		accessTTL: cfg.AccessTTL.Duration,
+		accessTTL: cfg.AccessTTL,
 		keys:      keys,
 		now:       now,
 	}, nil
 }
 
 // AccessTTL returns the configured access-token lifetime.
+//
+// Parameters: none.
+// Returns: the access-token lifetime.
+// Throws: none.
 func (m *Manager) AccessTTL() time.Duration {
-	if m == nil {
-		return 0
-	}
 	return m.accessTTL
 }
 
 // Issue signs one access token for a user and refresh session.
+//
+// Parameters: userID identifies the user; sessionID identifies the refresh session.
+// Returns: the signed JWT and its expiry.
+// Throws: an error for invalid identifiers or signing failure; UUID generation panics if randomness fails.
 func (m *Manager) Issue(userID int64, sessionID string) (string, time.Time, error) {
-	if m == nil {
-		return "", time.Time{}, fmt.Errorf("JWT manager is nil")
-	}
 	if userID <= 0 || strings.TrimSpace(sessionID) == "" {
 		return "", time.Time{}, fmt.Errorf("JWT user and session are required")
 	}
@@ -134,8 +154,12 @@ func (m *Manager) Issue(userID int64, sessionID string) (string, time.Time, erro
 
 // Verify validates the algorithm, key id, signature, issuer, audience, time
 // bounds, and all required identity claims.
+//
+// Parameters: encoded is the bearer JWT.
+// Returns: validated claims.
+// Throws: an error for malformed, expired, or untrusted tokens.
 func (m *Manager) Verify(encoded string) (*Claims, error) {
-	if m == nil || strings.TrimSpace(encoded) == "" {
+	if strings.TrimSpace(encoded) == "" {
 		return nil, ErrInvalidToken
 	}
 	claims := new(Claims)

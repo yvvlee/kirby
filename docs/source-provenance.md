@@ -40,7 +40,7 @@ The extraction excludes the dashboard shell, gateway request wrapper, PHP sessio
 | `old/internal/service/` | `server/internal/service/` |
 | `old/internal/server/` | `server/internal/server/` |
 | `old/internal/model/` | `server/internal/model/` |
-| `old/pkg/set/hashset.go` | `server/internal/set/hashset.go` |
+| `old/pkg/set/hashset.go` | `server/internal/util/set/hashset.go` |
 
 The extraction excludes the source dependency manifests, generated Wire files, Nacos configuration, the Yahaha client, reward logic, approval logic, header-based pseudo-authentication, automatic table synchronization jobs, Dockerfile, CI configuration, and README.
 

@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/yvvlee/kirby/server/internal/storage/cache"
+	"github.com/yvvlee/kirby/server/internal/infra/cache"
 )
 
 func TestFixedWindowRateLimitSharesCacheCounter(t *testing.T) {

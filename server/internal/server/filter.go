@@ -2,11 +2,13 @@ package server
 
 import (
 	"context"
-	"log/slog"
 	"net/http"
 	"runtime/debug"
 	"strings"
 	"time"
+
+	authsession "github.com/yvvlee/kirby/server/internal/auth/session"
+	"github.com/yvvlee/kirby/server/internal/infra"
 
 	kratoshttp "github.com/go-kratos/kratos/v2/transport/http"
 	"github.com/google/uuid"
@@ -18,6 +20,10 @@ type apiRequestContextKey struct{}
 
 // APIPrefix preserves the browser-facing /api namespace while generated
 // handlers continue to use their protobuf-defined paths.
+//
+// Parameters: none.
+// Returns: the HTTP route-rewriting filter.
+// Throws: returns HTTP 404 for reserved management paths outside the public API prefix.
 func APIPrefix() kratoshttp.FilterFunc {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
@@ -43,7 +49,7 @@ func APIPrefix() kratoshttp.FilterFunc {
 }
 
 func reservedManagementPath(requestPath string) bool {
-	for _, prefix := range []string{"/admin", "/auth"} {
+	for _, prefix := range []string{"/admin", "/auth", "/setup/status", "/setup/admin"} {
 		if requestPath == prefix || strings.HasPrefix(requestPath, prefix+"/") {
 			return true
 		}
@@ -60,7 +66,12 @@ func isAPIRequest(request *http.Request) bool {
 	return value
 }
 
-func HTTPBoundary(logger *slog.Logger) kratoshttp.FilterFunc {
+// HTTPBoundary records request outcomes and guards the HTTP transport boundary.
+//
+// Parameters: logger is the process logger.
+// Returns: the HTTP boundary filter.
+// Throws: writes an internal-server-error response when a handler panics.
+func HTTPBoundary(logger *infra.Logger) kratoshttp.FilterFunc {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 			requestID := request.Header.Get(requestIDHeader)
@@ -73,75 +84,43 @@ func HTTPBoundary(logger *slog.Logger) kratoshttp.FilterFunc {
 			writer.Header().Set("Content-Security-Policy", "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; form-action 'self'")
 			writer.Header().Set("Referrer-Policy", "no-referrer")
 			writer.Header().Set("X-Frame-Options", "DENY")
-			statusWriter := &responseStatusWriter{ResponseWriter: writer, status: http.StatusOK}
+			statusWriter := &responseStatusWriter{
+				ResponseWriter: writer,
+				status:         http.StatusOK,
+			}
 			started := time.Now()
 			defer func() {
 				if recovered := recover(); recovered != nil {
-					logger.Error("HTTP handler panic", "request_id", requestID, "method", request.Method, "path", request.URL.Path, "stack", string(debug.Stack()))
+					logger.Errorw("msg", "HTTP handler panic", "request_id", requestID, "method", request.Method, "path", request.URL.Path, "stack", string(debug.Stack()))
 					if !statusWriter.wroteHeader {
 						http.Error(statusWriter, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 					}
 				}
-				logger.Info("HTTP request", "request_id", requestID, "method", request.Method, "path", request.URL.Path, "status", statusWriter.status, "duration", time.Since(started))
+				logger.Infow("msg", "HTTP request", "request_id", requestID, "method", request.Method, "path", request.URL.Path, "status", statusWriter.status, "duration", time.Since(started))
 			}()
 			next.ServeHTTP(statusWriter, request)
 		})
 	}
 }
 
-func CORS(allowedOrigins []string) kratoshttp.FilterFunc {
-	allowed := make(map[string]struct{}, len(allowedOrigins))
-	for _, origin := range allowedOrigins {
-		allowed[origin] = struct{}{}
-	}
+// SameOrigin rejects browser requests from a different public origin.
+// Parameters: origins resolves the public request address through trusted proxies.
+// Returns: an HTTP filter that keeps non-browser clients usable without CORS.
+// Throws: no errors; invalid browser origins receive HTTP 403.
+func SameOrigin(origins *authsession.OriginValidator) kratoshttp.FilterFunc {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-			origin := request.Header.Get("Origin")
-			if origin == "" {
+			if len(request.Header.Values("Origin")) == 0 {
 				next.ServeHTTP(writer, request)
 				return
 			}
-			if _, ok := allowed[origin]; !ok {
-				http.Error(writer, "origin is not allowed", http.StatusForbidden)
-				return
-			}
-			writer.Header().Add("Vary", "Origin")
-			writer.Header().Set("Access-Control-Allow-Origin", origin)
-			writer.Header().Set("Access-Control-Allow-Credentials", "true")
-			if request.Method == http.MethodOptions {
-				method := request.Header.Get("Access-Control-Request-Method")
-				if !allowedMethod(method) || !allowedHeaders(request.Header.Get("Access-Control-Request-Headers")) {
-					http.Error(writer, "CORS preflight is not allowed", http.StatusForbidden)
-					return
-				}
-				writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-				writer.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Request-ID, X-Kirby-API-Key")
-				writer.WriteHeader(http.StatusNoContent)
+			if err := origins.Validate(request); err != nil {
+				http.Error(writer, "request origin is not allowed", http.StatusForbidden)
 				return
 			}
 			next.ServeHTTP(writer, request)
 		})
 	}
-}
-
-func allowedMethod(method string) bool {
-	switch method {
-	case http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete:
-		return true
-	default:
-		return false
-	}
-}
-
-func allowedHeaders(value string) bool {
-	for _, header := range strings.Split(value, ",") {
-		switch strings.ToLower(strings.TrimSpace(header)) {
-		case "", "authorization", "content-type", "x-request-id", "x-kirby-api-key":
-		default:
-			return false
-		}
-	}
-	return true
 }
 
 func validRequestID(value string) bool {
@@ -167,6 +146,11 @@ type responseStatusWriter struct {
 	wroteHeader bool
 }
 
+// WriteHeader records the first response status for request logging.
+//
+// Parameters: status is the HTTP status code.
+// Returns: none.
+// Throws: none.
 func (w *responseStatusWriter) WriteHeader(status int) {
 	if w.wroteHeader {
 		return
@@ -175,6 +159,12 @@ func (w *responseStatusWriter) WriteHeader(status int) {
 	w.wroteHeader = true
 	w.ResponseWriter.WriteHeader(status)
 }
+
+// Write records an implicit success status before forwarding response bytes.
+//
+// Parameters: body is the response payload.
+// Returns: the byte count written.
+// Throws: the underlying response writer error.
 func (w *responseStatusWriter) Write(body []byte) (int, error) {
 	if !w.wroteHeader {
 		w.WriteHeader(http.StatusOK)

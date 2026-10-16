@@ -2,154 +2,147 @@ package repository
 
 import (
 	"context"
-	"sort"
 
-	"xorm.io/xorm"
+	"github.com/yvvlee/lorm"
+	"github.com/yvvlee/lorm/builder"
 
+	"github.com/yvvlee/kirby/server/internal/infra"
 	"github.com/yvvlee/kirby/server/internal/model"
-	"github.com/yvvlee/kirby/server/internal/repository/base"
 )
 
 type PermissionIdentity struct {
-	SystemAdmin        bool  `xorm:"is_system_admin"`
-	EnvironmentID      int64 `xorm:"environment_id"`
-	EnvironmentVersion int64 `xorm:"environment_version"`
-	EnvironmentEnabled bool  `xorm:"environment_enabled"`
-	EnvironmentMember  bool  `xorm:"environment_member"`
+	SystemAdmin        bool
+	EnvironmentID      int64
+	EnvironmentVersion int64
+	EnvironmentEnabled bool
+	EnvironmentMember  bool
 }
 
 type PermissionAssignment struct {
-	UserID        int64 `xorm:"user_id"`
-	EnvironmentID int64 `xorm:"environment_id"`
+	UserID        int64
+	EnvironmentID int64
 }
 
 type PermissionRepository interface {
-	Identity(context.Context, int64, int64) (PermissionIdentity, error)
-	SystemAdmin(context.Context, int64) (bool, error)
-	KeysForUserEnvironment(context.Context, int64, int64) ([]string, error)
-	List(context.Context) ([]model.Permission, error)
-	AssignmentsForRole(context.Context, int64) ([]PermissionAssignment, error)
+	Identity(ctx context.Context, userID, environmentID int64) (PermissionIdentity, error)
+	SystemAdmin(ctx context.Context, userID int64) (bool, error)
+	KeysForUserEnvironment(ctx context.Context, userID, environmentID int64) ([]string, error)
+	List(ctx context.Context) ([]model.Permission, error)
 }
 
-type PermissionRepositoryImpl struct{ engine *xorm.Engine }
-
-func NewPermissionRepository(engine *xorm.Engine) *PermissionRepositoryImpl {
-	return &PermissionRepositoryImpl{engine: engine}
+type PermissionRepositoryImpl struct {
+	*lorm.Repository[*model.Permission]
 }
 
+// NewPermissionRepository binds the PermissionRepository to the application database.
+//
+// Parameters: storage supplies the shared CoreDB engine and its transaction context.
+// Returns: the configured PermissionRepository.
+// Throws: none.
+func NewPermissionRepository(storage *infra.Storage) *PermissionRepositoryImpl {
+	return &PermissionRepositoryImpl{
+		Repository: storage.CoreDB.Repository[*model.Permission](),
+	}
+}
+
+// Identity loads current account status, environment generation, and membership for authorization.
+//
+// Parameters: ctx controls the reads; userID selects an enabled account; environmentID selects the requested environment.
+// Returns: the identity with EnvironmentID zero when the environment is absent, ErrNotFound for an unavailable account, or a database error.
+// Throws: none; failures are returned as errors.
 func (r *PermissionRepositoryImpl) Identity(ctx context.Context, userID, environmentID int64) (PermissionIdentity, error) {
-	if err := base.ValidateID("user_id", userID); err != nil {
+	user, err := r.enabledUser(ctx, userID)
+	if err != nil {
 		return PermissionIdentity{}, err
 	}
-	if err := base.ValidateID("environment_id", environmentID); err != nil {
-		return PermissionIdentity{}, err
+	identity := PermissionIdentity{SystemAdmin: user.IsSystemAdmin}
+	if environmentID <= 0 {
+		return identity, nil
 	}
-	var identity PermissionIdentity
-	err := base.FindOne(ctx, r.engine, "permission identity", `
-SELECT u.is_system_admin,
-       COALESCE(e.id, 0) AS environment_id,
-       COALESCE(e.version, 0) AS environment_version,
-       COALESCE(e.enabled, FALSE) AS environment_enabled,
-       EXISTS(
-           SELECT 1
-           FROM user_environment_roles AS uer
-           WHERE uer.user_id = u.id AND uer.environment_id = e.id
-       ) AS environment_member
-FROM users AS u
-LEFT JOIN environments AS e
-  ON e.id = ? AND e.deleted_at IS NULL
-WHERE u.id = ? AND u.enabled = TRUE AND u.deleted_at IS NULL
-LIMIT 1`, []any{environmentID, userID}, &identity)
-	return identity, err
+	environment, found, err := r.Engine.Query[*model.Environment]().ID(environmentID).
+		Where(builder.IsNull(new(model.Environment).LormCols().DeletedAt())).Get(ctx)
+	if err != nil {
+		return PermissionIdentity{}, WrapDatabaseError(err)
+	}
+	if found {
+		identity.EnvironmentID = environment.ID
+		identity.EnvironmentVersion = environment.Version
+		identity.EnvironmentEnabled = environment.Enabled
+	}
+	fields := new(model.UserEnvironmentRole).LormCols()
+	identity.EnvironmentMember, err = r.Engine.Query[*model.UserEnvironmentRole]().
+		Where(builder.Eq{
+			fields.UserID():        userID,
+			fields.EnvironmentID(): environmentID,
+		}).Exist(ctx)
+	if err != nil {
+		return PermissionIdentity{}, WrapDatabaseError(err)
+	}
+	return identity, nil
 }
 
+// SystemAdmin checks persisted enabled-account status instead of trusting token claims.
+//
+// Parameters: ctx controls the read; userID identifies the account.
+// Returns: whether the live enabled account is an administrator, ErrNotFound, or a database error.
+// Throws: none; failures are returned as errors.
 func (r *PermissionRepositoryImpl) SystemAdmin(ctx context.Context, userID int64) (bool, error) {
-	if err := base.ValidateID("user_id", userID); err != nil {
+	user, err := r.enabledUser(ctx, userID)
+	if err != nil {
 		return false, err
 	}
-	var row struct {
-		SystemAdmin bool `xorm:"is_system_admin"`
-	}
-	err := base.FindOne(ctx, r.engine, "system administrator", `
-SELECT u.is_system_admin
-FROM users AS u
-WHERE u.id = ? AND u.enabled = TRUE AND u.deleted_at IS NULL
-LIMIT 1`, []any{userID}, &row)
-	return row.SystemAdmin, err
+	return user.IsSystemAdmin, nil
 }
 
-func (r *PermissionRepositoryImpl) KeysForUserEnvironment(ctx context.Context, userID, environmentID int64) ([]string, error) {
-	if err := base.ValidateID("user_id", userID); err != nil {
-		return nil, err
-	}
-	if err := base.ValidateID("environment_id", environmentID); err != nil {
-		return nil, err
-	}
-	rows := make([]struct {
-		Key string `xorm:"key"`
-	}, 0)
-	err := base.FindAll(ctx, r.engine, "environment permissions", `
-SELECT DISTINCT p.`+"`key`"+`
-FROM user_environment_roles AS uer
-INNER JOIN roles AS r ON r.id = uer.role_id AND r.deleted_at IS NULL
-INNER JOIN role_permissions AS rp ON rp.role_id = r.id
-INNER JOIN permissions AS p ON p.id = rp.permission_id
-WHERE uer.user_id = ? AND uer.environment_id = ?
-ORDER BY p.`+"`key`"+` ASC`, []any{userID, environmentID}, &rows)
+func (r *PermissionRepositoryImpl) enabledUser(ctx context.Context, userID int64) (*model.User, error) {
+	fields := new(model.User).LormCols()
+	user, found, err := r.Engine.Query[*model.User]().ID(userID).
+		Where(builder.And{
+			builder.Eq{
+				fields.Enabled(): true,
+			},
+			builder.IsNull(fields.DeletedAt()),
+		}).Get(ctx)
 	if err != nil {
-		return nil, err
+		return nil, WrapDatabaseError(err)
 	}
-	keys := make([]string, 0, len(rows))
-	for _, row := range rows {
-		keys = append(keys, row.Key)
+	if !found {
+		return nil, Missing("permission identity")
+	}
+	return user, nil
+}
+
+// KeysForUserEnvironment excludes deleted roles and duplicate grants from environment authorization.
+//
+// Parameters: ctx controls the read; userID and environmentID select the role assignments.
+// Returns: sorted unique permission keys, or a database error.
+// Throws: none; failures are returned as errors.
+func (r *PermissionRepositoryImpl) KeysForUserEnvironment(ctx context.Context, userID, environmentID int64) ([]string, error) {
+	keys, err := r.Engine.Query[*model.Permission]().From("permissions p").Select("p.key").
+		InnerJoin("role_permissions rp ON rp.permission_id = p.id").
+		InnerJoin("user_environment_roles uer ON uer.role_id = rp.role_id").
+		InnerJoin("roles r ON r.id = rp.role_id AND r.deleted_at IS NULL").
+		Where(builder.Eq{
+			"uer.user_id":        userID,
+			"uer.environment_id": environmentID,
+		}).Distinct().Asc("p.key").FindCols[string](ctx)
+	if err != nil {
+		return nil, WrapDatabaseError(err)
 	}
 	return keys, nil
 }
 
+// List returns the complete permission catalog in stable ID order.
+//
+// Parameters: ctx controls the database read.
+// Returns: catalog entries ordered by ID, or a database error.
+// Throws: none; failures are returned as errors.
 func (r *PermissionRepositoryImpl) List(ctx context.Context) ([]model.Permission, error) {
-	permissions := make([]model.Permission, 0)
-	err := base.FindAll(ctx, r.engine, "permissions", `
-SELECT p.*
-FROM permissions AS p
-ORDER BY p.id ASC`, nil, &permissions)
-	return permissions, err
-}
-
-func (r *PermissionRepositoryImpl) AssignmentsForRole(ctx context.Context, roleID int64) ([]PermissionAssignment, error) {
-	if err := base.ValidateID("role_id", roleID); err != nil {
-		return nil, err
+	permissions, err := r.Engine.Query[*model.Permission]().Asc(new(model.Permission).LormCols().ID()).Find(ctx)
+	if err != nil {
+		return nil, WrapDatabaseError(err)
 	}
-	assignments := make([]PermissionAssignment, 0)
-	err := base.FindAll(ctx, r.engine, "role assignments", `
-SELECT DISTINCT uer.user_id, uer.environment_id
-FROM user_environment_roles AS uer
-WHERE uer.role_id = ?
-ORDER BY uer.user_id ASC, uer.environment_id ASC`, []any{roleID}, &assignments)
-	return assignments, err
-}
-
-func bumpEnvironmentPermissionGenerations(ctx context.Context, tx *xorm.Session, environmentIDs []int64, actorID int64) error {
-	unique := make(map[int64]struct{}, len(environmentIDs))
-	for _, environmentID := range environmentIDs {
-		if err := base.ValidateID("environment_id", environmentID); err != nil {
-			return err
-		}
-		unique[environmentID] = struct{}{}
-	}
-	ordered := make([]int64, 0, len(unique))
-	for environmentID := range unique {
-		ordered = append(ordered, environmentID)
-	}
-	sort.Slice(ordered, func(i, j int) bool { return ordered[i] < ordered[j] })
-	for _, environmentID := range ordered {
-		if _, err := base.ExecuteTx(ctx, tx, "environment permission generation", `
-UPDATE environments
-SET updated_by = ?, updated_at = UTC_TIMESTAMP(6), version = version + 1
-WHERE id = ? AND deleted_at IS NULL`, actorID, environmentID); err != nil {
-			return err
-		}
-	}
-	return nil
+	return modelValues(permissions), nil
 }
 
 var _ PermissionRepository = (*PermissionRepositoryImpl)(nil)

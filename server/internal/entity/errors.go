@@ -3,10 +3,6 @@ package entity
 import (
 	"errors"
 	"fmt"
-
-	errorsv1 "github.com/yvvlee/kirby/server/api/errors"
-	"github.com/yvvlee/kirby/server/internal/permission"
-	"github.com/yvvlee/kirby/server/internal/repository"
 )
 
 var (
@@ -14,21 +10,20 @@ var (
 	ErrConflict = errors.New("core domain state conflicts")
 )
 
+// Invalid marks a domain validation failure for transport-layer conversion.
+//
+// Parameters: format and arguments describe the invalid value without transport details.
+// Returns: an error wrapping ErrInvalid.
+// Throws: none.
 func Invalid(format string, arguments ...any) error {
 	return fmt.Errorf("%w: %s", ErrInvalid, fmt.Sprintf(format, arguments...))
 }
 
+// Conflict marks a domain constraint failure for transport-layer conversion.
+//
+// Parameters: format and arguments describe the violated constraint.
+// Returns: an error wrapping ErrConflict.
+// Throws: none.
 func Conflict(format string, arguments ...any) error {
 	return fmt.Errorf("%w: %s", ErrConflict, fmt.Sprintf(format, arguments...))
-}
-
-func APIError(err error) error {
-	switch {
-	case errors.Is(err, ErrInvalid):
-		return errorsv1.ErrorBadRequest("invalid configuration data")
-	case errors.Is(err, ErrConflict), errors.Is(err, repository.ErrKeyConflict):
-		return errorsv1.ErrorConflict("operation conflicts with current configuration")
-	default:
-		return permission.APIError(err)
-	}
 }

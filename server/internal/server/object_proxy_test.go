@@ -2,16 +2,17 @@ package server
 
 import (
 	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/yvvlee/kirby/server/internal/infra"
 
 	kratoshttp "github.com/go-kratos/kratos/v2/transport/http"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/yvvlee/kirby/server/internal/config"
+	"github.com/yvvlee/kirby/server/internal/conf"
 )
 
 func TestObjectStorageProxyPreservesPublicHostAndPath(t *testing.T) {
@@ -23,10 +24,12 @@ func TestObjectStorageProxyPreservesPublicHostAndPath(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	proxy, prefix, err := newObjectStorageProxy(config.S3Config{
+	logger, err := infra.NewLoggerWithWriter(io.Discard, conf.LogConfig{Level: "info"})
+	require.NoError(t, err)
+	proxy, prefix, err := newObjectStorageProxy(conf.S3Config{
 		Endpoint: upstream.Listener.Addr().String(),
 		Bucket:   "kirby",
-	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	}, logger)
 	require.NoError(t, err)
 	assert.Equal(t, "/kirby", prefix)
 

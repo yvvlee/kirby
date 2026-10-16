@@ -13,7 +13,7 @@ import (
 
 	"golang.org/x/crypto/argon2"
 
-	"github.com/yvvlee/kirby/server/internal/safeint"
+	"github.com/yvvlee/kirby/server/internal/util/safeint"
 )
 
 const (
@@ -52,26 +52,41 @@ type Hasher struct {
 }
 
 // New returns an Argon2id hasher after validating its resource limits.
+//
+// Parameters: params contains the Argon2id cost settings.
+// Returns: the configured hasher.
+// Throws: an error for unsupported or unsafe cost settings.
 func New(params Params) (*Hasher, error) {
 	return newHasher(params, rand.Reader)
 }
 
 // NewDefault returns the production password hasher.
-func NewDefault() (*Hasher, error) {
-	return New(defaultParams)
+//
+// Parameters: none.
+// Returns: a hasher configured with the current policy.
+// Throws: none.
+func NewDefault() *Hasher {
+	return &Hasher{
+		params: defaultParams,
+		random: rand.Reader,
+	}
 }
 
 // CurrentParams returns a copy of the fixed production password policy.
+//
+// Parameters: none.
+// Returns: the current Argon2id settings.
+// Throws: none.
 func CurrentParams() Params { return defaultParams }
 
 func newHasher(params Params, random io.Reader) (*Hasher, error) {
 	if err := validateParams(params); err != nil {
 		return nil, err
 	}
-	if random == nil {
-		return nil, fmt.Errorf("password salt source is nil")
-	}
-	return &Hasher{params: params, random: random}, nil
+	return &Hasher{
+		params: params,
+		random: random,
+	}, nil
 }
 
 func validateParams(params Params) error {
@@ -94,10 +109,11 @@ func validateParams(params Params) error {
 }
 
 // Hash creates a self-describing PHC-format Argon2id hash.
+//
+// Parameters: plain is the password to protect.
+// Returns: the encoded Argon2id hash including its salt and cost parameters.
+// Throws: an error when the random source cannot provide a password salt.
 func (h *Hasher) Hash(plain string) (string, error) {
-	if h == nil {
-		return "", fmt.Errorf("password hasher is nil")
-	}
 	salt := make([]byte, h.params.SaltLength)
 	if _, err := io.ReadFull(h.random, salt); err != nil {
 		return "", fmt.Errorf("generate password salt: %w", err)
@@ -116,10 +132,11 @@ func (h *Hasher) Hash(plain string) (string, error) {
 
 // Verify compares a password with a stored hash. needsRehash reports that a
 // valid password uses an older work policy and should be upgraded on login.
+//
+// Parameters: encoded is the stored hash; plain is the supplied password.
+// Returns: whether it matches and whether a new hash is needed.
+// Throws: an error for malformed or unsafe encoded hash parameters.
 func (h *Hasher) Verify(encoded, plain string) (match bool, needsRehash bool, err error) {
-	if h == nil {
-		return false, false, fmt.Errorf("password hasher is nil")
-	}
 	params, salt, expected, err := parse(encoded)
 	if err != nil {
 		return false, false, err

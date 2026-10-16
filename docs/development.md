@@ -2,13 +2,14 @@
 
 ## Toolchain
 
-CI uses Go 1.25.13, Node.js 24.19.0, npm's committed lock file, and protoc
+CI uses Go 1.27.2, Node.js 24.19.0, npm's committed lock file, and protoc
 35.1. Generator versions are fixed in `server/Makefile`.
 
 Install dependencies from the repository root:
 
 ```sh
 make dependencies
+make -C server lint-tools
 ```
 
 Run the backend and frontend locally as described in the root README. Local
@@ -36,6 +37,57 @@ scripts/test-local-dev.sh
 The script expects running containers named `mysql` and `redis`. Override them
 with `KIRBY_TEST_MYSQL_CONTAINER` and `KIRBY_TEST_REDIS_CONTAINER`.
 
+The CI browser regression, `scripts/ci/integration.sh`, requires a disposable,
+empty MySQL database plus Redis and prepared S3 storage. It starts the backend
+without an administrator, runs the `/setup` browser tests to create
+`setup-owner`, then creates the `admin` automation account with the CLI and runs
+the existing user journey. Do not point this script at an existing deployment;
+its setup tests require an uninitialized database.
+
+## Backend dependency injection
+
+After changing constructors or a layer's `ProviderSet`, regenerate the command's
+Wire initializer and run the backend checks:
+
+```sh
+cd server
+make generate-wire
+go test ./...
+make lint
+```
+
+Business services and logic live directly in `internal/service` and
+`internal/logic`. Name files by business area and keep transport setup in
+`internal/server`, persistence resources in `internal/infra`, and reusable
+helpers in `internal/util`.
+
+## Database models and backend checks
+
+The database layer uses `github.com/yvvlee/lorm v1.1.5`. Models declare `lorm`
+column tags; repositories embed `*lorm.Repository[*model.X]` and receive the
+shared `infra.Storage.CoreDB` engine. Regenerate column metadata after changing
+models:
+
+```sh
+make -C server generate-models
+```
+
+Queries must explicitly apply project/environment scope and `IS NULL` for soft
+deletes. Mutable updates include the expected version and advance it once.
+Business transactions use the same lorm engine and pass the transaction context
+to every repository operation. Test transaction substitutes live only in tests.
+Schema initialization still uses the embedded MySQL/PostgreSQL DDL under a
+connection-scoped database lock; SQL argument logging is disabled because
+credentials and installation secrets are stored as parameters.
+
+`make -C server lint-tools` installs public golangci-lint v2.14.0.
+`make -C server lint` runs that version with `.golangci.yml`, then the local
+`tools/stylecheck` and `go vet`. The local checker covers argument count,
+structured log pairs, explicit constants, two-level nesting, field layout,
+interface parameter names, and exported function contracts. Constructors may
+list their injected dependencies. Generated and test code are excluded from
+production style rules; both remain included in compilation and tests.
+
 ## Protobuf generation
 
 Files under `server/api` are the source of truth. Generated Go files are
@@ -46,9 +98,9 @@ make -C server generate
 scripts/ci/check-generated.sh
 ```
 
-Do not edit generated files. Do not replace the two redistributed generators
-under `server/tools/third_party` without updating their source record, license,
-version checks, and dependency audit.
+Do not edit generated files. HTTP and error helpers use the official Kratos
+generators pinned in `server/Makefile`. HTTP JSON options are configured through
+Kratos in `server/internal/server/codec.go`; no JSON methods are generated.
 
 ## Frontend
 
@@ -77,5 +129,5 @@ proxies, old source paths, or organization-only credentials. See
 ## Dependency changes
 
 Commit `go.mod`, `go.sum`, `package.json`, and `package-lock.json` changes
-together. Run license and security checks. Regenerate the four SBOM files with
+together. Run license and security checks. Regenerate the three SBOM files with
 `scripts/generate-sbom.sh` when the dependency graph or release image changes.

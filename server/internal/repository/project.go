@@ -2,12 +2,13 @@ package repository
 
 import (
 	"context"
-	"strings"
+	"time"
 
-	"xorm.io/xorm"
+	"github.com/yvvlee/lorm"
+	"github.com/yvvlee/lorm/builder"
 
+	"github.com/yvvlee/kirby/server/internal/infra"
 	"github.com/yvvlee/kirby/server/internal/model"
-	"github.com/yvvlee/kirby/server/internal/repository/base"
 )
 
 type ProjectUpdate struct {
@@ -18,193 +19,126 @@ type ProjectUpdate struct {
 }
 
 type ProjectRepository interface {
-	Create(context.Context, int64, *model.Project) error
-	CreateTx(context.Context, *xorm.Session, int64, *model.Project) error
-	FindByID(context.Context, int64, int64) (*model.Project, error)
-	FindByKey(context.Context, int64, string) (*model.Project, error)
-	List(context.Context, int64, string, base.PageRequest) (base.PageResult[model.Project], error)
-	Update(context.Context, int64, int64, ProjectUpdate) error
-	UpdateTx(context.Context, *xorm.Session, int64, int64, ProjectUpdate) error
-	LockByID(context.Context, *xorm.Session, int64, int64) (*model.Project, error)
-}
-
-func (r *ProjectRepositoryImpl) CreateTx(ctx context.Context, tx *xorm.Session, environmentID int64, project *model.Project) error {
-	if project == nil {
-		return base.InvalidArgument("project is nil")
-	}
-	result, err := base.ExecuteTx(ctx, tx, "project", `
-INSERT INTO projects
-    (`+"`key`"+`, name, description, created_by, updated_by)
-VALUES (?, ?, ?, ?, ?)`,
-		project.Key, project.Name, project.Description, project.CreatedBy, project.UpdatedBy)
-	if err != nil {
-		return err
-	}
-	project.ID, err = result.LastInsertId()
-	if err != nil {
-		return base.Wrap("read inserted project id", err)
-	}
-	return nil
+	Create(ctx context.Context, environmentID int64, project *model.Project) error
+	FindByID(ctx context.Context, environmentID, projectID int64) (*model.Project, error)
+	List(ctx context.Context, environmentID int64, keyword string, page PageRequest) (PageResult[model.Project], error)
+	Update(ctx context.Context, environmentID, projectID int64, update ProjectUpdate) error
+	LockByID(ctx context.Context, environmentID, projectID int64) (*model.Project, error)
 }
 
 type ProjectRepositoryImpl struct {
-	engine *xorm.Engine
+	*lorm.Repository[*model.Project]
 }
 
-func NewProjectRepository(engine *xorm.Engine) *ProjectRepositoryImpl {
-	return &ProjectRepositoryImpl{engine: engine}
+// NewProjectRepository creates ProjectRepositoryImpl with its shared database engine.
+//
+// Parameters: storage supplies the shared database engine.
+// Returns: *ProjectRepositoryImpl.
+// Throws: none.
+func NewProjectRepository(storage *infra.Storage) *ProjectRepositoryImpl {
+	return &ProjectRepositoryImpl{
+		Repository: storage.CoreDB.Repository[*model.Project](),
+	}
 }
 
-func (r *ProjectRepositoryImpl) Create(ctx context.Context, environmentID int64, project *model.Project) error {
-	if project == nil {
-		return base.InvalidArgument("project is nil")
+// Create inserts a system-level project after the caller has checked project-management permission.
+//
+// Parameters: ctx carries cancellation and transaction state; project contains the new project metadata.
+// Returns: nil after inserting the project and setting its ID, version, and timestamps; database failures are returned.
+// Throws: none.
+func (r *ProjectRepositoryImpl) Create(ctx context.Context, _ int64, project *model.Project) error {
+	project.PrepareInsert()
+	_, err := r.Insert(ctx, project)
+	return WrapDatabaseError(err)
+}
+
+// FindByID loads a resource only when it belongs to the requested scope.
+//
+// Parameters: ctx carries cancellation and transaction state; environmentID selects the authorized environment; projectID selects the project.
+// Returns: the live row, or ErrNotFound when the ID is missing, deleted, or outside the environment.
+// Throws: none.
+func (r *ProjectRepositoryImpl) FindByID(ctx context.Context, environmentID, projectID int64) (*model.Project, error) {
+	fields := new(model.Project).LormCols()
+	query := r.Engine.Query[*model.Project]().ID(projectID).Where(builder.IsNull(fields.DeletedAt()))
+	if environmentID > 0 {
+		query = projectScope(r.Engine).Where(builder.Eq{
+			"e.id": environmentID,
+			"p.id": projectID,
+		})
 	}
-	result, err := base.Execute(ctx, r.engine, "project", `
-INSERT INTO projects
-    (`+"`key`"+`, name, description, created_by, updated_by)
-VALUES (?, ?, ?, ?, ?)`,
-		project.Key, project.Name, project.Description, project.CreatedBy, project.UpdatedBy)
+	project, found, err := query.Get(ctx)
 	if err != nil {
-		return err
+		return nil, WrapDatabaseError(err)
 	}
-	project.ID, err = result.LastInsertId()
+	if !found {
+		return nil, Missing("project")
+	}
+	return project, nil
+}
+
+// List returns the resources visible in the selected scope.
+//
+// Parameters: ctx carries cancellation and transaction state; environmentID selects the authorized environment; keyword matches project names or descriptions; page contains pagination bounds.
+// Returns: the scoped page, total row count, normalized offset and limit, or a database error.
+// Throws: none.
+func (r *ProjectRepositoryImpl) List(ctx context.Context, environmentID int64, keyword string, page PageRequest) (PageResult[model.Project], error) {
+	pattern := "%" + keyword + "%"
+	condition := builder.Or{
+		builder.Like("p.name", pattern),
+		builder.Like("p.description", pattern),
+	}
+	query := r.Engine.Query[*model.Project]().Select("p.*").From("projects AS p").
+		Where(builder.IsNull("p.deleted_at"))
+	if environmentID > 0 {
+		query = projectScope(r.Engine).Where(builder.Eq{"e.id": environmentID})
+	}
+	return paginate[model.Project](ctx, query.Where(condition).Desc("p.id"), page)
+}
+
+// Update applies changes using the expected version to reject stale writes.
+//
+// Parameters: ctx carries cancellation and transaction state; projectID selects the project; update contains the guarded changes and expected version.
+// Returns: nil after one matching live row changes; ErrNoRowsAffected if the expected version is stale.
+// Throws: none.
+func (r *ProjectRepositoryImpl) Update(ctx context.Context, _, projectID int64, update ProjectUpdate) error {
+	fields := new(model.Project).LormCols()
+	affected, err := r.Engine.Update[*model.Project]().Where(builder.IsNull(fields.DeletedAt())).ID(projectID).
+		Where(builder.Eq{fields.Version(): update.Version}).
+		SetMap(map[string]any{
+			fields.Name():        update.Name,
+			fields.Description(): update.Description,
+			fields.UpdatedBy():   update.UpdatedBy,
+			fields.UpdatedAt():   time.Now().UTC(),
+			fields.Version():     update.Version + 1,
+		}).Exec(ctx)
 	if err != nil {
-		return base.Wrap("read inserted project id", err)
+		return WrapDatabaseError(err)
+	}
+	if affected == 0 {
+		return Unchanged("project")
 	}
 	return nil
 }
 
-func (r *ProjectRepositoryImpl) FindByID(ctx context.Context, environmentID, projectID int64) (*model.Project, error) {
-	if err := base.ValidateID("project_id", projectID); err != nil {
-		return nil, err
-	}
-	var project model.Project
-	query := `
-SELECT p.*
-FROM projects AS p
-WHERE p.id = ? AND p.deleted_at IS NULL
-LIMIT 1`
-	args := []any{projectID}
-	if environmentID > 0 {
-		query = `
-SELECT p.*
-FROM projects AS p
-INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
-WHERE e.id = ? AND p.id = ? AND p.deleted_at IS NULL
-LIMIT 1`
-		args = []any{environmentID, projectID}
-	}
-	err := base.FindOne(ctx, r.engine, "project", query, args, &project)
+// LockByID locks a scoped resource so concurrent writes share the same order.
+//
+// Parameters: ctx carries cancellation and transaction state; environmentID selects the authorized environment; projectID selects the project.
+// Returns: the locked live row, or ErrNotFound for a missing or inaccessible resource; requires the caller’s transaction.
+// Throws: none.
+func (r *ProjectRepositoryImpl) LockByID(ctx context.Context, environmentID, projectID int64) (*model.Project, error) {
+	project, has, err := projectScope(r.Engine).
+		Where(builder.Eq{
+			"e.id": environmentID,
+			"p.id": projectID,
+		}).
+		Suffix("FOR UPDATE").Get(ctx)
 	if err != nil {
-		return nil, err
+		return nil, WrapDatabaseError(err)
 	}
-	project.EnvironmentID = environmentID
-	return &project, nil
-}
-
-func (r *ProjectRepositoryImpl) FindByKey(ctx context.Context, environmentID int64, key string) (*model.Project, error) {
-	if strings.TrimSpace(key) == "" {
-		return nil, base.InvalidArgument("project key is empty")
+	if !has {
+		return nil, Missing("project")
 	}
-	var project model.Project
-	err := base.FindOne(ctx, r.engine, "project", `
-SELECT p.*
-FROM projects AS p
-WHERE p.`+"`key`"+` = ? AND p.deleted_at IS NULL
-LIMIT 1`, []any{key}, &project)
-	if err != nil {
-		return nil, err
-	}
-	project.EnvironmentID = environmentID
-	return &project, nil
-}
-
-func (r *ProjectRepositoryImpl) List(ctx context.Context, environmentID int64, keyword string, page base.PageRequest) (base.PageResult[model.Project], error) {
-	page = base.NormalizePage(page)
-	pattern := "%" + keyword + "%"
-	scope := ""
-	argsPrefix := []any{}
-	if environmentID > 0 {
-		scope = "INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL\nWHERE e.id = ? AND "
-		argsPrefix = append(argsPrefix, environmentID)
-	} else {
-		scope = "WHERE "
-	}
-	total, err := base.Count(ctx, r.engine, "projects", `
-SELECT COUNT(*) AS total
-FROM projects AS p
-	`+scope+`p.deleted_at IS NULL
-  AND (p.name LIKE ? OR p.description LIKE ?)`, append(argsPrefix, pattern, pattern)...)
-	if err != nil {
-		return base.PageResult[model.Project]{}, err
-	}
-	result := base.PageResult[model.Project]{Total: total, Offset: page.Offset, Limit: page.Limit, Items: []model.Project{}}
-	if total == 0 {
-		return result, nil
-	}
-	listArgs := append(argsPrefix, pattern, pattern, page.Limit, page.Offset)
-	err = base.FindAll(ctx, r.engine, "projects", `
-SELECT p.*
-FROM projects AS p
-`+scope+`p.deleted_at IS NULL
-  AND (p.name LIKE ? OR p.description LIKE ?)
-ORDER BY p.id DESC
-LIMIT ? OFFSET ?`, listArgs, &result.Items)
-	return result, err
-}
-
-func (r *ProjectRepositoryImpl) Update(ctx context.Context, environmentID, projectID int64, update ProjectUpdate) error {
-	if err := base.ValidateID("project_id", projectID); err != nil {
-		return err
-	}
-	if update.Version < 0 {
-		return base.InvalidArgument("version must not be negative")
-	}
-	_, err := base.Execute(ctx, r.engine, "project", `
-UPDATE projects
-SET name = ?, description = ?, updated_by = ?,
-    updated_at = UTC_TIMESTAMP(6), version = version + 1
-WHERE id = ? AND version = ? AND deleted_at IS NULL`,
-		update.Name, update.Description, update.UpdatedBy, projectID, update.Version)
-	return err
-}
-
-func (r *ProjectRepositoryImpl) UpdateTx(ctx context.Context, tx *xorm.Session, environmentID, projectID int64, update ProjectUpdate) error {
-	if err := base.ValidateID("project_id", projectID); err != nil {
-		return err
-	}
-	if update.Version < 0 {
-		return base.InvalidArgument("version must not be negative")
-	}
-	_, err := base.ExecuteTx(ctx, tx, "project", `
-UPDATE projects
-SET name = ?, description = ?, updated_by = ?,
-    updated_at = UTC_TIMESTAMP(6), version = version + 1
-WHERE id = ? AND version = ? AND deleted_at IS NULL`,
-		update.Name, update.Description, update.UpdatedBy, projectID, update.Version)
-	return err
-}
-
-func (r *ProjectRepositoryImpl) LockByID(ctx context.Context, tx *xorm.Session, environmentID, projectID int64) (*model.Project, error) {
-	if err := base.ValidateID("project_id", projectID); err != nil {
-		return nil, err
-	}
-	var project model.Project
-	err := base.LockOne(ctx, tx, "project", `
-SELECT p.*
-FROM projects AS p
-WHERE p.id = ? AND p.deleted_at IS NULL
-LIMIT 1
-FOR UPDATE`, []any{projectID}, &project)
-	if err != nil {
-		return nil, err
-	}
-	project.EnvironmentID = environmentID
-	return &project, nil
-}
-
-func validateEnvironmentResource(environmentID int64, resourceName string, resourceID int64) error {
-	return base.ValidateID(resourceName, resourceID)
+	return project, nil
 }
 
 var _ ProjectRepository = (*ProjectRepositoryImpl)(nil)

@@ -14,6 +14,11 @@ type Actor struct {
 	RequestID string
 }
 
+// ActorFromContext requires middleware-authenticated identity and creates a valid request correlation ID.
+//
+// Parameters: ctx contains the authenticated principal and optional transport headers.
+// Returns: the actor, or ErrForbidden when no valid principal exists.
+// Throws: none; failures are returned as errors.
 func ActorFromContext(ctx context.Context) (Actor, error) {
 	principal, ok := adminmiddleware.PrincipalFromContext(ctx)
 	if !ok || principal.UserID <= 0 {
@@ -26,7 +31,10 @@ func ActorFromContext(ctx context.Context) (Actor, error) {
 	if !validRequestID(requestID) {
 		requestID = uuid.NewString()
 	}
-	return Actor{UserID: principal.UserID, RequestID: requestID}, nil
+	return Actor{
+		UserID:    principal.UserID,
+		RequestID: requestID,
+	}, nil
 }
 
 func validRequestID(value string) bool {

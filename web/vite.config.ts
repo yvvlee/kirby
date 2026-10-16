@@ -16,12 +16,8 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 15173,
     proxy: {
-      '/api/assets/upload': { target: apiTarget },
-      '/api/assets/objects': { target: apiTarget },
       '/api': {
         target: apiTarget,
-        cookiePathRewrite: { '/auth': '/api/auth' },
-        rewrite: (path) => path.replace(/^\/api(?=\/|$)/, '') || '/',
       },
     },
   },

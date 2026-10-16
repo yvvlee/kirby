@@ -12,9 +12,27 @@ import (
 
 func TestFieldsRoundTripOneofTypes(t *testing.T) {
 	values := []*commonv1.Field{
-		{Key: "name", Name: "Name", Type: &commonv1.Field_Type{Kind: &commonv1.Field_Type_BaseType{BaseType: commonv1.Field_STRING}}},
-		{Key: "profile", Name: "Profile", Type: &commonv1.Field_Type{Kind: &commonv1.Field_Type_StructureKey{StructureKey: "Profile"}}},
-		{Key: "status", Name: "Status", Type: &commonv1.Field_Type{Kind: &commonv1.Field_Type_EnumKey{EnumKey: "Status"}}},
+		{
+			Key:  "name",
+			Name: "Name",
+			Type: &commonv1.Field_Type{
+				Kind: &commonv1.Field_Type_BaseType{BaseType: commonv1.Field_STRING},
+			},
+		},
+		{
+			Key:  "profile",
+			Name: "Profile",
+			Type: &commonv1.Field_Type{
+				Kind: &commonv1.Field_Type_StructureKey{StructureKey: "Profile"},
+			},
+		},
+		{
+			Key:  "status",
+			Name: "Status",
+			Type: &commonv1.Field_Type{
+				Kind: &commonv1.Field_Type_EnumKey{EnumKey: "Status"},
+			},
+		},
 	}
 	encoded, err := EncodeFields(values)
 	require.NoError(t, err)

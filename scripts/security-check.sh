@@ -4,8 +4,8 @@ set -eu
 repo_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 work_dir=$(mktemp -d "${TMPDIR:-/tmp}/kirby-security.XXXXXX")
 server_image="kirby-security:$PPID-$$"
-govuln_version=v1.1.4
-gosec_version=v2.22.7
+govuln_version=v1.9.0
+gosec_version=v2.29.0
 trivy_image="aquasec/trivy@sha256:e2b22eac59c02003d8749f5b8d9bd073b62e30fefaef5b7c8371204e0a4b0c08"
 trivy_db_repository="${KIRBY_TRIVY_DB_REPOSITORY:-${KIRBY_TRIVY_DB_IMAGE:-}}"
 
@@ -75,6 +75,20 @@ prepare_trivy_db() {
   test -s "$work_dir/trivy-cache/db/metadata.json"
 }
 
+reject_source_pattern() {
+  pattern=$1
+  shift
+  # Include new source files before staging; Git still excludes ignored outputs.
+  if git -C "$repo_dir" grep --untracked --exclude-standard -n -I -E "$pattern" -- "$@"; then
+    return 1
+  else
+    scan_status=$?
+  fi
+  if [ "$scan_status" -ne 1 ]; then
+    return "$scan_status"
+  fi
+}
+
 echo "Checking reachable Go vulnerabilities..."
 govuln_db=$(download_govuln_db)
 (cd "$repo_dir/server" && go run "golang.org/x/vuln/cmd/govulncheck@$govuln_version" -db "file://$govuln_db" ./...)
@@ -91,28 +105,25 @@ echo "Checking removed and private dependencies..."
 private_source_pattern='git[.]changbaops[.]com|registry[.]changba'
 removed_service_pattern='na''cos|ya''haha'
 removed_type_pattern='Pri''ze|Audit''ing|Gen''der|Business''Line|Global''Structure|Global''Enum'
-unsafe_schema_pattern='Sync''2|Create''Tables|Auto''Migrate'
+unsafe_schema_pattern='Create''Tables|Auto''Migrate'
 singular_generator_pattern='protoc-gen-go-err''or([^s]|$)'
-if git -C "$repo_dir" grep -n -I -E "$private_source_pattern" -- ':!docs/source-provenance.md'; then exit 1; fi
-if git -C "$repo_dir" grep -n -I -E "$removed_service_pattern" -- server web api deploy scripts; then exit 1; fi
-if git -C "$repo_dir" grep -n -I -E "$removed_type_pattern" -- server web api deploy scripts; then exit 1; fi
-if git -C "$repo_dir" grep -n -I -E "$unsafe_schema_pattern" -- \
-  server web api deploy scripts ':!scripts/check-schema.sh' ':!scripts/security-check.sh'; then exit 1; fi
-if git -C "$repo_dir" grep -n -I -E "$singular_generator_pattern" -- server web api deploy scripts; then exit 1; fi
+reject_source_pattern "$private_source_pattern" ':!docs/source-provenance.md'
+reject_source_pattern "$removed_service_pattern" server web api deploy scripts
+reject_source_pattern "$removed_type_pattern" server web api deploy scripts
+reject_source_pattern "$unsafe_schema_pattern" \
+  server web api deploy scripts ':!scripts/check-schema.sh' ':!scripts/security-check.sh'
+reject_source_pattern "$singular_generator_pattern" server web api deploy scripts
 if (cd "$repo_dir/server" && go list -m all | grep -E "$private_source_pattern|$removed_service_pattern"); then exit 1; fi
 if (cd "$repo_dir/server" && go list -deps ./... | grep -E "$private_source_pattern|$removed_service_pattern"); then exit 1; fi
 
 echo "Running security-boundary tests..."
 (cd "$repo_dir/server" && go test \
   ./internal/auth/... \
-  ./internal/logic/asset/... \
-  ./internal/logic/importer/... \
-  ./internal/logic/runtime/... \
+  ./internal/logic/... \
   ./internal/middleware/... \
-  ./internal/observability/... \
+  ./internal/infra/... \
   ./internal/permission/... \
-  ./internal/repository/... \
-  ./internal/storage/object/...)
+  ./internal/repository/...)
 
 echo "Building the release image for scanning..."
 if [ -n "${KIRBY_GO_PROXY:-}" ]; then

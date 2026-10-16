@@ -6,10 +6,11 @@ import (
 	"fmt"
 	"time"
 
-	"xorm.io/xorm"
+	"github.com/yvvlee/lorm"
+	"github.com/yvvlee/lorm/builder"
 
+	"github.com/yvvlee/kirby/server/internal/infra"
 	"github.com/yvvlee/kirby/server/internal/model"
-	"github.com/yvvlee/kirby/server/internal/storage/database"
 )
 
 var (
@@ -18,142 +19,165 @@ var (
 	ErrRefreshTokenReplay   = errors.New("refresh token replay detected")
 )
 
-// RefreshTokenRepository persists only SHA-256 refresh-token hashes.
-type RefreshTokenRepository struct {
-	engine *xorm.Engine
+type RefreshTokenRepository interface {
+	CreateSession(ctx context.Context, token *model.RefreshToken, loginAt time.Time) error
+	Rotate(ctx context.Context, tokenHash []byte, next *model.RefreshToken, now time.Time) (*model.RefreshToken, error)
+	RevokeSessionByTokenHash(ctx context.Context, tokenHash []byte, now time.Time) error
 }
 
-func NewRefreshTokenRepository(engine *xorm.Engine) (*RefreshTokenRepository, error) {
-	if engine == nil {
-		return nil, fmt.Errorf("refresh-token repository database is nil")
+type RefreshTokenRepositoryImpl struct {
+	*lorm.Repository[*model.RefreshToken]
+}
+
+// NewRefreshTokenRepository binds the RefreshTokenRepository to the application database.
+//
+// Parameters: storage supplies the shared CoreDB engine and its transaction context.
+// Returns: the configured RefreshTokenRepository.
+// Throws: none.
+func NewRefreshTokenRepository(storage *infra.Storage) *RefreshTokenRepositoryImpl {
+	return &RefreshTokenRepositoryImpl{
+		Repository: storage.CoreDB.Repository[*model.RefreshToken](),
 	}
-	return &RefreshTokenRepository{engine: engine}, nil
 }
 
-// CreateSession inserts the first refresh token and records login time in one
-// transaction. A concurrent user disable causes the whole operation to fail.
-func (r *RefreshTokenRepository) CreateSession(ctx context.Context, token *model.RefreshToken, loginAt time.Time) error {
+// CreateSession updates the enabled account login time before storing the token digest.
+//
+// Parameters: ctx carries the login transaction; token is the new session record; loginAt is the login time.
+// Returns: nil after both writes, ErrUserNotFound, an invalid-token error, or a database error.
+// Throws: none; failures are returned as errors.
+func (r *RefreshTokenRepositoryImpl) CreateSession(ctx context.Context, token *model.RefreshToken, loginAt time.Time) error {
 	if err := validateNewRefreshToken(token); err != nil {
 		return err
 	}
-	return database.WithTx(ctx, r.engine, func(tx *xorm.Session) error {
-		result, err := tx.Exec(
-			"UPDATE users SET last_login_at = ?, updated_at = ? WHERE id = ? AND enabled = TRUE AND deleted_at IS NULL",
-			loginAt.UTC(), loginAt.UTC(), token.UserID,
-		)
-		if err != nil {
-			return fmt.Errorf("record user login: %w", err)
-		}
-		affected, err := result.RowsAffected()
-		if err != nil {
-			return fmt.Errorf("read user login update count: %w", err)
-		}
-		if affected != 1 {
-			return ErrUserNotFound
-		}
-		if _, err := tx.InsertOne(token); err != nil {
-			return fmt.Errorf("create refresh session: %w", err)
-		}
-		return nil
-	})
+	fields := new(model.User).LormCols()
+	affected, err := r.Engine.Update[*model.User]().ID(token.UserID).
+		Where(builder.And{
+			builder.Eq{
+				fields.Enabled(): true,
+			},
+			builder.IsNull(fields.DeletedAt()),
+		}).SetMap(map[string]any{
+		fields.LastLoginAt(): loginAt.UTC(),
+		fields.UpdatedAt():   loginAt.UTC(),
+	}).Exec(ctx)
+	if err != nil {
+		return WrapDatabaseError(err)
+	}
+	if affected != 1 {
+		return ErrUserNotFound
+	}
+	token.PrepareInsert()
+	_, err = r.Insert(ctx, token)
+	return WrapDatabaseError(err)
 }
 
-// Rotate consumes the presented token and inserts its replacement atomically.
-// Replaying an already rotated token revokes every active token in that session.
-func (r *RefreshTokenRepository) Rotate(ctx context.Context, tokenHash []byte, next *model.RefreshToken, now time.Time) (*model.RefreshToken, error) {
+// Rotate consumes a refresh token once and revokes its session when a consumed token is replayed.
+//
+// Parameters: ctx carries the rotation transaction; tokenHash identifies the current token; next supplies its replacement digest and expiry; now is the decision time.
+// Returns: the replacement token, ErrRefreshTokenNotFound, ErrRefreshTokenExpired, ErrRefreshTokenReplay, or a write error.
+// Throws: none; failures are returned as errors.
+func (r *RefreshTokenRepositoryImpl) Rotate(ctx context.Context, tokenHash []byte, next *model.RefreshToken, now time.Time) (*model.RefreshToken, error) {
 	if len(tokenHash) != 32 {
 		return nil, ErrRefreshTokenNotFound
 	}
 	if next == nil || len(next.TokenHash) != 32 || !next.ExpiresAt.After(now) {
 		return nil, fmt.Errorf("invalid replacement refresh token")
 	}
-
-	var rotated *model.RefreshToken
-	var outcome error
-	err := database.WithTx(ctx, r.engine, func(tx *xorm.Session) error {
-		current := new(model.RefreshToken)
-		found, err := tx.Where("token_hash = ?", tokenHash).ForUpdate().Get(current)
-		if err != nil {
-			return fmt.Errorf("lock refresh token: %w", err)
-		}
-		if !found {
-			outcome = ErrRefreshTokenNotFound
-			return nil
-		}
-		if current.RevokedAt != nil {
-			if current.ReplacedByID != nil {
-				if _, err := tx.Exec(
-					"UPDATE refresh_tokens SET revoked_at = COALESCE(revoked_at, ?), updated_at = ? WHERE user_id = ? AND session_id = ?",
-					now.UTC(), now.UTC(), current.UserID, current.SessionID,
-				); err != nil {
-					return fmt.Errorf("revoke replayed refresh session: %w", err)
-				}
-				outcome = ErrRefreshTokenReplay
-				return nil
-			}
-			outcome = ErrRefreshTokenNotFound
-			return nil
-		}
-		if !now.Before(current.ExpiresAt) {
-			outcome = ErrRefreshTokenExpired
-			return nil
-		}
-
-		next.UserID = current.UserID
-		next.SessionID = current.SessionID
-		if _, err := tx.InsertOne(next); err != nil {
-			return fmt.Errorf("insert replacement refresh token: %w", err)
-		}
-		result, err := tx.Exec(
-			"UPDATE refresh_tokens SET last_used_at = ?, revoked_at = ?, replaced_by_id = ?, updated_at = ? "+
-				"WHERE id = ? AND revoked_at IS NULL",
-			now.UTC(), now.UTC(), next.ID, now.UTC(), current.ID,
-		)
-		if err != nil {
-			return fmt.Errorf("consume refresh token: %w", err)
-		}
-		affected, err := result.RowsAffected()
-		if err != nil {
-			return fmt.Errorf("read consumed refresh count: %w", err)
-		}
-		if affected != 1 {
-			return fmt.Errorf("refresh token changed while locked")
-		}
-		rotated = next
-		return nil
-	})
+	current, err := lockTokenByHash(ctx, r.Engine, tokenHash)
 	if err != nil {
 		return nil, err
 	}
-	if outcome != nil {
-		return nil, outcome
+	if err := r.checkRotation(ctx, current, now); err != nil {
+		return nil, err
 	}
-	return rotated, nil
+	next.UserID = current.UserID
+	next.SessionID = current.SessionID
+	next.PrepareInsert()
+	if _, err := r.Insert(ctx, next); err != nil {
+		return nil, WrapDatabaseError(err)
+	}
+	if err := r.consumeToken(ctx, current.ID, next.ID, now); err != nil {
+		return nil, err
+	}
+	return next, nil
 }
 
-// RevokeSessionByTokenHash makes logout idempotent. Unknown hashes do not
-// reveal whether a browser supplied a real session token.
-func (r *RefreshTokenRepository) RevokeSessionByTokenHash(ctx context.Context, tokenHash []byte, now time.Time) error {
+func (r *RefreshTokenRepositoryImpl) checkRotation(ctx context.Context, current *model.RefreshToken, now time.Time) error {
+	if current == nil {
+		return ErrRefreshTokenNotFound
+	}
+	if current.RevokedAt == nil && !now.Before(current.ExpiresAt) {
+		return ErrRefreshTokenExpired
+	}
+	if current.RevokedAt == nil {
+		return nil
+	}
+	if current.ReplacedByID == nil {
+		return ErrRefreshTokenNotFound
+	}
+	if err := revokeSession(ctx, r.Engine, current.UserID, current.SessionID, now); err != nil {
+		return err
+	}
+	return ErrRefreshTokenReplay
+}
+
+func (r *RefreshTokenRepositoryImpl) consumeToken(ctx context.Context, currentID, nextID int64, now time.Time) error {
+	fields := new(model.RefreshToken).LormCols()
+	affected, err := r.Engine.Update[*model.RefreshToken]().ID(currentID).
+		Where(builder.IsNull(fields.RevokedAt())).SetMap(map[string]any{
+		fields.LastUsedAt():   now.UTC(),
+		fields.RevokedAt():    now.UTC(),
+		fields.ReplacedByID(): nextID,
+		fields.UpdatedAt():    now.UTC(),
+	}).Exec(ctx)
+	if err != nil {
+		return WrapDatabaseError(err)
+	}
+	if affected != 1 {
+		return fmt.Errorf("refresh token changed while locked")
+	}
+	return nil
+}
+
+// RevokeSessionByTokenHash makes logout idempotent by revoking all tokens of a matching session.
+//
+// Parameters: ctx carries the revocation transaction; tokenHash identifies any token in the session; now is the revocation time.
+// Returns: nil for revoked or unknown sessions, or a database error.
+// Throws: none; failures are returned as errors.
+func (r *RefreshTokenRepositoryImpl) RevokeSessionByTokenHash(ctx context.Context, tokenHash []byte, now time.Time) error {
 	if len(tokenHash) != 32 {
 		return nil
 	}
-	return database.WithTx(ctx, r.engine, func(tx *xorm.Session) error {
-		current := new(model.RefreshToken)
-		found, err := tx.Where("token_hash = ?", tokenHash).ForUpdate().Get(current)
-		if err != nil {
-			return fmt.Errorf("lock refresh session for revocation: %w", err)
-		}
-		if !found {
-			return nil
-		}
-		if _, err := tx.Exec(
-			"UPDATE refresh_tokens SET revoked_at = COALESCE(revoked_at, ?), updated_at = ? WHERE user_id = ? AND session_id = ?",
-			now.UTC(), now.UTC(), current.UserID, current.SessionID,
-		); err != nil {
-			return fmt.Errorf("revoke refresh session: %w", err)
-		}
+	current, err := lockTokenByHash(ctx, r.Engine, tokenHash)
+	if err != nil {
+		return err
+	}
+	if current == nil {
 		return nil
-	})
+	}
+	return revokeSession(ctx, r.Engine, current.UserID, current.SessionID, now)
+}
+
+func lockTokenByHash(ctx context.Context, engine *lorm.Engine, tokenHash []byte) (*model.RefreshToken, error) {
+	current, _, err := engine.Query[*model.RefreshToken]().
+		Where(builder.Eq{new(model.RefreshToken).LormCols().TokenHash(): tokenHash}).
+		Suffix("FOR UPDATE").Get(ctx)
+	return current, WrapDatabaseError(err)
+}
+
+func revokeSession(ctx context.Context, engine *lorm.Engine, userID int64, sessionID string, now time.Time) error {
+	fields := new(model.RefreshToken).LormCols()
+	_, err := engine.Update[*model.RefreshToken]().Where(builder.And{
+		builder.Eq{
+			fields.UserID():    userID,
+			fields.SessionID(): sessionID,
+		},
+		builder.IsNull(fields.RevokedAt()),
+	}).SetMap(map[string]any{
+		fields.RevokedAt(): now.UTC(),
+		fields.UpdatedAt(): now.UTC(),
+	}).Exec(ctx)
+	return WrapDatabaseError(err)
 }
 
 func validateNewRefreshToken(token *model.RefreshToken) error {
@@ -165,3 +189,5 @@ func validateNewRefreshToken(token *model.RefreshToken) error {
 	}
 	return nil
 }
+
+var _ RefreshTokenRepository = (*RefreshTokenRepositoryImpl)(nil)

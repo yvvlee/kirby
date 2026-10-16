@@ -62,16 +62,44 @@ func TestClientIPResolverStopsAtNearestUntrustedProxy(t *testing.T) {
 	assert.Equal(t, "203.0.113.8", address.String())
 }
 
-func TestClientIPResolverRejectsMissingOrInvalidTrustedHeader(t *testing.T) {
+func TestClientIPResolverRejectsInvalidForwardedHeader(t *testing.T) {
 	resolver, err := NewClientIPResolver([]string{"10.0.0.0/8"})
 	require.NoError(t, err)
 
-	for _, forwarded := range []string{"", "unknown", "203.0.113.8:1234", "203.0.113.8,,10.0.0.3"} {
+	for _, forwarded := range []string{"unknown", "203.0.113.8:1234", "203.0.113.8,,10.0.0.3"} {
 		t.Run(forwarded, func(t *testing.T) {
 			_, err := resolver.Resolve(resolverRequest("10.0.0.2:443", forwarded))
 			require.Error(t, err)
 		})
 	}
+}
+
+func TestClientIPResolverSupportsDirectRequestsWithoutConfiguration(t *testing.T) {
+	resolver, err := NewClientIPResolver(nil)
+	require.NoError(t, err)
+	address, err := resolver.Resolve(resolverRequest("192.0.2.10:1234", ""))
+	require.NoError(t, err)
+	assert.Equal(t, "192.0.2.10", address.String())
+}
+
+func TestClientIPResolverTrustsProxiesWithoutConfiguration(t *testing.T) {
+	resolver, err := NewClientIPResolver(nil)
+	require.NoError(t, err)
+	for _, peer := range []string{"10.0.0.2:443", "[2001:db8::1]:443"} {
+		t.Run(peer, func(t *testing.T) {
+			address, err := resolver.Resolve(resolverRequest(peer, "198.51.100.7, 10.0.0.3"))
+			require.NoError(t, err)
+			assert.Equal(t, "198.51.100.7", address.String())
+		})
+	}
+}
+
+func TestClientIPResolverExplicitDirectModeIgnoresForwardedHeader(t *testing.T) {
+	resolver, err := NewClientIPResolver([]string{})
+	require.NoError(t, err)
+	address, err := resolver.Resolve(resolverRequest("192.0.2.10:1234", "198.51.100.7"))
+	require.NoError(t, err)
+	assert.Equal(t, "192.0.2.10", address.String())
 }
 
 func TestClientIPResolverLimitsForwardedChain(t *testing.T) {

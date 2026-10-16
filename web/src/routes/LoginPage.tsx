@@ -1,7 +1,7 @@
 import { LockOutlined, UserOutlined } from '@ant-design/icons'
 import { Alert, Button, Form, Input, Spin, Typography } from 'antd'
 import { useState } from 'react'
-import { Navigate, useNavigate, useSearchParams } from 'react-router-dom'
+import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 
 import { getApiErrorMessage } from '@/api/errors'
 import type { LoginCredentials } from '@/api/auth'
@@ -11,6 +11,7 @@ import { useAuth } from '@/auth/auth-state'
 export default function LoginPage() {
   const auth = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   const [searchParams] = useSearchParams()
   const [error, setError] = useState('')
   const redirect = safeRedirect(searchParams.get('redirect'))
@@ -33,6 +34,7 @@ export default function LoginPage() {
       <section className="login-panel">
         <p className="login-brand">Kirby</p>
         <Typography.Title id="login-title" level={1}>登录配置管理平台</Typography.Title>
+        {location.state?.setupComplete ? <Alert type="success" showIcon message="管理员已创建，请登录" /> : null}
         {error ? <Alert type="error" showIcon message={error} /> : null}
         <Form<LoginCredentials> layout="vertical" onFinish={submit} requiredMark={false}>
           <Form.Item name="username" label="用户名" rules={[{ required: true, message: '请输入用户名' }]}>

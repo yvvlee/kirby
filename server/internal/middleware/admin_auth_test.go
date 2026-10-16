@@ -11,7 +11,7 @@ import (
 	"github.com/go-kratos/kratos/v2/transport"
 
 	authjwt "github.com/yvvlee/kirby/server/internal/auth/jwt"
-	"github.com/yvvlee/kirby/server/internal/config"
+	"github.com/yvvlee/kirby/server/internal/conf"
 	"github.com/yvvlee/kirby/server/internal/model"
 )
 
@@ -46,9 +46,13 @@ func (h header) Values(key string) []string { return http.Header(h).Values(key) 
 
 func TestAdminAuthAddsStablePrincipal(t *testing.T) {
 	now := time.Now().UTC()
-	manager, err := authjwt.New(config.JWTConfig{
-		Issuer: "test", ActiveKID: "primary", AccessTTL: config.Duration{Duration: 15 * time.Minute},
-		Keys: map[string]config.Secret{"primary": config.NewSecret("01234567890123456789012345678901")},
+	manager, err := authjwt.New(authjwt.Config{
+		Issuer:    "test",
+		ActiveKID: "primary",
+		AccessTTL: 15 * time.Minute,
+		Keys: map[string]conf.Secret{
+			"primary": conf.NewSecret("01234567890123456789012345678901"),
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -70,24 +74,38 @@ func TestAdminAuthAddsStablePrincipal(t *testing.T) {
 		}
 		return "ok", nil
 	}
-	result, err := AdminAuth(manager, middlewareUsers{user: &model.User{Meta: model.Meta{ID: 11}, Enabled: true}})(kratosmiddleware.Handler(next))(ctx, nil)
+	result, err := AdminAuth(manager, middlewareUsers{
+		user: &model.User{
+			Meta:    model.Meta{ID: 11},
+			Enabled: true,
+		},
+	})(kratosmiddleware.Handler(next))(ctx, nil)
 	if err != nil || result != "ok" || got.UserID != 11 || got.SessionID != "session-id" {
 		t.Fatalf("result=%v principal=%+v err=%v", result, got, err)
 	}
 }
 
 func TestAdminAuthUsesUniformUnauthorizedResponse(t *testing.T) {
-	manager, err := authjwt.New(config.JWTConfig{
-		Issuer: "test", ActiveKID: "primary", AccessTTL: config.Duration{Duration: 15 * time.Minute},
-		Keys: map[string]config.Secret{"primary": config.NewSecret("01234567890123456789012345678901")},
+	manager, err := authjwt.New(authjwt.Config{
+		Issuer:    "test",
+		ActiveKID: "primary",
+		AccessTTL: 15 * time.Minute,
+		Keys: map[string]conf.Secret{
+			"primary": conf.NewSecret("01234567890123456789012345678901"),
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	cases := []header{{}, {"Authorization": []string{"Bearer invalid"}}}
+	cases := []header{
+		{},
+		{"Authorization": []string{"Bearer invalid"}},
+	}
 	for _, h := range cases {
 		ctx := transport.NewServerContext(context.Background(), middlewareTransport{header: h})
-		_, err := AdminAuth(manager, middlewareUsers{user: &model.User{Enabled: true}})(func(context.Context, any) (any, error) { return nil, nil })(ctx, nil)
+		_, err := AdminAuth(manager, middlewareUsers{
+			user: &model.User{Enabled: true},
+		})(func(context.Context, any) (any, error) { return nil, nil })(ctx, nil)
 		kratosErr := kratoserrors.FromError(err)
 		if kratosErr.Code != http.StatusUnauthorized || kratosErr.Message != "authentication failed" {
 			t.Fatalf("unexpected auth error: %+v", kratosErr)

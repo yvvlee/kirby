@@ -7,6 +7,8 @@ startup.
 
 Start from `deploy/config.example.yaml` for production or
 `deploy/config.compose.yaml` for the included Compose stack.
+Both templates listen on container ports `8080` (HTTP) and `9090` (gRPC).
+Compose maps these to host ports `8000` and `9000` by default.
 
 ## Fields
 
@@ -17,58 +19,76 @@ Start from `deploy/config.example.yaml` for production or
 | `http.timeout` | Whole HTTP request timeout; must cover S3 completion copies |
 | `grpc.address` | Runtime gRPC listener |
 | `grpc.timeout` | Runtime gRPC request timeout |
-| `mysql.dsn` | MySQL DSN with `parseTime=true` and an explicit time location |
-| `mysql.max_open_conns` | Maximum database connections per backend process |
-| `mysql.max_idle_conns` | Idle connections per backend process |
-| `mysql.conn_max_lifetime` | Maximum connection lifetime |
+| `database.driver` | `mysql` or `pgsql` |
+| `database.dsn` | DSN for the selected database driver |
+| `database.max_open_conns` | Maximum database connections per backend process |
+| `database.max_idle_conns` | Idle connections per backend process |
+| `database.conn_max_lifetime` | Maximum connection lifetime |
 | `cache.driver` | `memory` for single-process development or `redis` |
 | `cache.redis.*` | Redis endpoint, credentials, database, and deployment-specific key prefix |
 | `jwt.issuer` | Expected JWT issuer |
-| `jwt.active_kid` | Key ID used for newly issued access tokens |
 | `jwt.access_ttl` | Access-token lifetime |
 | `jwt.refresh_ttl` | Must be `168h` in the current server |
-| `jwt.keys` | Map of key IDs to signing secrets of at least 32 bytes |
-| `security.api_key_pepper` | Shared HMAC pepper for project API keys, at least 32 bytes |
-| `security.allowed_origins` | Exact browser origins; wildcards and paths are rejected |
-| `security.trusted_proxies` | Canonical CIDRs allowed to supply forwarding headers |
+| `security.trusted_proxies` | Optional canonical proxy CIDRs; omitted/null trusts all, `[]` ignores forwarding headers |
 | `object_storage.driver` | `local` or `s3` |
 | `object_storage.local.directory` | Root used only by single-process development |
 | `object_storage.s3.endpoint` | Private server-to-S3 host and optional port, without scheme |
-| `object_storage.s3.presign_endpoint` | Browser-reachable S3 host and optional port |
-| `object_storage.s3.presign_use_ssl` | Whether browser upload URLs use HTTPS |
-| `object_storage.s3.public_base_url` | Public base URL for completed immutable objects |
-| `log.level` | `debug`, `info`, `warn`, or `error` |
-| `log.format` | `json` or `text` |
+| `object_storage.s3.public_base_url` | Optional CDN/resource base URL; omitted or empty uses the current public request origin and bucket path |
+| `log.level` | Case-insensitive `DEBUG`, `WARNING`, or `ERROR`; other values use `INFO` |
 
 ## Shared values
 
 All production backend instances must use identical values for:
 
-- the MySQL database;
+- the selected relational database;
 - the Redis deployment and key prefix;
-- `jwt.issuer`, `jwt.active_kid`, and the complete `jwt.keys` ring;
-- `security.api_key_pepper`;
-- allowed origins and trusted proxies;
+- `jwt.issuer` and token lifetimes;
 - the S3 bucket and credentials.
 
-Changing the API-key pepper invalidates every existing project key. Removing a
-JWT key invalidates access tokens signed by that key. Rotate JWT keys by adding
-the new key, switching `active_kid`, waiting longer than `access_ttl`, and only
-then removing the old key.
+JWT signing keys and the API-key pepper are generated with secure randomness
+when the database is initialized. They are persisted in the singleton
+`application_secrets` record and loaded into memory at startup. Restarting a
+server or adding instances reuses the same values. Do not delete or regenerate
+this record: replacing the JWT key invalidates access tokens, and replacing the
+pepper invalidates every project API key.
+
+The web application and management API use the same origin. Browser requests
+are checked against the request's public scheme, host, and port, so an origin
+allowlist is not needed. Nginx and Ingress are supported by default without
+listing proxy addresses. The proxy must overwrite incoming forwarding headers,
+preserve the original Host, and send `X-Forwarded-Proto` and `X-Forwarded-For`.
+It may also send `X-Forwarded-Host`.
+
+`security.trusted_proxies` is optional. Omitted or null values trust both IPv4
+and IPv6 proxies. Set explicit canonical CIDRs to restrict that behavior, or
+set `[]` for direct connections that must ignore forwarding headers.
 
 ## Connection sizing
 
-MySQL limits apply per process. Multiply `max_open_conns` by the maximum number
+Database limits apply per process. Multiply `max_open_conns` by the maximum number
 of backend instances and leave capacity for administrative and backup clients.
 Use a distinct Redis `key_prefix` for each deployment that shares a Redis
 database.
 
 ## S3 addresses
 
-`endpoint` is used by the backend. `presign_endpoint` is embedded in upload
-tickets and must be reachable by browsers. `public_base_url` is stored in
-completed asset URLs. These addresses can differ when an ingress exposes MinIO
-or another S3 service under a public hostname.
+`object_storage.s3.endpoint` is the S3 address reachable by the backend;
+`use_ssl` selects TLS for that connection. With the default configuration,
+browser upload tickets point to the relative `/<bucket>/` path. Kirby proxies
+those uploads to S3, so no browser-facing S3 endpoint or CORS configuration is
+needed.
+
+Completed asset URLs default to absolute URLs built from the public request's
+scheme, host, and port plus `/<bucket>/<object-key>`. Trusted proxy forwarding
+headers supply the external address when Nginx or Ingress terminates TLS.
+Changing the public domain or mapped host port does not require editing S3
+address settings.
+
+`object_storage.s3.public_base_url` is optional. Leave it absent or empty for
+the default behavior. Set it to a full resource base URL, for example
+`https://cdn.example.com/kirby`, only when completed assets should use a CDN or
+another resource domain. Uploads still use Kirby's same-origin proxy.
 
 The bucket must already exist. Apply `deploy/s3-public-read-policy.json` and
 `deploy/s3-upload-lifecycle.json` as described in `deploy/README.md`.
+Kirby does not create buckets or configure policies or lifecycle rules.

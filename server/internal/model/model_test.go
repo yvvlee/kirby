@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"database/sql"
 	"database/sql/driver"
 	"os"
 	"reflect"
@@ -12,8 +13,6 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/require"
-	"xorm.io/xorm"
-	"xorm.io/xorm/core"
 )
 
 type tableNamer interface {
@@ -24,6 +23,7 @@ func TestAllModelsContainsFixedTableInventory(t *testing.T) {
 	t.Parallel()
 
 	want := []string{
+		"application_secrets",
 		"audit_logs",
 		"config_enums",
 		"configs",
@@ -69,7 +69,7 @@ func TestCredentialModelsOnlyExposeHashes(t *testing.T) {
 	assertBinaryHashField(t, reflect.TypeOf(ProjectAPIKey{}), "SecretHash")
 	assertBinaryHashField(t, reflect.TypeOf(ImportRecord{}), "RequestHash")
 	secretSuffix, ok := reflect.TypeOf(ProjectAPIKey{}).FieldByName("SecretSuffix")
-	if !ok || secretSuffix.Type.Kind() != reflect.String || !strings.Contains(secretSuffix.Tag.Get("xorm"), "CHAR(4)") {
+	if !ok || secretSuffix.Type.Kind() != reflect.String || secretSuffix.Tag.Get("lorm") != "secret_suffix" {
 		t.Fatal("ProjectAPIKey.SecretSuffix must store only the four-character display suffix")
 	}
 
@@ -94,8 +94,8 @@ func assertBinaryHashField(t *testing.T, recordType reflect.Type, fieldName stri
 	if field.Type != reflect.TypeOf([]byte(nil)) {
 		t.Fatalf("%s.%s must be []byte, got %s", recordType.Name(), fieldName, field.Type)
 	}
-	if !strings.Contains(field.Tag.Get("xorm"), "BINARY(32)") {
-		t.Fatalf("%s.%s must use a 32-byte database hash", recordType.Name(), fieldName)
+	if field.Tag.Get("lorm") == "" {
+		t.Fatalf("%s.%s must map to its database hash column", recordType.Name(), fieldName)
 	}
 }
 
@@ -124,7 +124,6 @@ func TestSchemaKeepsCriticalDatabaseGuarantees(t *testing.T) {
 
 	required := []string{
 		"UNIQUE KEY `ux_projects_key` (`key`)",
-		"CONSTRAINT `fk_environments_project` FOREIGN KEY (`project_id`) REFERENCES `projects` (`id`)",
 		"UNIQUE KEY `ux_import_records_idempotency` (`user_id`, `target_environment_id`, `idempotency_key`)",
 		"`runtime_version` BIGINT NOT NULL DEFAULT 0",
 		"`is_system_admin` BOOLEAN NOT NULL DEFAULT FALSE",
@@ -139,6 +138,9 @@ func TestSchemaKeepsCriticalDatabaseGuarantees(t *testing.T) {
 			t.Errorf("schema is missing %q", fragment)
 		}
 	}
+	if strings.Contains(strings.ToUpper(schema), "FOREIGN KEY") {
+		t.Error("schema must not create database foreign keys")
+	}
 
 	if strings.Contains(strings.ToUpper(schema), "CREATE TABLE IF NOT EXISTS") {
 		t.Error("schema must reject accidental repeated execution")
@@ -148,13 +150,13 @@ func TestSchemaKeepsCriticalDatabaseGuarantees(t *testing.T) {
 func TestValidateSchemaFailsWithMissingTables(t *testing.T) {
 	t.Parallel()
 
-	engine, mock := newSchemaMockEngine(t)
+	engine, mock := newSchemaMockDatabase(t)
 	query := schemaInspectionQueryPattern()
 	mock.ExpectQuery(query).
 		WithArgs(schemaQueryArguments()...).
 		WillReturnRows(sqlmock.NewRows([]string{"table_name"}).AddRow("users"))
 
-	err := ValidateSchema(context.Background(), engine)
+	err := ValidateSchema(context.Background(), engine, false)
 	require.ErrorContains(t, err, "database schema is incomplete")
 	require.ErrorContains(t, err, "environments")
 	require.NoError(t, mock.ExpectationsWereMet())
@@ -163,7 +165,7 @@ func TestValidateSchemaFailsWithMissingTables(t *testing.T) {
 func TestValidateSchemaAcceptsCompleteSchema(t *testing.T) {
 	t.Parallel()
 
-	engine, mock := newSchemaMockEngine(t)
+	engine, mock := newSchemaMockDatabase(t)
 	rows := sqlmock.NewRows([]string{"table_name"})
 	for _, table := range RequiredTables() {
 		rows.AddRow(table)
@@ -172,19 +174,17 @@ func TestValidateSchemaAcceptsCompleteSchema(t *testing.T) {
 		WithArgs(schemaQueryArguments()...).
 		WillReturnRows(rows)
 
-	require.NoError(t, ValidateSchema(context.Background(), engine))
+	require.NoError(t, ValidateSchema(context.Background(), engine, false))
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-func newSchemaMockEngine(t *testing.T) (*xorm.Engine, sqlmock.Sqlmock) {
+func newSchemaMockDatabase(t *testing.T) (*sql.DB, sqlmock.Sqlmock) {
 	t.Helper()
 
 	database, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	engine, err := xorm.NewEngineWithDB("mysql", "user:password@/kirby", core.FromDB(database))
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = engine.Close() })
-	return engine, mock
+	t.Cleanup(func() { _ = database.Close() })
+	return database, mock
 }
 
 func schemaInspectionQueryPattern() string {

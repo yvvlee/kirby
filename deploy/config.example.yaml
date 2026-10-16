@@ -2,16 +2,17 @@
 mode: multi
 
 http:
-  address: ":8000"
+  address: ":8080"
   # S3 complete streams up to 64 MiB through the server while publishing an
   # immutable object. Keep this above the measured worst-case internal copy time.
   timeout: 2m
 
 grpc:
-  address: ":9000"
+  address: ":9090"
   timeout: 10s
 
-mysql:
+database:
+  driver: mysql
   dsn: "CHANGE_ME_MYSQL_USER:CHANGE_ME_MYSQL_PASSWORD@tcp(mysql:3306)/kirby?charset=utf8mb4&parseTime=true&loc=UTC"
   max_open_conns: 50
   max_idle_conns: 10
@@ -28,18 +29,8 @@ cache:
 
 jwt:
   issuer: kirby
-  active_kid: change-me-primary
   access_ttl: 15m
   refresh_ttl: 168h
-  keys:
-    change-me-primary: "CHANGE_ME_JWT_KEY"
-
-# Every server instance must use the same API key pepper, origin list, and proxy list.
-security:
-  api_key_pepper: "CHANGE_ME_API_KEY_PEPPER"
-  allowed_origins:
-    - "https://kirby.example.invalid"
-  trusted_proxies: []
 
 object_storage:
   driver: s3
@@ -47,15 +38,11 @@ object_storage:
     directory: ""
   s3:
     endpoint: "minio:9000"
-    presign_endpoint: "localhost:9000"
     region: "us-east-1"
     bucket: "kirby"
     access_key: "CHANGE_ME_S3_ACCESS_KEY"
     secret_key: "CHANGE_ME_S3_SECRET_KEY"
     use_ssl: false
-    presign_use_ssl: false
-    public_base_url: "http://localhost:9000/kirby"
 
 log:
   level: info
-  format: json

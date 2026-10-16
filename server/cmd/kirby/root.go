@@ -11,6 +11,9 @@ import (
 )
 
 // Execute runs the Kirby command-line interface.
+// Parameters: none; command arguments come from the process.
+// Returns: the command failure so main can select a nonzero exit status.
+// Throws: argument, configuration, or selected command errors.
 func Execute() error {
 	return newRootCommand(os.Stdout, os.Stderr).Execute()
 }

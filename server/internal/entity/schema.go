@@ -11,7 +11,7 @@ import (
 	"unicode/utf8"
 
 	commonv1 "github.com/yvvlee/kirby/server/api/common"
-	"github.com/yvvlee/kirby/server/internal/set"
+	"github.com/yvvlee/kirby/server/internal/util/set"
 )
 
 type Schema struct {
@@ -24,8 +24,16 @@ var (
 	enumValuePattern = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
 )
 
+// NewSchema resolves references and rejects cycles before values are processed.
+//
+// Parameters: structures and enums are the complete configuration definitions.
+// Returns: a schema with unique validated definitions.
+// Throws: an invalid-definition, duplicate-key, missing-reference, or cycle error.
 func NewSchema(structures []*commonv1.Structure, enums []*commonv1.ConfigEnum) (*Schema, error) {
-	result := &Schema{structures: make(map[string]*commonv1.Structure, len(structures)), enums: make(map[string]*commonv1.ConfigEnum, len(enums))}
+	result := &Schema{
+		structures: make(map[string]*commonv1.Structure, len(structures)),
+		enums:      make(map[string]*commonv1.ConfigEnum, len(enums)),
+	}
 	for _, item := range structures {
 		if item == nil || !validKey(item.Key) || !validName(item.Name) || utf8.RuneCountInString(item.Description) > 255 {
 			return nil, Invalid("structure key is required")
@@ -42,25 +50,14 @@ func NewSchema(structures []*commonv1.Structure, enums []*commonv1.ConfigEnum) (
 		if _, exists := result.enums[item.Key]; exists {
 			return nil, Conflict("duplicate enum key %s", item.Key)
 		}
-		seen := set.New[string]()
-		for _, option := range item.Values {
-			if option == nil || !enumValuePattern.MatchString(option.Value) || !validName(option.Label) || utf8.RuneCountInString(option.Description) > 255 || seen.Contains(option.Value) {
-				return nil, Invalid("enum %s contains an invalid or duplicate value", item.Key)
-			}
-			seen.Add(option.Value)
+		if err := validateEnumValues(item); err != nil {
+			return nil, err
 		}
 		result.enums[item.Key] = item
 	}
 	for _, item := range structures {
-		seen := set.New[string]()
-		for _, field := range item.Fields {
-			if field == nil || !validKey(field.Key) || !validName(field.Name) || utf8.RuneCountInString(field.Description) > 255 || seen.Contains(field.Key) {
-				return nil, Invalid("structure %s contains an invalid or duplicate field", item.Key)
-			}
-			seen.Add(field.Key)
-			if err := result.validateType(field.Type); err != nil {
-				return nil, err
-			}
+		if err := result.validateStructureFields(item); err != nil {
+			return nil, err
 		}
 	}
 	if err := result.validateCycles(); err != nil {
@@ -69,6 +66,36 @@ func NewSchema(structures []*commonv1.Structure, enums []*commonv1.ConfigEnum) (
 	return result, nil
 }
 
+func validateEnumValues(item *commonv1.ConfigEnum) error {
+	seen := set.New[string]()
+	for _, option := range item.Values {
+		if option == nil || !enumValuePattern.MatchString(option.Value) || !validName(option.Label) || utf8.RuneCountInString(option.Description) > 255 || seen.Contains(option.Value) {
+			return Invalid("enum %s contains an invalid or duplicate value", item.Key)
+		}
+		seen.Add(option.Value)
+	}
+	return nil
+}
+
+func (s *Schema) validateStructureFields(item *commonv1.Structure) error {
+	seen := set.New[string]()
+	for _, field := range item.Fields {
+		if field == nil || !validKey(field.Key) || !validName(field.Name) || utf8.RuneCountInString(field.Description) > 255 || seen.Contains(field.Key) {
+			return Invalid("structure %s contains an invalid or duplicate field", item.Key)
+		}
+		seen.Add(field.Key)
+		if err := s.validateType(field.Type); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ValidateConfig checks JSON values against the resolved definition graph.
+//
+// Parameters: config contains the declared type and encoded value.
+// Returns: nil when the value satisfies the schema.
+// Throws: an error describing malformed JSON, mismatched values, or invalid references.
 func (s *Schema) ValidateConfig(config *commonv1.Config) error {
 	if config == nil || config.Type == nil || !validKey(config.Key) {
 		return Invalid("config and type are required")
@@ -80,7 +107,12 @@ func (s *Schema) ValidateConfig(config *commonv1.Config) error {
 	if err != nil {
 		return Invalid("config value is not valid JSON: %v", err)
 	}
-	root := &commonv1.Field{Key: config.Key, Name: config.Key, IsArray: config.IsArray, Type: config.Type}
+	root := &commonv1.Field{
+		Key:     config.Key,
+		Name:    config.Key,
+		IsArray: config.IsArray,
+		Type:    config.Type,
+	}
 	return s.validateValue(root, value, "$", set.New[string]())
 }
 
@@ -93,11 +125,21 @@ func validName(value string) bool {
 	return strings.TrimSpace(value) != "" && length <= 64
 }
 
+// DefaultValue constructs an editable JSON value for a declared type.
+//
+// Parameters: configType selects the field type; isArray selects collection semantics.
+// Returns: the encoded default value.
+// Throws: an error for an invalid type, cycle, or JSON-encoding failure.
 func (s *Schema) DefaultValue(configType *commonv1.Field_Type, isArray bool) (string, error) {
 	if err := s.validateType(configType); err != nil {
 		return "", err
 	}
-	field := &commonv1.Field{Key: "value", Name: "value", Type: configType, IsArray: isArray}
+	field := &commonv1.Field{
+		Key:     "value",
+		Name:    "value",
+		Type:    configType,
+		IsArray: isArray,
+	}
 	value, err := s.defaultValue(field, set.New[string]())
 	if err != nil {
 		return "", err
@@ -109,6 +151,11 @@ func (s *Schema) DefaultValue(configType *commonv1.Field_Type, isArray bool) (st
 	return string(encoded), nil
 }
 
+// BuildTree expands structure references for the configuration editor.
+//
+// Parameters: config supplies the root type and display metadata.
+// Returns: the expanded tree.
+// Throws: an error for an invalid type or cyclic structure reference.
 func (s *Schema) BuildTree(config *commonv1.Config) (*commonv1.TreeNode, error) {
 	if config == nil || config.Type == nil {
 		return nil, Invalid("config and type are required")
@@ -116,9 +163,15 @@ func (s *Schema) BuildTree(config *commonv1.Config) (*commonv1.TreeNode, error) 
 	if err := s.validateType(config.Type); err != nil {
 		return nil, err
 	}
-	root := &commonv1.TreeNode{Value: &commonv1.Field{
-		Key: config.Key, Name: "配置值", Description: config.Description, IsArray: config.IsArray, Type: config.Type,
-	}}
+	root := &commonv1.TreeNode{
+		Value: &commonv1.Field{
+			Key:         config.Key,
+			Name:        "配置值",
+			Description: config.Description,
+			IsArray:     config.IsArray,
+			Type:        config.Type,
+		},
+	}
 	children, err := s.children(config.Type, set.New[string]())
 	if err != nil {
 		return nil, err
@@ -127,6 +180,11 @@ func (s *Schema) BuildTree(config *commonv1.Config) (*commonv1.TreeNode, error) 
 	return root, nil
 }
 
+// FilterStructureChoices excludes choices that would introduce a reference cycle.
+//
+// Parameters: items are available structures; ignoreID identifies the structure being edited.
+// Returns: the choices that cannot reach the edited structure, and a nil error.
+// Throws: none.
 func FilterStructureChoices(items []*commonv1.Structure, ignoreID int64) ([]*commonv1.Structure, error) {
 	if ignoreID <= 0 {
 		return items, nil
@@ -142,21 +200,8 @@ func FilterStructureChoices(items []*commonv1.Structure, ignoreID int64) ([]*com
 		return items, nil
 	}
 	rejected := set.New(ignored.Key)
-	changed := true
-	for changed {
-		changed = false
-		for _, item := range items {
-			if rejected.Contains(item.Key) {
-				continue
-			}
-			for _, field := range item.Fields {
-				if rejected.Contains(field.GetType().GetStructureKey()) {
-					rejected.Add(item.Key)
-					changed = true
-					break
-				}
-			}
-		}
+	for rejectDependentStructures(items, rejected) {
+		// Each pass adds dependents until no structure can reach the ignored one.
 	}
 	result := make([]*commonv1.Structure, 0, len(items))
 	for _, item := range items {
@@ -165,6 +210,27 @@ func FilterStructureChoices(items []*commonv1.Structure, ignoreID int64) ([]*com
 		}
 	}
 	return result, nil
+}
+
+func rejectDependentStructures(items []*commonv1.Structure, rejected *set.Set[string]) bool {
+	changed := false
+	for _, item := range items {
+		if rejected.Contains(item.Key) || !referencesRejectedStructure(item, rejected) {
+			continue
+		}
+		rejected.Add(item.Key)
+		changed = true
+	}
+	return changed
+}
+
+func referencesRejectedStructure(item *commonv1.Structure, rejected *set.Set[string]) bool {
+	for _, field := range item.Fields {
+		if rejected.Contains(field.GetType().GetStructureKey()) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Schema) validateType(fieldType *commonv1.Field_Type) error {
@@ -203,10 +269,11 @@ func (s *Schema) validateCycles() error {
 		visiting.Add(key)
 		for _, field := range s.structures[key].Fields {
 			dependency := field.GetType().GetStructureKey()
-			if dependency != "" {
-				if err := walk(dependency, append(path, key)); err != nil {
-					return err
-				}
+			if dependency == "" {
+				continue
+			}
+			if err := walk(dependency, append(path, key)); err != nil {
+				return err
 			}
 		}
 		visiting.Remove(key)
@@ -238,66 +305,86 @@ func (s *Schema) children(fieldType *commonv1.Field_Type, path *set.Set[string])
 		if err != nil {
 			return nil, err
 		}
-		result = append(result, &commonv1.TreeNode{Value: field, Children: children})
+		result = append(result, &commonv1.TreeNode{
+			Value:    field,
+			Children: children,
+		})
 	}
 	return result, nil
 }
 
 func (s *Schema) validateValue(field *commonv1.Field, value any, path string, structures *set.Set[string]) error {
 	if field.IsArray {
-		items, ok := value.([]any)
-		if !ok {
-			return Invalid("%s must be an array", path)
-		}
-		clone := &commonv1.Field{Key: field.Key, Name: field.Name, Description: field.Description, Type: field.Type}
-		for index, item := range items {
-			if err := s.validateValue(clone, item, fmt.Sprintf("%s[%d]", path, index), structures); err != nil {
-				return err
-			}
-		}
-		return nil
+		return s.validateArrayValue(field, value, path, structures)
 	}
 	switch kind := field.Type.Kind.(type) {
 	case *commonv1.Field_Type_BaseType:
 		return validateBaseValue(kind.BaseType, value, path)
 	case *commonv1.Field_Type_EnumKey:
-		text, ok := value.(string)
-		if !ok {
-			return Invalid("%s must be an enum string", path)
-		}
-		for _, option := range s.enums[kind.EnumKey].Values {
-			if option.Value == text {
-				return nil
-			}
-		}
-		return Invalid("%s contains an unknown enum value", path)
+		return s.validateEnumValue(kind.EnumKey, value, path)
 	case *commonv1.Field_Type_StructureKey:
-		object, ok := value.(map[string]any)
-		if !ok {
-			return Invalid("%s must be an object", path)
-		}
-		if structures.Contains(kind.StructureKey) {
-			return Conflict("structure cycle contains %s", kind.StructureKey)
-		}
-		structures.Add(kind.StructureKey)
-		defer structures.Remove(kind.StructureKey)
-		definition := s.structures[kind.StructureKey]
-		if len(object) != len(definition.Fields) {
-			return Invalid("%s does not match structure %s", path, kind.StructureKey)
-		}
-		for _, child := range definition.Fields {
-			childValue, exists := object[child.Key]
-			if !exists {
-				return Invalid("%s.%s is required", path, child.Key)
-			}
-			if err := s.validateValue(child, childValue, path+"."+child.Key, structures); err != nil {
-				return err
-			}
-		}
-		return nil
+		return s.validateStructureValue(kind.StructureKey, value, path, structures)
 	default:
 		return Invalid("%s has no field type", path)
 	}
+}
+
+func (s *Schema) validateArrayValue(field *commonv1.Field, value any, path string, structures *set.Set[string]) error {
+	items, ok := value.([]any)
+	if !ok {
+		return Invalid("%s must be an array", path)
+	}
+	itemField := &commonv1.Field{
+		Key:         field.Key,
+		Name:        field.Name,
+		Description: field.Description,
+		Type:        field.Type,
+	}
+	for index, item := range items {
+		if err := s.validateValue(itemField, item, fmt.Sprintf("%s[%d]", path, index), structures); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Schema) validateEnumValue(key string, value any, path string) error {
+	text, ok := value.(string)
+	if !ok {
+		return Invalid("%s must be an enum string", path)
+	}
+	for _, option := range s.enums[key].Values {
+		if option.Value == text {
+			return nil
+		}
+	}
+	return Invalid("%s contains an unknown enum value", path)
+}
+
+func (s *Schema) validateStructureValue(key string, value any, path string, structures *set.Set[string]) error {
+	object, ok := value.(map[string]any)
+	if !ok {
+		return Invalid("%s must be an object", path)
+	}
+	if structures.Contains(key) {
+		return Conflict("structure cycle contains %s", key)
+	}
+	structures.Add(key)
+	defer structures.Remove(key)
+	definition := s.structures[key]
+	if len(object) != len(definition.Fields) {
+		return Invalid("%s does not match structure %s", path, key)
+	}
+	for _, child := range definition.Fields {
+		childValue, exists := object[child.Key]
+		if !exists {
+			return Invalid("%s.%s is required", path, child.Key)
+		}
+		if err := s.validateValue(child, childValue, path+"."+child.Key, structures); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Schema) defaultValue(field *commonv1.Field, structures *set.Set[string]) (any, error) {
@@ -319,23 +406,27 @@ func (s *Schema) defaultValue(field *commonv1.Field, structures *set.Set[string]
 	case *commonv1.Field_Type_EnumKey:
 		return s.enums[kind.EnumKey].Values[0].Value, nil
 	case *commonv1.Field_Type_StructureKey:
-		if structures.Contains(kind.StructureKey) {
-			return nil, Conflict("structure cycle contains %s", kind.StructureKey)
-		}
-		structures.Add(kind.StructureKey)
-		defer structures.Remove(kind.StructureKey)
-		result := make(map[string]any)
-		for _, child := range s.structures[kind.StructureKey].Fields {
-			value, err := s.defaultValue(child, structures)
-			if err != nil {
-				return nil, err
-			}
-			result[child.Key] = value
-		}
-		return result, nil
+		return s.defaultStructureValue(kind.StructureKey, structures)
 	default:
 		return nil, Invalid("field type is required")
 	}
+}
+
+func (s *Schema) defaultStructureValue(key string, structures *set.Set[string]) (any, error) {
+	if structures.Contains(key) {
+		return nil, Conflict("structure cycle contains %s", key)
+	}
+	structures.Add(key)
+	defer structures.Remove(key)
+	result := make(map[string]any)
+	for _, child := range s.structures[key].Fields {
+		value, err := s.defaultValue(child, structures)
+		if err != nil {
+			return nil, err
+		}
+		result[child.Key] = value
+	}
+	return result, nil
 }
 
 func validateBaseValue(baseType commonv1.Field_BaseType, value any, path string) error {

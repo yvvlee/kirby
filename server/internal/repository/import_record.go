@@ -2,125 +2,150 @@ package repository
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/json"
-	"unicode/utf8"
+	"database/sql"
+	"errors"
+	"time"
 
-	"xorm.io/xorm"
+	"github.com/yvvlee/lorm"
+	"github.com/yvvlee/lorm/builder"
 
+	"github.com/yvvlee/kirby/server/internal/infra"
 	"github.com/yvvlee/kirby/server/internal/model"
-	"github.com/yvvlee/kirby/server/internal/repository/base"
 )
 
-type ImportRecordRepository struct{}
-
-func NewImportRecordRepository() *ImportRecordRepository {
-	return &ImportRecordRepository{}
+type ImportRecordRepository interface {
+	Claim(ctx context.Context, record *model.ImportRecord) (*model.ImportRecord, bool, error)
+	Complete(ctx context.Context, recordID, targetSnapshotID int64, resultJSON string) error
 }
 
-// ClaimTx serializes requests sharing the user, target environment and
-// idempotency key. The returned boolean is true only for the transaction that
-// inserted the pending record.
-func (*ImportRecordRepository) ClaimTx(ctx context.Context, tx *xorm.Session, record *model.ImportRecord) (*model.ImportRecord, bool, error) {
-	if tx == nil {
-		return nil, false, base.InvalidArgument("transaction session is nil")
+type ImportRecordRepositoryImpl struct {
+	*lorm.Repository[*model.ImportRecord]
+}
+
+// NewImportRecordRepository creates ImportRecordRepositoryImpl with its shared database engine.
+//
+// Parameters: storage supplies the shared database engine.
+// Returns: *ImportRecordRepositoryImpl.
+// Throws: none.
+func NewImportRecordRepository(storage *infra.Storage) *ImportRecordRepositoryImpl {
+	return &ImportRecordRepositoryImpl{
+		Repository: storage.CoreDB.Repository[*model.ImportRecord](),
 	}
-	if err := validateImportRecord(record); err != nil {
-		return nil, false, err
-	}
-	_, err := tx.Context(ctx).Exec(`
-INSERT INTO import_records
-    (user_id, source_environment_id, target_environment_id, source_snapshot_id,
-     target_project_id, target_snapshot_id, idempotency_key, request_hash,
-     status, result_json, error_message, created_by, updated_by)
-SELECT u.id, source_environment.id, target_environment.id, source_snapshot.id,
-       target_project.id, NULL, ?, ?, ?, NULL, ?, ?, ?
-FROM users AS u
-INNER JOIN environments AS source_environment
-    ON source_environment.id = ? AND source_environment.enabled = TRUE
-   AND source_environment.deleted_at IS NULL
-INNER JOIN snapshots AS source_snapshot
-    ON source_snapshot.id = ? AND source_snapshot.deleted_at IS NULL
-INNER JOIN projects AS source_project
-    ON source_project.id = source_snapshot.project_id
-   AND source_environment.project_id = source_project.id
-   AND source_project.deleted_at IS NULL
-INNER JOIN configs AS source_config
-    ON source_config.id = source_snapshot.config_id
-   AND source_config.project_id = source_project.id
-   AND source_config.deleted_at IS NULL
-INNER JOIN environments AS target_environment
-    ON target_environment.id = ? AND target_environment.enabled = TRUE
-   AND target_environment.deleted_at IS NULL
-INNER JOIN projects AS target_project
-    ON target_project.id = ? AND target_environment.project_id = target_project.id
-   AND target_project.deleted_at IS NULL
-WHERE u.id = ? AND u.enabled = TRUE AND u.deleted_at IS NULL
-ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(import_records.id)`,
-		record.IdempotencyKey, record.RequestHash, model.ImportStatusPending,
-		record.ErrorMessage, record.CreatedBy, record.UpdatedBy,
-		record.SourceEnvironmentID, record.SourceSnapshotID,
-		record.TargetEnvironmentID, record.TargetProjectID, record.UserID)
+}
+
+// Claim 通过(user_id, target_environment_id, idempotency_key)唯一键串行化导入请求。
+// 返回的布尔值仅对成功插入pending记录的事务为真。
+// Parameters: ctx carries the caller transaction; record contains the pending import.
+// Returns: the claimed or existing record, and whether this transaction created it.
+// Throws: a database error or missing existing import record.
+func (r *ImportRecordRepositoryImpl) Claim(ctx context.Context, record *model.ImportRecord) (*model.ImportRecord, bool, error) {
+	created, err := r.insertClaim(ctx, record)
 	if err != nil {
-		return nil, false, base.Wrap("claim import record", err)
+		return nil, false, WrapDatabaseError(err)
 	}
-	var claimed model.ImportRecord
-	err = base.LockOne(ctx, tx, "import record", `
-SELECT r.id, r.user_id, r.source_environment_id, r.target_environment_id,
-       r.source_snapshot_id, r.target_project_id, r.target_snapshot_id,
-       r.idempotency_key, r.request_hash, r.status, r.error_message,
-       r.created_by, r.updated_by, r.created_at, r.updated_at, r.version
-FROM import_records AS r
-WHERE r.user_id = ? AND r.target_environment_id = ? AND r.idempotency_key = ?
-LIMIT 1
-FOR UPDATE`, []any{record.UserID, record.TargetEnvironmentID, record.IdempotencyKey}, &claimed)
+	if created {
+		claimed := *record
+		return &claimed, true, nil
+	}
+	return r.lockExistingClaim(ctx, record)
+}
+
+func (r *ImportRecordRepositoryImpl) insertClaim(ctx context.Context, record *model.ImportRecord) (bool, error) {
+	record.PrepareInsert()
+	if r.Engine.SupportsReturning() && !r.Engine.SupportsLastInsertId() {
+		return r.insertPostgresClaim(ctx, record)
+	}
+	_, err := r.Insert(ctx, record)
+	if isDuplicateKeyError(err) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+func (r *ImportRecordRepositoryImpl) insertPostgresClaim(ctx context.Context, record *model.ImportRecord) (bool, error) {
+	// A duplicate INSERT aborts PostgreSQL transactions before the locked replay
+	// read. Limit conflict handling to this operation's idempotency constraint.
+	const statement = `INSERT INTO import_records (
+		user_id, source_environment_id, target_environment_id,
+		source_snapshot_id, target_project_id, target_snapshot_id,
+		idempotency_key, request_hash, status, result_json, error_message,
+		created_by, updated_by, created_at, updated_at, version
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+	ON CONFLICT (user_id, target_environment_id, idempotency_key) DO NOTHING
+	RETURNING *`
+	rows, err := r.Engine.SQL(ctx, statement,
+		record.UserID,
+		record.SourceEnvironmentID,
+		record.TargetEnvironmentID,
+		record.SourceSnapshotID,
+		record.TargetProjectID,
+		record.TargetSnapshotID,
+		record.IdempotencyKey,
+		record.RequestHash,
+		record.Status,
+		record.ResultJSON,
+		record.ErrorMessage,
+		record.CreatedBy,
+		record.UpdatedBy,
+		record.CreatedAt,
+		record.UpdatedAt,
+	)
 	if err != nil {
-		return nil, false, err
+		return false, err
 	}
-	created := claimed.ErrorMessage != "" && claimed.ErrorMessage == record.ErrorMessage
-	return &claimed, created, nil
+	defer rows.Close()
+	err = lorm.ScanModel(rows, record)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, rows.Close()
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, rows.Close()
 }
 
-func (*ImportRecordRepository) CompleteTx(ctx context.Context, tx *xorm.Session, recordID, targetSnapshotID int64, resultJSON string) error {
-	if recordID <= 0 || targetSnapshotID <= 0 || !validJSONObject(resultJSON) {
-		return base.InvalidArgument("completed import record is invalid")
+func (r *ImportRecordRepositoryImpl) lockExistingClaim(ctx context.Context, record *model.ImportRecord) (*model.ImportRecord, bool, error) {
+	fields := new(model.ImportRecord).LormCols()
+	existing, has, err := r.Engine.Query[*model.ImportRecord]().
+		Where(builder.Eq{
+			fields.UserID():              record.UserID,
+			fields.TargetEnvironmentID(): record.TargetEnvironmentID,
+			fields.IdempotencyKey():      record.IdempotencyKey,
+		}).
+		Suffix("FOR UPDATE").Get(ctx)
+	if err != nil {
+		return nil, false, WrapDatabaseError(err)
 	}
-	_, err := base.ExecuteTx(ctx, tx, "import record", `
-UPDATE import_records
-SET target_snapshot_id = ?, status = ?, result_json = ?, error_message = '',
-    updated_at = UTC_TIMESTAMP(6), version = version + 1
-WHERE id = ? AND status = ?`,
-		targetSnapshotID, model.ImportStatusSucceeded, resultJSON, recordID, model.ImportStatusPending)
-	return err
+	if !has {
+		return nil, false, Missing("import record")
+	}
+	return existing, false, nil
 }
 
-func validJSONObject(value string) bool {
-	var object map[string]any
-	return json.Unmarshal([]byte(value), &object) == nil && object != nil
-}
-
-func validateImportRecord(record *model.ImportRecord) error {
-	if record == nil {
-		return base.InvalidArgument("import record is nil")
+// Complete 将pending记录标记为成功并写入结果。
+//
+// Parameters: ctx carries cancellation and transaction state; recordID identifies the pending import claim; targetSnapshotID identifies the snapshot created by this import; resultJSON stores the replay response.
+// Returns: nil after a pending claim becomes successful; ErrNoRowsAffected if it is no longer pending.
+// Throws: none.
+func (r *ImportRecordRepositoryImpl) Complete(ctx context.Context, recordID, targetSnapshotID int64, resultJSON string) error {
+	fields := new(model.ImportRecord).LormCols()
+	affected, err := r.Engine.Update[*model.ImportRecord]().ID(recordID).
+		Where(builder.Eq{fields.Status(): model.ImportStatusPending}).
+		Set(fields.Version(), builder.Expr("version + 1")).
+		SetMap(map[string]any{
+			fields.TargetSnapshotID(): targetSnapshotID,
+			fields.Status():           model.ImportStatusSucceeded,
+			fields.ResultJSON():       resultJSON,
+			fields.ErrorMessage():     "",
+			fields.UpdatedAt():        time.Now().UTC(),
+		}).Exec(ctx)
+	if err != nil {
+		return WrapDatabaseError(err)
 	}
-	if record.UserID <= 0 || record.SourceEnvironmentID <= 0 || record.TargetEnvironmentID <= 0 || record.SourceSnapshotID <= 0 || record.TargetProjectID <= 0 {
-		return base.InvalidArgument("import record scope is invalid")
-	}
-	length := utf8.RuneCountInString(record.IdempotencyKey)
-	if length < 16 || length > 128 || !asciiGraphic(record.IdempotencyKey) {
-		return base.InvalidArgument("idempotency key is invalid")
-	}
-	if len(record.RequestHash) != sha256.Size || record.CreatedBy != record.UserID || record.UpdatedBy != record.UserID || len(record.ErrorMessage) < 16 || len(record.ErrorMessage) > 128 || !asciiGraphic(record.ErrorMessage) {
-		return base.InvalidArgument("import record metadata is invalid")
+	if affected == 0 {
+		return Unchanged("import record")
 	}
 	return nil
 }
 
-func asciiGraphic(value string) bool {
-	for index := 0; index < len(value); index++ {
-		if value[index] < 0x21 || value[index] > 0x7e {
-			return false
-		}
-	}
-	return true
-}
+var _ ImportRecordRepository = (*ImportRecordRepositoryImpl)(nil)

@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+package kirby.admin.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "validate/validate.proto";
+
+option go_package = "github.com/yvvlee/kirby/server/api/admin;adminv1";
+
+// SetupService exposes first-run status and creates the single initial administrator.
+service SetupService {
+  rpc GetSetupStatus(google.protobuf.Empty) returns (SetupStatusReply) {
+    option (google.api.http) = {get: "/setup/status"};
+  }
+  rpc CreateInitialAdmin(CreateInitialAdminRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/setup/admin"
+      body: "*"
+    };
+  }
+}
+
+message SetupStatusReply {
+  bool initialized = 1;
+}
+
+message CreateInitialAdminRequest {
+  string username = 1 [(validate.rules).string = {
+    min_len: 1
+    max_len: 128
+  }];
+  string display_name = 2 [(validate.rules).string = {
+    min_len: 1
+    max_len: 128
+  }];
+  string password = 3 [(validate.rules).string = {
+    min_bytes: 12
+    max_bytes: 1024
+  }];
+}

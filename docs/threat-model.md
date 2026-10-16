@@ -26,14 +26,14 @@ is shared acceleration and rate-limit state, not an authorization authority.
 | Threat | Control |
 |---|---|
 | Password theft or offline guessing | Argon2id, bounded hash parameters, TTY or mode-0600 password file input |
-| JWT forgery or stale keys | Configured issuer, key ID, fixed algorithms, short access lifetime, explicit key ring |
-| Refresh-token theft or replay | `HttpOnly` cookie, exact origin validation, hash-only storage, rotation, replay revocation |
-| Project API-key disclosure | One-time secret response, peppered digest, constant-time verification, redacted logs |
+| JWT forgery or stale keys | Configured issuer, persisted signing key and key ID, fixed algorithms, short access lifetime |
+| Refresh-token theft or replay | `HttpOnly` cookie, same-origin validation, hash-only storage, rotation, replay revocation |
+| Project API-key disclosure | One-time secret response, peppered digest, constant-time verification, log-collector redaction |
 | Cross-environment access | Environment permission checks plus environment-scoped repository queries |
 | Resource-ID substitution | Project, config, snapshot, import, and API-key ownership checked in the database |
 | Object-key traversal or substitution | Strict parser, generated UUID paths, environment/project comparison, rooted local file access |
 | Oversized or disguised upload | Signed size/type declaration, upload limits, metadata revalidation, incomplete-object deletion |
-| Secret leakage through errors or logs | Public error mapping, structured redaction, request query/header exclusion tests |
+| Secret leakage through errors or logs | Public error mapping, log-collector redaction, request query/header exclusion tests |
 | Audit tampering by partial writes | Business change and audit record share one database transaction |
 | Rate-limit bypass | Shared Redis counters; cache failure denies the request |
 | Stale permission or publication cache | Database generation/version is read before cache use |

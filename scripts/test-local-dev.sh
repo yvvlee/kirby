@@ -76,10 +76,6 @@ CREATE DATABASE \`$database\` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 CREATE USER '$database_user'@'%' IDENTIFIED BY '$database_password';
 GRANT ALL PRIVILEGES ON \`$database\`.* TO '$database_user'@'%';
 SQL
-docker exec -i "$mysql_container" sh -ec \
-  'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -uroot "$1"' sh "$database" \
-  < "$repo_dir/deploy/schema.sql"
-
 cat >"$config_file" <<EOF
 mode: single
 http:
@@ -88,7 +84,8 @@ http:
 grpc:
   address: "127.0.0.1:$grpc_port"
   timeout: 10s
-mysql:
+database:
+  driver: mysql
   dsn: "$database_user:$database_password@tcp(127.0.0.1:$mysql_port)/$database?charset=utf8mb4&parseTime=true&loc=UTC"
   max_open_conns: 20
   max_idle_conns: 5
@@ -103,34 +100,21 @@ cache:
     key_prefix: "kirby-local-$test_id:"
 jwt:
   issuer: kirby-e2e
-  active_kid: e2e-primary
   access_ttl: 15m
   refresh_ttl: 168h
-  keys:
-    e2e-primary: "kirby-e2e-jwt-key-012345678901234567890123"
-security:
-  api_key_pepper: "kirby-local-api-key-pepper-01234567890123456789"
-  allowed_origins:
-    - "http://127.0.0.1:$web_port"
-    - "http://127.0.0.1:14173"
-  trusted_proxies: []
 object_storage:
   driver: local
   local:
     directory: "$work_dir/objects"
   s3:
     endpoint: ""
-    presign_endpoint: ""
     region: ""
     bucket: ""
     access_key: ""
     secret_key: ""
     use_ssl: false
-    presign_use_ssl: false
-    public_base_url: ""
 log:
   level: info
-  format: json
 EOF
 printf '%s\n' 'kirby-e2e-admin-password' >"$password_file"
 chmod 600 "$password_file"

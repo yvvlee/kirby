@@ -2,7 +2,7 @@ import { defineConfig } from '@playwright/test'
 
 export default defineConfig({
   testDir: '.',
-  testMatch: 'user-journey.spec.js',
+  testMatch: process.env.KIRBY_E2E_SETUP === '1' ? 'setup.spec.js' : 'user-journey.spec.js',
   timeout: 60_000,
   expect: { timeout: 10_000 },
   fullyParallel: false,

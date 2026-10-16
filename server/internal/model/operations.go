@@ -1,5 +1,7 @@
 package model
 
+import "github.com/yvvlee/lorm"
+
 type ImportStatus string
 
 const (
@@ -9,21 +11,21 @@ const (
 )
 
 type ImportRecord struct {
-	WorkflowMeta        `xorm:"extends"`
-	UserID              int64        `xorm:"notnull 'user_id'"`
-	SourceEnvironmentID int64        `xorm:"notnull 'source_environment_id'"`
-	TargetEnvironmentID int64        `xorm:"notnull 'target_environment_id'"`
-	SourceSnapshotID    int64        `xorm:"notnull 'source_snapshot_id'"`
-	TargetProjectID     int64        `xorm:"notnull 'target_project_id'"`
-	TargetSnapshotID    *int64       `xorm:"'target_snapshot_id'"`
-	IdempotencyKey      string       `xorm:"VARCHAR(128) notnull 'idempotency_key'"`
-	RequestHash         []byte       `xorm:"BINARY(32) notnull 'request_hash'"`
-	Status              ImportStatus `xorm:"VARCHAR(16) notnull 'status'"`
-	ResultJSON          *string      `xorm:"JSON 'result_json'"`
-	ErrorMessage        string       `xorm:"VARCHAR(1024) notnull default '' 'error_message'"`
+	lorm.UnimplementedTable `lorm:"import_records"`
+	WorkflowMeta
+	UserID              int64        `lorm:"user_id"`
+	SourceEnvironmentID int64        `lorm:"source_environment_id"`
+	TargetEnvironmentID int64        `lorm:"target_environment_id"`
+	SourceSnapshotID    int64        `lorm:"source_snapshot_id"`
+	TargetProjectID     int64        `lorm:"target_project_id"`
+	TargetSnapshotID    *int64       `lorm:"target_snapshot_id"`
+	IdempotencyKey      string       `lorm:"idempotency_key"`
+	RequestHash         []byte       `lorm:"request_hash"`
+	Status              ImportStatus `lorm:"status"`
+	// JSON columns contain encoded documents; keep their text without encoding a second time.
+	ResultJSON   *string `lorm:"result_json"`
+	ErrorMessage string  `lorm:"error_message"`
 }
-
-func (*ImportRecord) TableName() string { return "import_records" }
 
 type AuditResult string
 
@@ -33,15 +35,15 @@ const (
 )
 
 type AuditLog struct {
-	RecordMeta    `xorm:"extends"`
-	ActorUserID   *int64      `xorm:"'actor_user_id'"`
-	EnvironmentID *int64      `xorm:"'environment_id'"`
-	Action        string      `xorm:"VARCHAR(128) notnull 'action'"`
-	ResourceType  string      `xorm:"VARCHAR(64) notnull 'resource_type'"`
-	ResourceID    string      `xorm:"VARCHAR(128) notnull default '' 'resource_id'"`
-	Result        AuditResult `xorm:"VARCHAR(16) notnull 'result'"`
-	RequestID     string      `xorm:"VARCHAR(128) notnull 'request_id'"`
-	DetailsJSON   *string     `xorm:"JSON 'details_json'"`
+	lorm.UnimplementedTable `lorm:"audit_logs"`
+	RecordMeta
+	ActorUserID   *int64      `lorm:"actor_user_id"`
+	EnvironmentID *int64      `lorm:"environment_id"`
+	Action        string      `lorm:"action"`
+	ResourceType  string      `lorm:"resource_type"`
+	ResourceID    string      `lorm:"resource_id"`
+	Result        AuditResult `lorm:"result"`
+	RequestID     string      `lorm:"request_id"`
+	// The nullable JSON column keeps SQL NULL distinct from an encoded document.
+	DetailsJSON *string `lorm:"details_json"`
 }
-
-func (*AuditLog) TableName() string { return "audit_logs" }

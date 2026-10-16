@@ -9,17 +9,17 @@ import (
 
 	jwtlib "github.com/golang-jwt/jwt/v5"
 
-	"github.com/yvvlee/kirby/server/internal/config"
+	"github.com/yvvlee/kirby/server/internal/conf"
 )
 
-func jwtConfig(active string) config.JWTConfig {
-	return config.JWTConfig{
+func jwtConfig(active string) Config {
+	return Config{
 		Issuer:    "kirby-test",
 		ActiveKID: active,
-		AccessTTL: config.Duration{Duration: 15 * time.Minute},
-		Keys: map[string]config.Secret{
-			"old": config.NewSecret("old-012345678901234567890123456789"),
-			"new": config.NewSecret("new-012345678901234567890123456789"),
+		AccessTTL: 15 * time.Minute,
+		Keys: map[string]conf.Secret{
+			"old": conf.NewSecret("old-012345678901234567890123456789"),
+			"new": conf.NewSecret("new-012345678901234567890123456789"),
 		},
 	}
 }
@@ -43,7 +43,16 @@ func TestIssueHasOnlyIdentityAndRegisteredClaims(t *testing.T) {
 	if err := json.Unmarshal(payload, &values); err != nil {
 		t.Fatal(err)
 	}
-	want := map[string]bool{"iss": true, "sub": true, "aud": true, "exp": true, "nbf": true, "iat": true, "jti": true, "sid": true}
+	want := map[string]bool{
+		"iss": true,
+		"sub": true,
+		"aud": true,
+		"exp": true,
+		"nbf": true,
+		"iat": true,
+		"jti": true,
+		"sid": true,
+	}
 	if len(values) != len(want) {
 		t.Fatalf("unexpected JWT claims: %v", values)
 	}
@@ -71,14 +80,42 @@ func TestVerifyRejectsExpiryIssuerAudienceAndUnknownKey(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		config   config.JWTConfig
+		config   Config
 		audience string
 		now      time.Time
 	}{
-		{name: "expired", config: jwtConfig("new"), audience: Audience, now: issuedAt.Add(16 * time.Minute)},
-		{name: "wrong issuer", config: func() config.JWTConfig { cfg := jwtConfig("new"); cfg.Issuer = "other"; return cfg }(), audience: Audience, now: issuedAt},
-		{name: "wrong audience", config: jwtConfig("new"), audience: "other", now: issuedAt},
-		{name: "unknown kid", config: func() config.JWTConfig { cfg := jwtConfig("old"); delete(cfg.Keys, "new"); return cfg }(), audience: Audience, now: issuedAt},
+		{
+			name:     "expired",
+			config:   jwtConfig("new"),
+			audience: Audience,
+			now:      issuedAt.Add(16 * time.Minute),
+		},
+		{
+			name: "wrong issuer",
+			config: func() Config {
+				cfg := jwtConfig("new")
+				cfg.Issuer = "other"
+				return cfg
+			}(),
+			audience: Audience,
+			now:      issuedAt,
+		},
+		{
+			name:     "wrong audience",
+			config:   jwtConfig("new"),
+			audience: "other",
+			now:      issuedAt,
+		},
+		{
+			name: "unknown kid",
+			config: func() Config {
+				cfg := jwtConfig("old")
+				delete(cfg.Keys, "new")
+				return cfg
+			}(),
+			audience: Audience,
+			now:      issuedAt,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

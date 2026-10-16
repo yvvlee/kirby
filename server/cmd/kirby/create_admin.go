@@ -12,13 +12,12 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
-	"github.com/yvvlee/kirby/server/internal/safefile"
-
 	"github.com/yvvlee/kirby/server/internal/auth/password"
-	"github.com/yvvlee/kirby/server/internal/config"
+	"github.com/yvvlee/kirby/server/internal/conf"
+	"github.com/yvvlee/kirby/server/internal/infra"
 	"github.com/yvvlee/kirby/server/internal/model"
 	"github.com/yvvlee/kirby/server/internal/repository"
-	"github.com/yvvlee/kirby/server/internal/storage/database"
+	"github.com/yvvlee/kirby/server/internal/util/safefile"
 )
 
 const maxPasswordBytes = 1024
@@ -48,9 +47,6 @@ func newCreateAdminCommand() *cobra.Command {
 }
 
 func runCreateAdmin(ctx context.Context, stdout, stderr io.Writer, options *createAdminOptions) error {
-	if options == nil {
-		return fmt.Errorf("create-admin options are nil")
-	}
 	username := strings.TrimSpace(options.username)
 	displayName := strings.TrimSpace(options.displayName)
 	if displayName == "" {
@@ -59,41 +55,24 @@ func runCreateAdmin(ctx context.Context, stdout, stderr io.Writer, options *crea
 	if err := validateAdminIdentity(username, displayName); err != nil {
 		return err
 	}
-
-	cfg, err := config.Load(options.configPath, os.LookupEnv)
+	cfg, err := conf.Load(options.configPath, os.LookupEnv)
 	if err != nil {
 		return err
 	}
-	engine, err := database.Open(ctx, cfg.MySQL)
+	store, closeStore, err := openAdminStorage(ctx, cfg, stderr)
 	if err != nil {
 		return err
 	}
-	defer engine.Close()
-	if err := model.ValidateSchema(ctx, engine); err != nil {
-		return err
-	}
-	users, err := repository.NewUserRepository(engine)
+	defer closeStore()
+	encoded, err := hashAdminPassword(options.passwordFile, stderr)
 	if err != nil {
 		return err
 	}
-
-	plain, err := readAdminPassword(options.passwordFile, stderr)
-	if err != nil {
-		return err
-	}
-	defer clearBytes(plain)
-	if err := validateAdminPassword(plain); err != nil {
-		return err
-	}
-	hasher, err := password.NewDefault()
-	if err != nil {
-		return err
-	}
-	encoded, err := hasher.Hash(string(plain))
-	if err != nil {
-		return fmt.Errorf("hash administrator password: %w", err)
-	}
-	user, created, err := users.CreateOrPromoteSystemAdmin(ctx, username, displayName, encoded)
+	user, created, err := saveAdministrator(ctx, store, &model.User{
+		Username:     username,
+		DisplayName:  displayName,
+		PasswordHash: encoded,
+	})
 	if err != nil {
 		return err
 	}
@@ -103,6 +82,58 @@ func runCreateAdmin(ctx context.Context, stdout, stderr io.Writer, options *crea
 	}
 	_, err = fmt.Fprintf(stdout, "%s system administrator %q (id %d)\n", action, user.Username, user.ID)
 	return err
+}
+
+func openAdminStorage(ctx context.Context, cfg *conf.Config, stderr io.Writer) (*infra.Storage, func(), error) {
+	logger, err := infra.NewLoggerWithWriter(stderr, cfg.Log)
+	if err != nil {
+		return nil, nil, err
+	}
+	engine, err := infra.OpenEngine(ctx, cfg.Database, infra.NewDBLogger(logger))
+	if err != nil {
+		_ = logger.Close()
+		return nil, nil, err
+	}
+	return &infra.Storage{CoreDB: engine}, func() {
+		if err := engine.Close(); err != nil {
+			logger.Errorw("msg", "close administrator database", "error", err)
+		}
+		if err := logger.Close(); err != nil {
+			_, _ = fmt.Fprintf(stderr, "close logger: %v\n", err)
+		}
+	}, nil
+}
+
+func hashAdminPassword(path string, stderr io.Writer) (string, error) {
+	plain, err := readAdminPassword(path, stderr)
+	if err != nil {
+		return "", err
+	}
+	defer clearBytes(plain)
+	if err := validateAdminPassword(plain); err != nil {
+		return "", err
+	}
+	encoded, err := password.NewDefault().Hash(string(plain))
+	if err != nil {
+		return "", fmt.Errorf("hash administrator password: %w", err)
+	}
+	return encoded, nil
+}
+
+func saveAdministrator(ctx context.Context, store *infra.Storage, input *model.User) (*model.User, bool, error) {
+	users := repository.NewUserRepository(store)
+	setup := repository.NewSetupRepository(store)
+	var user *model.User
+	var created bool
+	err := store.CoreDB.TX(ctx, func(txctx context.Context) error {
+		if err := setup.MarkInitialized(txctx); err != nil {
+			return err
+		}
+		var err error
+		user, created, err = users.CreateOrPromoteSystemAdmin(txctx, input.Username, input.DisplayName, input.PasswordHash)
+		return err
+	})
+	return user, created, err
 }
 
 func validateAdminIdentity(username, displayName string) error {

@@ -2,11 +2,13 @@ package repository
 
 import (
 	"context"
+	"time"
 
-	"xorm.io/xorm"
+	"github.com/yvvlee/lorm"
+	"github.com/yvvlee/lorm/builder"
 
+	"github.com/yvvlee/kirby/server/internal/infra"
 	"github.com/yvvlee/kirby/server/internal/model"
-	"github.com/yvvlee/kirby/server/internal/repository/base"
 )
 
 type StructureFilter struct {
@@ -25,386 +27,291 @@ type StructureUpdate struct {
 }
 
 type StructureRepository interface {
-	Create(context.Context, int64, int64, *model.Structure) error
-	CreateTx(context.Context, *xorm.Session, int64, int64, *model.Structure) error
-	FindByID(context.Context, int64, int64) (*model.Structure, error)
-	FindByKey(context.Context, int64, int64, string) (*model.Structure, error)
-	List(context.Context, int64, StructureFilter, base.PageRequest) (base.PageResult[model.Structure], error)
-	ListForConfigTx(context.Context, *xorm.Session, int64, int64) ([]model.Structure, error)
-	Update(context.Context, int64, int64, StructureUpdate) error
-	UpdateTx(context.Context, *xorm.Session, int64, int64, StructureUpdate) error
-	Delete(context.Context, int64, int64, int64) error
-	DeleteTx(context.Context, *xorm.Session, int64, int64, int64) error
-	ReconcileTx(context.Context, *xorm.Session, int64, int64, []*model.Structure, int64) error
+	Create(ctx context.Context, environmentID, configID int64, item *model.Structure) error
+	FindByID(ctx context.Context, environmentID, itemID int64) (*model.Structure, error)
+	List(ctx context.Context, environmentID int64, filter StructureFilter, page PageRequest) (PageResult[model.Structure], error)
+	ListForConfig(ctx context.Context, environmentID, configID int64) ([]model.Structure, error)
+	Update(ctx context.Context, environmentID, itemID int64, update StructureUpdate) error
+	Delete(ctx context.Context, environmentID, itemID, updatedBy int64) error
+	Reconcile(ctx context.Context, environmentID, configID int64, items []*model.Structure, actorID int64) error
 }
 
-func (r *StructureRepositoryImpl) ListForConfigTx(ctx context.Context, tx *xorm.Session, environmentID, configID int64) ([]model.Structure, error) {
-	if err := validateEnvironmentResource(environmentID, "config_id", configID); err != nil {
-		return nil, err
+type StructureRepositoryImpl struct {
+	*lorm.Repository[*model.Structure]
+}
+
+// NewStructureRepository creates StructureRepositoryImpl with its shared database engine.
+//
+// Parameters: storage supplies the shared database engine.
+// Returns: *StructureRepositoryImpl.
+// Throws: none.
+func NewStructureRepository(storage *infra.Storage) *StructureRepositoryImpl {
+	return &StructureRepositoryImpl{
+		Repository: storage.CoreDB.Repository[*model.Structure](),
 	}
-	if tx == nil {
-		return nil, base.InvalidArgument("transaction session is nil")
+}
+
+// Create restores a deleted key while serializing writes through its parent config.
+//
+// Parameters: ctx carries cancellation and transaction state; environmentID selects the authorized environment; configID selects the configuration; item contains the persisted record.
+// Returns: nil after insertion or restoration; IDs, version, and timestamps are copied into the supplied record. Key conflicts and database failures are returned.
+// Throws: none.
+func (r *StructureRepositoryImpl) Create(ctx context.Context, environmentID, configID int64, item *model.Structure) error {
+	fields := new(model.Structure).LormCols()
+	item.ConfigID = configID
+	if err := lockScopedConfig(ctx, r.Engine, environmentID, configID); err != nil {
+		return err
 	}
-	locked := make([]model.Structure, 0)
-	if err := tx.Context(ctx).SQL(`
-SELECT s.*
-FROM structures AS s
-INNER JOIN configs AS c ON c.id = s.config_id AND c.deleted_at IS NULL
-INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
-INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
-WHERE e.id = ? AND c.id = ?
-ORDER BY s.id ASC
-FOR UPDATE`, environmentID, configID).Find(&locked); err != nil {
-		return nil, base.Wrap("lock structures for config", err)
+	existing, _, err := r.Engine.Query[*model.Structure]().Where(builder.Eq{
+		fields.ConfigID(): configID,
+		fields.Key():      item.Key,
+	}).Suffix("FOR UPDATE").Get(ctx)
+	if err != nil {
+		return WrapDatabaseError(err)
 	}
-	items := make([]model.Structure, 0, len(locked))
-	for index := range locked {
-		if locked[index].DeletedAt.IsZero() {
-			items = append(items, locked[index])
+	if existing != nil {
+		return r.restore(ctx, existing, item)
+	}
+	item.PrepareInsert()
+	_, err = r.Insert(ctx, item)
+	return classifyKeyWriteError("structure", err)
+}
+
+func (r *StructureRepositoryImpl) restore(ctx context.Context, existing, item *model.Structure) error {
+	fields := new(model.Structure).LormCols()
+	if existing.DeletedAt == nil {
+		return keyConflict("structure")
+	}
+	now := time.Now().UTC()
+	affected, err := r.Engine.Update[*model.Structure]().ID(existing.ID).SetMap(map[string]any{
+		fields.Name():        item.Name,
+		fields.Description(): item.Description,
+		fields.FieldsJSON():  item.FieldsJSON,
+		fields.CreatedBy():   item.CreatedBy,
+		fields.UpdatedBy():   item.UpdatedBy,
+		fields.CreatedAt():   now,
+		fields.UpdatedAt():   now,
+		fields.Version():     existing.Version + 1,
+		fields.DeletedAt():   nil,
+	}).Exec(ctx)
+	if err != nil {
+		return classifyKeyWriteError("structure", err)
+	}
+	if affected == 0 {
+		return Unchanged("structure")
+	}
+	item.ID = existing.ID
+	item.Version = existing.Version + 1
+	item.CreatedAt = now
+	item.UpdatedAt = now
+	return nil
+}
+
+// FindByID loads a resource only when it belongs to the requested scope.
+//
+// Parameters: ctx carries cancellation and transaction state; environmentID selects the authorized environment; itemID identifies the target child row.
+// Returns: the live row, or ErrNotFound when the ID is missing, deleted, or outside the environment.
+// Throws: none.
+func (r *StructureRepositoryImpl) FindByID(ctx context.Context, environmentID, itemID int64) (*model.Structure, error) {
+	item, found, err := structureScope(r.Engine).Where(builder.Eq{
+		"e.id": environmentID,
+		"s.id": itemID,
+	}).Get(ctx)
+	if err != nil {
+		return nil, WrapDatabaseError(err)
+	}
+	if !found {
+		return nil, Missing("structure")
+	}
+	return item, nil
+}
+
+// List returns the resources visible in the selected scope.
+//
+// Parameters: ctx carries cancellation and transaction state; environmentID selects the authorized environment; filter restricts the returned rows; page contains pagination bounds.
+// Returns: the scoped page, total row count, normalized offset and limit, or a database error.
+// Throws: none.
+func (r *StructureRepositoryImpl) List(ctx context.Context, environmentID int64, filter StructureFilter, page PageRequest) (PageResult[model.Structure], error) {
+	condition := builder.And{
+		builder.Eq{
+			"e.id": environmentID,
+			"p.id": filter.ProjectID,
+			"c.id": filter.ConfigID,
+		},
+		neqIf("s.id", filter.IgnoreDependencyID),
+	}
+	query := structureScope(r.Engine).Where(condition).Asc("s.id")
+	return paginate[model.Structure](ctx, query, page)
+}
+
+// ListForConfig locks rows in primary-key order, including deleted keys that may be restored.
+//
+// Parameters: ctx carries cancellation and transaction state; environmentID selects the authorized environment; configID selects the configuration.
+// Returns: live children in ID order after locking both live and deleted keys, or a database error.
+// Throws: none.
+func (r *StructureRepositoryImpl) ListForConfig(ctx context.Context, environmentID, configID int64) ([]model.Structure, error) {
+	rows, err := structureScopeIncludingDeleted(r.Engine).Where(builder.Eq{
+		"e.id": environmentID,
+		"c.id": configID,
+	}).Asc("s.id").Suffix("FOR UPDATE").Find(ctx)
+	if err != nil {
+		return nil, WrapDatabaseError(err)
+	}
+	items := make([]model.Structure, 0, len(rows))
+	for _, row := range rows {
+		if row.DeletedAt == nil {
+			items = append(items, *row)
 		}
 	}
 	return items, nil
 }
 
-type StructureRepositoryImpl struct {
-	engine *xorm.Engine
-}
-
-func NewStructureRepository(engine *xorm.Engine) *StructureRepositoryImpl {
-	return &StructureRepositoryImpl{engine: engine}
-}
-
-func (r *StructureRepositoryImpl) Create(ctx context.Context, environmentID, configID int64, structure *model.Structure) error {
-	if err := validateEnvironmentResource(environmentID, "config_id", configID); err != nil {
+// Update applies changes using the expected version to reject stale writes.
+//
+// Parameters: ctx carries cancellation and transaction state; environmentID selects the authorized environment; itemID identifies the target child row; update contains the guarded changes and expected version.
+// Returns: nil after one matching live row changes; ErrNoRowsAffected if the expected version is stale.
+// Throws: none.
+func (r *StructureRepositoryImpl) Update(ctx context.Context, environmentID, itemID int64, update StructureUpdate) error {
+	fields := new(model.Structure).LormCols()
+	if _, err := r.FindByID(ctx, environmentID, itemID); err != nil {
 		return err
 	}
-	if structure == nil {
-		return base.InvalidArgument("structure is nil")
-	}
-	if structure.ConfigID != 0 && structure.ConfigID != configID {
-		return base.InvalidArgument("structure.config_id does not match config_id")
-	}
-	structure.ConfigID = configID
-	result, err := base.Execute(ctx, r.engine, "structure", insertStructureSQL,
-		structureCreateArgs(environmentID, configID, structure)...)
+	affected, err := r.Engine.Update[*model.Structure]().ID(itemID).
+		Where(builder.IsNull(fields.DeletedAt())).Where(builder.Eq{fields.Version(): update.Version}).
+		SetMap(map[string]any{
+			fields.Key():         update.Key,
+			fields.Name():        update.Name,
+			fields.Description(): update.Description,
+			fields.FieldsJSON():  update.FieldsJSON,
+			fields.UpdatedBy():   update.UpdatedBy,
+			fields.UpdatedAt():   time.Now().UTC(),
+			fields.Version():     update.Version + 1,
+		}).Exec(ctx)
 	if err != nil {
 		return classifyKeyWriteError("structure", err)
 	}
-	structure.ID, err = result.LastInsertId()
-	if err != nil {
-		return base.Wrap("read inserted structure id", err)
+	if affected == 0 {
+		return Unchanged("structure")
 	}
 	return nil
 }
 
-func (r *StructureRepositoryImpl) CreateTx(ctx context.Context, tx *xorm.Session, environmentID, configID int64, structure *model.Structure) error {
-	if err := validateEnvironmentResource(environmentID, "config_id", configID); err != nil {
+// Delete removes the resource after checking ownership and dependent state.
+//
+// Parameters: ctx carries cancellation and transaction state; environmentID selects the authorized environment; itemID identifies the target child row; updatedBy identifies the actor recorded on the write.
+// Returns: nil after soft deletion; ErrNotFound for an inaccessible row or ErrNoRowsAffected for a rejected write.
+// Throws: none.
+func (r *StructureRepositoryImpl) Delete(ctx context.Context, environmentID, itemID, updatedBy int64) error {
+	fields := new(model.Structure).LormCols()
+	if _, err := r.FindByID(ctx, environmentID, itemID); err != nil {
 		return err
 	}
-	if structure == nil {
-		return base.InvalidArgument("structure is nil")
-	}
-	if structure.ConfigID != 0 && structure.ConfigID != configID {
-		return base.InvalidArgument("structure.config_id does not match config_id")
-	}
-	if tx == nil {
-		return base.InvalidArgument("transaction session is nil")
-	}
-	structure.ConfigID = configID
-	if err := lockConfigParent(ctx, tx, environmentID, configID); err != nil {
-		return err
-	}
-	var existing model.Structure
-	found, err := tx.Context(ctx).SQL(`
-SELECT s.*
-FROM structures AS s
-WHERE s.config_id = ? AND s.`+"`key`"+` = ?
-LIMIT 1
-FOR UPDATE`, configID, structure.Key).Get(&existing)
+	now := time.Now().UTC()
+	affected, err := r.Engine.Update[*model.Structure]().ID(itemID).
+		Where(builder.IsNull(fields.DeletedAt())).SetMap(map[string]any{
+		fields.DeletedAt(): now,
+		fields.UpdatedBy(): updatedBy,
+		fields.UpdatedAt(): now,
+		fields.Version():   builder.Expr("version + 1"),
+	}).Exec(ctx)
 	if err != nil {
-		return base.Wrap("lock structure key", err)
+		return WrapDatabaseError(err)
 	}
-	if found {
-		if existing.DeletedAt.IsZero() {
-			return keyConflict("structure")
-		}
-		_, err := base.ExecuteTx(ctx, tx, "restore structure", `
-UPDATE structures
-SET name = ?, description = ?, fields_json = ?, created_by = ?, updated_by = ?,
-    created_at = UTC_TIMESTAMP(6), updated_at = UTC_TIMESTAMP(6),
-    version = version + 1, deleted_at = NULL
-WHERE id = ? AND config_id = ? AND deleted_at IS NOT NULL`,
-			structure.Name, structure.Description, structure.FieldsJSON,
-			structure.CreatedBy, structure.UpdatedBy, existing.ID, configID)
-		if err != nil {
-			return classifyKeyWriteError("structure", err)
-		}
-		structure.ID, structure.Version = existing.ID, existing.Version+1
-		return nil
-	}
-	result, err := base.ExecuteTx(ctx, tx, "structure", insertStructureSQL,
-		structureCreateArgs(environmentID, configID, structure)...)
-	if err != nil {
-		return classifyKeyWriteError("structure", err)
-	}
-	structure.ID, err = result.LastInsertId()
-	if err != nil {
-		return base.Wrap("read inserted structure id", err)
+	if affected == 0 {
+		return Unchanged("structure")
 	}
 	return nil
 }
 
-const insertStructureSQL = `
-INSERT INTO structures
-    (config_id, ` + "`key`" + `, name, description, fields_json, created_by, updated_by)
-SELECT c.id, ?, ?, ?, ?, ?, ?
-FROM configs AS c
-INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
-INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
-WHERE c.id = ? AND c.deleted_at IS NULL AND e.id = ?`
-
-func structureCreateArgs(environmentID, configID int64, structure *model.Structure) []any {
-	return []any{
-		structure.Key, structure.Name, structure.Description, structure.FieldsJSON,
-		structure.CreatedBy, structure.UpdatedBy, configID, environmentID,
+// Reconcile serializes reconciliation through the parent before locking child keys in ID order.
+//
+// Parameters: ctx carries cancellation and transaction state; environmentID selects the authorized environment; configID selects the configuration; items contains the complete replacement set of child keys; actorID identifies the actor recorded on the write.
+// Returns: nil after creating, restoring, updating, and soft-deleting child keys; returns the first write failure.
+// Throws: none.
+func (r *StructureRepositoryImpl) Reconcile(ctx context.Context, environmentID, configID int64, items []*model.Structure, actorID int64) error {
+	fields := new(model.Structure).LormCols()
+	if err := lockScopedConfig(ctx, r.Engine, environmentID, configID); err != nil {
+		return err
 	}
-}
-
-func (r *StructureRepositoryImpl) FindByID(ctx context.Context, environmentID, structureID int64) (*model.Structure, error) {
-	if err := validateEnvironmentResource(environmentID, "structure_id", structureID); err != nil {
-		return nil, err
-	}
-	var structure model.Structure
-	err := base.FindOne(ctx, r.engine, "structure", `
-SELECT s.*
-FROM structures AS s
-INNER JOIN configs AS c ON c.id = s.config_id AND c.deleted_at IS NULL
-INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
-INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
-WHERE e.id = ? AND s.id = ? AND s.deleted_at IS NULL
-LIMIT 1`, []any{environmentID, structureID}, &structure)
+	existing, err := r.Engine.Query[*model.Structure]().Where(builder.Eq{fields.ConfigID(): configID}).
+		Asc("id").Suffix("FOR UPDATE").Find(ctx)
 	if err != nil {
-		return nil, err
-	}
-	return &structure, nil
-}
-
-func (r *StructureRepositoryImpl) FindByKey(ctx context.Context, environmentID, configID int64, key string) (*model.Structure, error) {
-	if err := validateEnvironmentResource(environmentID, "config_id", configID); err != nil {
-		return nil, err
-	}
-	if key == "" {
-		return nil, base.InvalidArgument("structure key is empty")
-	}
-	var structure model.Structure
-	err := base.FindOne(ctx, r.engine, "structure", `
-SELECT s.*
-FROM structures AS s
-INNER JOIN configs AS c ON c.id = s.config_id AND c.deleted_at IS NULL
-INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
-INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
-WHERE e.id = ? AND c.id = ? AND s.`+"`key`"+` = ? AND s.deleted_at IS NULL
-LIMIT 1`, []any{environmentID, configID, key}, &structure)
-	if err != nil {
-		return nil, err
-	}
-	return &structure, nil
-}
-
-func (r *StructureRepositoryImpl) List(ctx context.Context, environmentID int64, filter StructureFilter, page base.PageRequest) (base.PageResult[model.Structure], error) {
-	if err := validateEnvironmentResource(environmentID, "project_id", filter.ProjectID); err != nil {
-		return base.PageResult[model.Structure]{}, err
-	}
-	if err := base.ValidateID("config_id", filter.ConfigID); err != nil {
-		return base.PageResult[model.Structure]{}, err
-	}
-	where := "e.id = ? AND p.id = ? AND c.id = ? AND s.deleted_at IS NULL"
-	args := []any{environmentID, filter.ProjectID, filter.ConfigID}
-	if filter.IgnoreDependencyID != nil {
-		if err := base.ValidateID("ignore_dependency_id", *filter.IgnoreDependencyID); err != nil {
-			return base.PageResult[model.Structure]{}, err
-		}
-		where += " AND s.id <> ?"
-		args = append(args, *filter.IgnoreDependencyID)
-	}
-	return r.list(ctx, where, args, page)
-}
-
-func (r *StructureRepositoryImpl) list(ctx context.Context, where string, args []any, page base.PageRequest) (base.PageResult[model.Structure], error) {
-	page = base.NormalizePage(page)
-	from := `
-FROM structures AS s
-INNER JOIN configs AS c ON c.id = s.config_id AND c.deleted_at IS NULL
-INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
-WHERE ` + where
-	total, err := base.Count(ctx, r.engine, "structures", "SELECT COUNT(*) AS total"+from, args...)
-	if err != nil {
-		return base.PageResult[model.Structure]{}, err
-	}
-	result := base.PageResult[model.Structure]{Items: []model.Structure{}, Total: total, Offset: page.Offset, Limit: page.Limit}
-	if total == 0 {
-		return result, nil
-	}
-	listArgs := append(append([]any{}, args...), page.Limit, page.Offset)
-	err = base.FindAll(ctx, r.engine, "structures", "SELECT s.*"+from+`
-ORDER BY s.id ASC
-LIMIT ? OFFSET ?`, listArgs, &result.Items)
-	return result, err
-}
-
-func (r *StructureRepositoryImpl) Update(ctx context.Context, environmentID, structureID int64, update StructureUpdate) error {
-	if err := validateVersionedResource(environmentID, "structure_id", structureID, update.Version); err != nil {
-		return err
-	}
-	_, err := base.Execute(ctx, r.engine, "structure", `
-UPDATE structures AS s
-SET s.`+"`key`"+` = ?, s.name = ?, s.description = ?, s.fields_json = ?, s.updated_by = ?,
-    s.updated_at = UTC_TIMESTAMP(6), s.version = s.version + 1
-WHERE s.id = ? AND s.version = ? AND s.deleted_at IS NULL
-  AND EXISTS (
-      SELECT 1
-      FROM configs AS c
-      INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
-      INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
-      WHERE c.id = s.config_id AND c.deleted_at IS NULL AND e.id = ?
-  )`, update.Key, update.Name, update.Description, update.FieldsJSON, update.UpdatedBy,
-		structureID, update.Version, environmentID)
-	return err
-}
-
-func (r *StructureRepositoryImpl) UpdateTx(ctx context.Context, tx *xorm.Session, environmentID, structureID int64, update StructureUpdate) error {
-	if err := validateVersionedResource(environmentID, "structure_id", structureID, update.Version); err != nil {
-		return err
-	}
-	_, err := base.ExecuteTx(ctx, tx, "structure", `
-UPDATE structures AS s
-SET s.`+"`key`"+` = ?, s.name = ?, s.description = ?, s.fields_json = ?, s.updated_by = ?,
-    s.updated_at = UTC_TIMESTAMP(6), s.version = s.version + 1
-WHERE s.id = ? AND s.version = ? AND s.deleted_at IS NULL
-  AND EXISTS (
-      SELECT 1
-      FROM configs AS c
-      INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
-      INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
-      WHERE c.id = s.config_id AND c.deleted_at IS NULL AND e.id = ?
-  )`, update.Key, update.Name, update.Description, update.FieldsJSON, update.UpdatedBy,
-		structureID, update.Version, environmentID)
-	return err
-}
-
-func (r *StructureRepositoryImpl) Delete(ctx context.Context, environmentID, structureID, updatedBy int64) error {
-	if err := validateEnvironmentResource(environmentID, "structure_id", structureID); err != nil {
-		return err
-	}
-	_, err := base.Execute(ctx, r.engine, "structure", `
-UPDATE structures AS s
-SET s.deleted_at = UTC_TIMESTAMP(6), s.updated_by = ?,
-    s.updated_at = UTC_TIMESTAMP(6), s.version = s.version + 1
-WHERE s.id = ? AND s.deleted_at IS NULL
-  AND EXISTS (
-      SELECT 1
-      FROM configs AS c
-      INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
-      INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
-      WHERE c.id = s.config_id AND c.deleted_at IS NULL AND e.id = ?
-  )`, updatedBy, structureID, environmentID)
-	return err
-}
-
-func (r *StructureRepositoryImpl) DeleteTx(ctx context.Context, tx *xorm.Session, environmentID, structureID, updatedBy int64) error {
-	if err := validateEnvironmentResource(environmentID, "structure_id", structureID); err != nil {
-		return err
-	}
-	_, err := base.ExecuteTx(ctx, tx, "structure", `
-UPDATE structures AS s
-SET s.deleted_at = UTC_TIMESTAMP(6), s.updated_by = ?,
-    s.updated_at = UTC_TIMESTAMP(6), s.version = s.version + 1
-WHERE s.id = ? AND s.deleted_at IS NULL
-  AND EXISTS (
-      SELECT 1
-      FROM configs AS c
-      INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
-      INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
-      WHERE c.id = s.config_id AND c.deleted_at IS NULL AND e.id = ?
-  )`, updatedBy, structureID, environmentID)
-	return err
-}
-
-func (r *StructureRepositoryImpl) ReconcileTx(ctx context.Context, tx *xorm.Session, environmentID, configID int64, structures []*model.Structure, actorID int64) error {
-	if err := validateEnvironmentResource(environmentID, "config_id", configID); err != nil {
-		return err
-	}
-	if actorID <= 0 {
-		return base.InvalidArgument("actor_id must be greater than zero")
-	}
-	var locked struct {
-		ID int64 `xorm:"id"`
-	}
-	if err := base.LockOne(ctx, tx, "config", `
-SELECT c.id
-FROM configs AS c
-INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
-INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
-WHERE e.id = ? AND c.id = ? AND c.deleted_at IS NULL
-LIMIT 1
-FOR UPDATE`, []any{environmentID, configID}, &locked); err != nil {
-		return err
-	}
-	existing := make([]model.Structure, 0)
-	if err := tx.Context(ctx).SQL(`
-SELECT s.*
-FROM structures AS s
-WHERE s.config_id = ?
-ORDER BY s.id ASC
-FOR UPDATE`, configID).Find(&existing); err != nil {
-		return base.Wrap("lock structures for reconciliation", err)
+		return WrapDatabaseError(err)
 	}
 	byKey := make(map[string]*model.Structure, len(existing))
-	for index := range existing {
-		byKey[existing[index].Key] = &existing[index]
+	for _, current := range existing {
+		byKey[current.Key] = current
 	}
-	desired := make(map[string]struct{}, len(structures))
-	for _, structure := range structures {
-		if structure == nil || structure.Key == "" {
-			return base.InvalidArgument("structure and key are required")
-		}
-		if _, duplicate := desired[structure.Key]; duplicate {
-			return base.InvalidArgument("structure keys must be unique")
-		}
-		desired[structure.Key] = struct{}{}
-		structure.ConfigID = configID
-		structure.UpdatedBy = actorID
-		current := byKey[structure.Key]
-		if current == nil {
-			structure.ID = 0
-			structure.CreatedBy = actorID
-			if err := r.CreateTx(ctx, tx, environmentID, configID, structure); err != nil {
-				return err
-			}
-			continue
-		}
-		if _, err := base.ExecuteTx(ctx, tx, "structure", `
-UPDATE structures
-SET name = ?, description = ?, fields_json = ?, deleted_at = NULL, updated_by = ?,
-    updated_at = UTC_TIMESTAMP(6), version = version + 1
-WHERE id = ? AND config_id = ?`, structure.Name, structure.Description, structure.FieldsJSON,
-			actorID, current.ID, configID); err != nil {
+	desired := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		item.ConfigID = configID
+		item.UpdatedBy = actorID
+		desired[item.Key] = struct{}{}
+		if err := r.reconcileItem(ctx, byKey[item.Key], item); err != nil {
 			return err
 		}
-		structure.ID = current.ID
-		structure.Version = current.Version + 1
 	}
-	for index := range existing {
-		current := &existing[index]
-		if _, keep := desired[current.Key]; keep || !current.DeletedAt.IsZero() {
+	return r.removeObsolete(ctx, existing, desired, actorID)
+}
+
+func (r *StructureRepositoryImpl) reconcileItem(ctx context.Context, current, item *model.Structure) error {
+	fields := new(model.Structure).LormCols()
+	if current == nil {
+		item.ID = 0
+		item.CreatedBy = item.UpdatedBy
+		item.PrepareInsert()
+		_, err := r.Insert(ctx, item)
+		return classifyKeyWriteError("structure", err)
+	}
+	affected, err := r.Engine.Update[*model.Structure]().ID(current.ID).
+		Where(builder.Eq{fields.ConfigID(): item.ConfigID}).SetMap(map[string]any{
+		fields.Name():        item.Name,
+		fields.Description(): item.Description,
+		fields.FieldsJSON():  item.FieldsJSON,
+		fields.DeletedAt():   nil,
+		fields.UpdatedBy():   item.UpdatedBy,
+		fields.UpdatedAt():   time.Now().UTC(),
+		fields.Version():     current.Version + 1,
+	}).Exec(ctx)
+	if err != nil {
+		return WrapDatabaseError(err)
+	}
+	if affected == 0 {
+		return Unchanged("structure")
+	}
+	item.ID = current.ID
+	item.Version = current.Version + 1
+	return nil
+}
+
+func (r *StructureRepositoryImpl) removeObsolete(ctx context.Context, existing []*model.Structure, desired map[string]struct{}, actorID int64) error {
+	for _, current := range existing {
+		if _, keep := desired[current.Key]; keep || current.DeletedAt != nil {
 			continue
 		}
-		if _, err := base.ExecuteTx(ctx, tx, "structure", `
-UPDATE structures
-SET deleted_at = UTC_TIMESTAMP(6), updated_by = ?, updated_at = UTC_TIMESTAMP(6), version = version + 1
-WHERE id = ? AND config_id = ? AND deleted_at IS NULL`, actorID, current.ID, configID); err != nil {
+		if err := r.removeObsoleteItem(ctx, current, actorID); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func (r *StructureRepositoryImpl) removeObsoleteItem(ctx context.Context, current *model.Structure, actorID int64) error {
+	fields := new(model.Structure).LormCols()
+	now := time.Now().UTC()
+	affected, err := r.Engine.Update[*model.Structure]().ID(current.ID).
+		Where(builder.IsNull(fields.DeletedAt())).Where(builder.Eq{fields.ConfigID(): current.ConfigID}).
+		SetMap(map[string]any{
+			fields.DeletedAt(): now,
+			fields.UpdatedBy(): actorID,
+			fields.UpdatedAt(): now,
+			fields.Version():   current.Version + 1,
+		}).Exec(ctx)
+	if err != nil {
+		return WrapDatabaseError(err)
+	}
+	if affected == 0 {
+		return Unchanged("structure")
 	}
 	return nil
 }

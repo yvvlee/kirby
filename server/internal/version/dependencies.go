@@ -13,8 +13,11 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/google/wire"
+	"github.com/jackc/pgx/v5/pgconn"
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/minio/minio-go/v7"
 	"github.com/redis/go-redis/v9"
+	"github.com/yvvlee/lorm"
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/sync/singleflight"
 	"golang.org/x/time/rate"
@@ -22,7 +25,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
 	"gopkg.in/yaml.v3"
-	"xorm.io/xorm"
 )
 
 var (
@@ -33,6 +35,7 @@ var (
 	_ = kratos.New
 	_ = minio.New
 	_ = mysql.MySQLDriver{}
+	_ = pgconn.PgError{}
 	_ = proto.Marshal
 	_ = rate.NewLimiter
 	_ = redis.NewClient
@@ -40,6 +43,6 @@ var (
 	_ = uuid.New
 	_ = validate.E_Disabled
 	_ = wire.Build
-	_ = xorm.NewEngine
+	_ = lorm.NewEngine
 	_ = yaml.Unmarshal
 )

@@ -2,14 +2,15 @@ package repository
 
 import (
 	"context"
+	"slices"
 	"strconv"
-	"strings"
+	"time"
 
-	"xorm.io/xorm"
+	"github.com/yvvlee/lorm"
+	"github.com/yvvlee/lorm/builder"
 
+	"github.com/yvvlee/kirby/server/internal/infra"
 	"github.com/yvvlee/kirby/server/internal/model"
-	"github.com/yvvlee/kirby/server/internal/repository/base"
-	"github.com/yvvlee/kirby/server/internal/storage/database"
 )
 
 type EnvironmentMemberRecord struct {
@@ -17,33 +18,52 @@ type EnvironmentMemberRecord struct {
 	Roles []RoleWithPermissions
 }
 
+type MemberRoleUpdate struct {
+	EnvironmentID int64
+	UserID        int64
+	RoleIDs       []int64
+	ActorID       int64
+}
+
 type UserEnvironmentRoleRepository interface {
-	ListMembers(context.Context, int64) ([]EnvironmentMemberRecord, error)
-	ReplaceRoles(context.Context, int64, int64, []int64, int64, *model.AuditLog) error
+	ListMembers(ctx context.Context, environmentID int64) ([]EnvironmentMemberRecord, error)
+	ReplaceRoles(ctx context.Context, update MemberRoleUpdate, audit *model.AuditLog) error
 }
 
 type UserEnvironmentRoleRepositoryImpl struct {
-	engine *xorm.Engine
+	*lorm.Repository[*model.UserEnvironmentRole]
 	audits AuditLogRepository
 }
 
-func NewUserEnvironmentRoleRepository(engine *xorm.Engine, audits AuditLogRepository) *UserEnvironmentRoleRepositoryImpl {
-	return &UserEnvironmentRoleRepositoryImpl{engine: engine, audits: audits}
+// NewUserEnvironmentRoleRepository binds the UserEnvironmentRoleRepository to the application database.
+//
+// Parameters: storage supplies the shared CoreDB engine and its transaction context.
+// Returns: the configured UserEnvironmentRoleRepository.
+// Throws: none.
+func NewUserEnvironmentRoleRepository(storage *infra.Storage) *UserEnvironmentRoleRepositoryImpl {
+	return &UserEnvironmentRoleRepositoryImpl{
+		Repository: storage.CoreDB.Repository[*model.UserEnvironmentRole](),
+		audits:     NewAuditLogRepository(storage),
+	}
 }
 
+// ListMembers combines live environment users with their current roles and permissions.
+//
+// Parameters: ctx controls the reads; environmentID selects the membership scope.
+// Returns: members ordered by user ID, or a database error.
+// Throws: none; failures are returned as errors.
 func (r *UserEnvironmentRoleRepositoryImpl) ListMembers(ctx context.Context, environmentID int64) ([]EnvironmentMemberRecord, error) {
-	if err := base.ValidateID("environment_id", environmentID); err != nil {
-		return nil, err
-	}
-	users := make([]model.User, 0)
-	if err := base.FindAll(ctx, r.engine, "environment members", `
-SELECT DISTINCT u.*
-FROM user_environment_roles AS uer
-INNER JOIN users AS u ON u.id = uer.user_id AND u.deleted_at IS NULL
-INNER JOIN environments AS e ON e.id = uer.environment_id AND e.deleted_at IS NULL
-WHERE uer.environment_id = ?
-ORDER BY u.id ASC`, []any{environmentID}, &users); err != nil {
-		return nil, err
+	users, err := r.Engine.Query[*model.User]().From("users u").Select("u.*").
+		InnerJoin("user_environment_roles uer ON uer.user_id = u.id").
+		InnerJoin("environments e ON e.id = uer.environment_id AND e.deleted_at IS NULL").
+		Where(builder.And{
+			builder.Eq{
+				"uer.environment_id": environmentID,
+			},
+			builder.IsNull("u.deleted_at"),
+		}).Distinct().Asc("u.id").Find(ctx)
+	if err != nil {
+		return nil, WrapDatabaseError(err)
 	}
 	result := make([]EnvironmentMemberRecord, 0, len(users))
 	for _, user := range users {
@@ -51,142 +71,154 @@ ORDER BY u.id ASC`, []any{environmentID}, &users); err != nil {
 		if err != nil {
 			return nil, err
 		}
-		result = append(result, EnvironmentMemberRecord{User: user, Roles: roles})
+		result = append(result, EnvironmentMemberRecord{
+			User:  *user,
+			Roles: roles,
+		})
 	}
 	return result, nil
 }
 
 func (r *UserEnvironmentRoleRepositoryImpl) rolesForMember(ctx context.Context, environmentID, userID int64) ([]RoleWithPermissions, error) {
-	roles := make([]model.Role, 0)
-	if err := base.FindAll(ctx, r.engine, "environment member roles", `
-SELECT r.*
-FROM user_environment_roles AS uer
-INNER JOIN roles AS r ON r.id = uer.role_id AND r.deleted_at IS NULL
-WHERE uer.environment_id = ? AND uer.user_id = ?
-ORDER BY r.id ASC`, []any{environmentID, userID}, &roles); err != nil {
-		return nil, err
-	}
-	result := make([]RoleWithPermissions, 0, len(roles))
-	for _, role := range roles {
-		permissions := make([]model.Permission, 0)
-		if err := base.FindAll(ctx, r.engine, "environment member role permissions", `
-SELECT p.*
-FROM role_permissions AS rp
-INNER JOIN permissions AS p ON p.id = rp.permission_id
-WHERE rp.role_id = ?
-ORDER BY p.id ASC`, []any{role.ID}, &permissions); err != nil {
-			return nil, err
-		}
-		result = append(result, RoleWithPermissions{Role: role, Permissions: permissions})
-	}
-	return result, nil
-}
-
-func (r *UserEnvironmentRoleRepositoryImpl) ReplaceRoles(ctx context.Context, environmentID, userID int64, roleIDs []int64, actorID int64, audit *model.AuditLog) error {
-	if err := base.ValidateID("environment_id", environmentID); err != nil {
-		return err
-	}
-	if err := base.ValidateID("user_id", userID); err != nil {
-		return err
-	}
-	hadRoleIDs := len(roleIDs) > 0
-	roleIDs = sortedUniquePositive(roleIDs)
-	if roleIDs == nil && hadRoleIDs {
-		return base.InvalidArgument("role ids must be positive and unique")
-	}
-	if audit == nil || r.audits == nil {
-		return base.InvalidArgument("audit log is required")
-	}
-	return database.WithTx(ctx, r.engine, func(tx *xorm.Session) error {
-		var environment model.Environment
-		if err := base.LockOne(ctx, tx, "environment", `
-SELECT e.*
-FROM environments AS e
-WHERE e.id = ? AND e.deleted_at IS NULL
-LIMIT 1
-FOR UPDATE`, []any{environmentID}, &environment); err != nil {
-			return err
-		}
-		var user model.User
-		if err := base.LockOne(ctx, tx, "environment member", `
-SELECT u.*
-FROM users AS u
-WHERE u.id = ? AND u.deleted_at IS NULL
-LIMIT 1
-FOR UPDATE`, []any{userID}, &user); err != nil {
-			return err
-		}
-		if len(roleIDs) > 0 {
-			roles, err := lockEnvironmentRoles(ctx, tx, roleIDs)
-			if err != nil {
-				return err
-			}
-			if len(roles) != len(roleIDs) {
-				return base.Missing("environment role")
-			}
-			if err := ensureRolesContainNoSystemPermissions(ctx, tx, roleIDs); err != nil {
-				return err
-			}
-		}
-		if _, err := tx.Context(ctx).Exec(
-			"DELETE FROM user_environment_roles WHERE user_id = ? AND environment_id = ?",
-			userID, environmentID,
-		); err != nil {
-			return base.Wrap("replace environment member roles", err)
-		}
-		for _, roleID := range roleIDs {
-			if _, err := tx.Context(ctx).Exec(
-				"INSERT INTO user_environment_roles (user_id, environment_id, role_id, created_by) VALUES (?, ?, ?, ?)",
-				userID, environmentID, roleID, actorID,
-			); err != nil {
-				return base.Wrap("insert environment member role", err)
-			}
-		}
-		if err := bumpEnvironmentPermissionGenerations(ctx, tx, []int64{environmentID}, actorID); err != nil {
-			return err
-		}
-		audit.ResourceID = strconv.FormatInt(userID, 10)
-		return r.audits.RecordForEnvironmentTx(ctx, tx, environmentID, audit)
-	})
-}
-
-func lockEnvironmentRoles(ctx context.Context, tx *xorm.Session, roleIDs []int64) ([]model.Role, error) {
-	placeholders, args := idPlaceholders(roleIDs)
-	roles := make([]model.Role, 0, len(roleIDs))
-	query := "SELECT r.* FROM roles AS r WHERE r.id IN (" + placeholders + ") AND r.deleted_at IS NULL ORDER BY r.id ASC FOR UPDATE"
-	if err := tx.Context(ctx).SQL(query, args...).Find(&roles); err != nil {
-		return nil, base.Wrap("lock environment roles", err)
-	}
-	return roles, nil
-}
-
-func ensureRolesContainNoSystemPermissions(ctx context.Context, tx *xorm.Session, roleIDs []int64) error {
-	placeholders, args := idPlaceholders(roleIDs)
-	var row struct {
-		Total int64 `xorm:"total"`
-	}
-	query := "SELECT COUNT(*) AS total FROM role_permissions AS rp " +
-		"INNER JOIN permissions AS p ON p.id = rp.permission_id " +
-		"WHERE rp.role_id IN (" + placeholders + ") AND p.`key` LIKE 'system:%'"
-	found, err := tx.Context(ctx).SQL(query, args...).Get(&row)
+	roles, err := r.Engine.Query[*model.Role]().From("roles r").Select("r.*").
+		InnerJoin("user_environment_roles uer ON uer.role_id = r.id").
+		Where(builder.And{
+			builder.Eq{
+				"uer.environment_id": environmentID,
+				"uer.user_id":        userID,
+			},
+			builder.IsNull("r.deleted_at"),
+		}).Asc("r.id").Find(ctx)
 	if err != nil {
-		return base.Wrap("inspect environment role permissions", err)
+		return nil, WrapDatabaseError(err)
+	}
+	return rolesWithPermissions(ctx, r.Engine, roles)
+}
+
+// ReplaceRoles replaces one member assignment set and advances the environment generation atomically.
+//
+// Parameters: ctx carries the transaction; update supplies environment, user, role IDs, and actor; audit records the membership change.
+// Returns: nil after assignments, generation, and audit succeed; missing resources, system-only roles, and write failures return errors.
+// Throws: none; failures are returned as errors.
+func (r *UserEnvironmentRoleRepositoryImpl) ReplaceRoles(ctx context.Context, update MemberRoleUpdate, audit *model.AuditLog) error {
+	if err := r.lockMember(ctx, update.EnvironmentID, update.UserID); err != nil {
+		return err
+	}
+	if err := r.lockRoles(ctx, update.RoleIDs); err != nil {
+		return err
+	}
+	if err := r.replaceLinks(ctx, update.EnvironmentID, update.UserID, update.RoleIDs, update.ActorID); err != nil {
+		return err
+	}
+	if err := bumpEnvironmentPermissionGenerations(ctx, r.Engine, []int64{update.EnvironmentID}, update.ActorID); err != nil {
+		return err
+	}
+	audit.ResourceID = strconv.FormatInt(update.UserID, 10)
+	return r.audits.RecordForEnvironment(ctx, update.EnvironmentID, audit)
+}
+
+func (r *UserEnvironmentRoleRepositoryImpl) lockMember(ctx context.Context, environmentID, userID int64) error {
+	_, found, err := r.Engine.Query[*model.Environment]().ID(environmentID).
+		Where(builder.IsNull(new(model.Environment).LormCols().DeletedAt())).Suffix("FOR UPDATE").Get(ctx)
+	if err != nil {
+		return WrapDatabaseError(err)
 	}
 	if !found {
-		return base.Missing("environment role permissions")
+		return Missing("environment")
 	}
-	if row.Total > 0 {
+	_, found, err = r.Engine.Query[*model.User]().ID(userID).
+		Where(builder.IsNull(new(model.User).LormCols().DeletedAt())).Suffix("FOR UPDATE").Get(ctx)
+	if err != nil {
+		return WrapDatabaseError(err)
+	}
+	if !found {
+		return Missing("environment member")
+	}
+	return nil
+}
+
+func (r *UserEnvironmentRoleRepositoryImpl) lockRoles(ctx context.Context, roleIDs []int64) error {
+	if len(roleIDs) == 0 {
+		return nil
+	}
+	fields := new(model.Role).LormCols()
+	roles, err := r.Engine.Query[*model.Role]().Where(builder.In(fields.ID(), roleIDs)).
+		Where(builder.IsNull(fields.DeletedAt())).Asc(fields.ID()).Suffix("FOR UPDATE").Find(ctx)
+	if err != nil {
+		return WrapDatabaseError(err)
+	}
+	if len(roles) != len(roleIDs) {
+		return Missing("environment role")
+	}
+	return ensureRolesContainNoSystemPermissions(ctx, r.Engine, roleIDs)
+}
+
+func (r *UserEnvironmentRoleRepositoryImpl) replaceLinks(ctx context.Context, environmentID, userID int64, roleIDs []int64, actorID int64) error {
+	fields := new(model.UserEnvironmentRole).LormCols()
+	if _, err := r.Engine.Delete[*model.UserEnvironmentRole]().Where(builder.Eq{
+		fields.UserID():        userID,
+		fields.EnvironmentID(): environmentID,
+	}).Exec(ctx); err != nil {
+		return WrapDatabaseError(err)
+	}
+	if len(roleIDs) == 0 {
+		return nil
+	}
+	links := make([]*model.UserEnvironmentRole, 0, len(roleIDs))
+	for _, roleID := range roleIDs {
+		link := &model.UserEnvironmentRole{
+			UserID:        userID,
+			EnvironmentID: environmentID,
+			RoleID:        roleID,
+			CreatedBy:     actorID,
+		}
+		link.PrepareInsert()
+		links = append(links, link)
+	}
+	_, err := r.InsertAll(ctx, links)
+	return WrapDatabaseError(err)
+}
+
+func ensureRolesContainNoSystemPermissions(ctx context.Context, engine *lorm.Engine, roleIDs []int64) error {
+	exists, err := engine.Query[*model.Permission]().From("permissions p").
+		InnerJoin("role_permissions rp ON rp.permission_id = p.id").
+		Where(builder.In("rp.role_id", roleIDs)).Where(builder.Like("p.key", "system:%")).Exist(ctx)
+	if err != nil {
+		return WrapDatabaseError(err)
+	}
+	if exists {
 		return ErrSystemRolePermission
 	}
 	return nil
 }
 
-func idPlaceholders(ids []int64) (string, []any) {
-	args := make([]any, len(ids))
-	for index, id := range ids {
-		args[index] = id
+// Permission generation updates follow a stable order to avoid environment lock inversions.
+func bumpEnvironmentPermissionGenerations(ctx context.Context, engine *lorm.Engine, environmentIDs []int64, actorID int64) error {
+	ordered := slices.Clone(environmentIDs)
+	slices.Sort(ordered)
+	for _, environmentID := range slices.Compact(ordered) {
+		if err := bumpEnvironmentPermissionGeneration(ctx, engine, environmentID, actorID); err != nil {
+			return err
+		}
 	}
-	return strings.TrimSuffix(strings.Repeat("?,", len(ids)), ","), args
+	return nil
+}
+
+func bumpEnvironmentPermissionGeneration(ctx context.Context, engine *lorm.Engine, environmentID, actorID int64) error {
+	fields := new(model.Environment).LormCols()
+	affected, err := engine.Update[*model.Environment]().ID(environmentID).
+		Where(builder.IsNull(fields.DeletedAt())).SetMap(map[string]any{
+		fields.Version():   builder.Expr("version + 1"),
+		fields.UpdatedBy(): actorID,
+		fields.UpdatedAt(): time.Now().UTC(),
+	}).Exec(ctx)
+	if err != nil {
+		return WrapDatabaseError(err)
+	}
+	if affected == 0 {
+		return Unchanged("environment permission generation")
+	}
+	return nil
 }
 
 var _ UserEnvironmentRoleRepository = (*UserEnvironmentRoleRepositoryImpl)(nil)

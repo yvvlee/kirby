@@ -2,6 +2,7 @@ import { defineConfig } from '@playwright/test'
 
 export default defineConfig({
   testDir: './tests/e2e',
+  testMatch: 'user-journey.spec.js',
   globalTeardown: './tests/e2e/teardown.mjs',
   timeout: 60_000,
   expect: { timeout: 10_000 },

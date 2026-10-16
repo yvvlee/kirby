@@ -2,114 +2,151 @@ package repository
 
 import (
 	"context"
+	"math"
 	"time"
 
-	"xorm.io/xorm"
+	"github.com/yvvlee/lorm"
+	"github.com/yvvlee/lorm/builder"
 
+	"github.com/yvvlee/kirby/server/internal/infra"
 	"github.com/yvvlee/kirby/server/internal/model"
-	"github.com/yvvlee/kirby/server/internal/repository/base"
 )
 
-// SnapshotPublicationRepository contains the guarded writes used only by the
-// direct publish workflow. Callers must lock the owning config, structures and
-// enums before LockForConfig so every config workflow takes locks in one order.
-type SnapshotPublicationRepository struct {
-	engine *xorm.Engine
+// SnapshotPublicationRepository 包含直接发布流程专用的受保护写操作。
+type SnapshotPublicationUpdate struct {
+	EnvironmentID   int64
+	ConfigID        int64
+	SnapshotID      int64
+	ExpectedVersion int64
+	UpdatedBy       int64
+	ChangedAt       time.Time
 }
 
-func NewSnapshotPublicationRepository(engine *xorm.Engine) *SnapshotPublicationRepository {
-	return &SnapshotPublicationRepository{engine: engine}
+type SnapshotPublicationRepository interface {
+	LockForConfig(ctx context.Context, environmentID, configID int64) ([]model.Snapshot, error)
+	SetReleased(ctx context.Context, update SnapshotPublicationUpdate) error
+	SetUnreleased(ctx context.Context, update SnapshotPublicationUpdate) error
+	IncrementRuntimeVersion(ctx context.Context, environmentID, configID int64) error
 }
 
-func (r *SnapshotPublicationRepository) LockForConfig(ctx context.Context, tx *xorm.Session, environmentID, configID int64) ([]model.Snapshot, error) {
-	if err := validateEnvironmentResource(environmentID, "config_id", configID); err != nil {
-		return nil, err
-	}
-	if tx == nil {
-		return nil, base.InvalidArgument("transaction session is nil")
-	}
-	items := make([]model.Snapshot, 0)
-	if err := tx.Context(ctx).SQL(lockSnapshotsForConfigSQL, environmentID, configID).Find(&items); err != nil {
-		return nil, base.Wrap("lock snapshots for config", err)
-	}
-	return items, nil
+type SnapshotPublicationRepositoryImpl struct {
+	*lorm.Repository[*model.Snapshot]
 }
 
-const lockSnapshotsForConfigSQL = `
-SELECT s.*
-FROM snapshots AS s
-INNER JOIN configs AS c ON c.id = s.config_id AND c.project_id = s.project_id AND c.deleted_at IS NULL
-INNER JOIN projects AS p ON p.id = s.project_id AND p.deleted_at IS NULL
-INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
-WHERE e.id = ? AND c.id = ? AND s.deleted_at IS NULL
-ORDER BY s.id ASC
-FOR UPDATE`
+// NewSnapshotPublicationRepository creates SnapshotPublicationRepositoryImpl with its shared database engine.
+//
+// Parameters: storage supplies the shared database engine.
+// Returns: *SnapshotPublicationRepositoryImpl.
+// Throws: none.
+func NewSnapshotPublicationRepository(storage *infra.Storage) *SnapshotPublicationRepositoryImpl {
+	return &SnapshotPublicationRepositoryImpl{
+		Repository: storage.CoreDB.Repository[*model.Snapshot](),
+	}
+}
 
-func (r *SnapshotPublicationRepository) SetReleased(ctx context.Context, tx *xorm.Session, environmentID, configID, snapshotID, expectedVersion, updatedBy int64, publishedAt time.Time) error {
-	if err := validatePublicationWrite(environmentID, configID, snapshotID, expectedVersion, updatedBy); err != nil {
+// LockForConfig 按ID升序锁定配置下全部存活快照。
+//
+// Parameters: ctx carries cancellation and transaction state; environmentID selects the authorized environment; configID selects the configuration.
+// Returns: live snapshots locked in ascending ID order, or a database error.
+// Throws: none.
+func (r *SnapshotPublicationRepositoryImpl) LockForConfig(ctx context.Context, environmentID, configID int64) ([]model.Snapshot, error) {
+	items, err := snapshotScope(r.Engine).
+		Where(builder.Eq{
+			"e.id": environmentID,
+			"c.id": configID,
+		}).
+		OrderBy("s.id ASC").Suffix("FOR UPDATE").
+		Find(ctx)
+	if err != nil {
+		return nil, WrapDatabaseError(err)
+	}
+	return modelValues(items), nil
+}
+
+// SetReleased publishes a snapshot only if its status and version still match.
+//
+// Parameters: ctx carries cancellation and transaction state; update contains the guarded changes and expected version.
+// Returns: nil after the unreleased status and expected version match; otherwise ErrNoRowsAffected.
+// Throws: none.
+func (r *SnapshotPublicationRepositoryImpl) SetReleased(ctx context.Context, update SnapshotPublicationUpdate) error {
+	update.ChangedAt = update.ChangedAt.UTC()
+	fields := new(model.Snapshot).LormCols()
+	affected, err := r.Engine.Update[*model.Snapshot]().Where(builder.IsNull(fields.DeletedAt())).ID(update.SnapshotID).
+		Where(builder.Eq{
+			fields.ConfigID(): update.ConfigID,
+			fields.Status():   model.SnapshotStatusUnreleased,
+			fields.Version():  update.ExpectedVersion,
+		}).
+		SetMap(map[string]any{
+			fields.Status():      model.SnapshotStatusReleased,
+			fields.PublishedAt(): update.ChangedAt,
+			fields.PublishedBy(): update.UpdatedBy,
+			fields.UpdatedBy():   update.UpdatedBy,
+			fields.UpdatedAt():   update.ChangedAt,
+			fields.Version():     update.ExpectedVersion + 1,
+		}).Exec(ctx)
+	if err != nil {
+		return WrapDatabaseError(err)
+	}
+	if affected == 0 {
+		return Unchanged("snapshot publication")
+	}
+	return nil
+}
+
+// SetUnreleased unpublishes a snapshot only if its status and version still match.
+//
+// Parameters: ctx carries cancellation and transaction state; update contains the guarded changes and expected version.
+// Returns: nil after the released status and expected version match; otherwise ErrNoRowsAffected.
+// Throws: none.
+func (r *SnapshotPublicationRepositoryImpl) SetUnreleased(ctx context.Context, update SnapshotPublicationUpdate) error {
+	update.ChangedAt = update.ChangedAt.UTC()
+	fields := new(model.Snapshot).LormCols()
+	affected, err := r.Engine.Update[*model.Snapshot]().Where(builder.IsNull(fields.DeletedAt())).ID(update.SnapshotID).
+		Where(builder.Eq{
+			fields.ConfigID(): update.ConfigID,
+			fields.Status():   model.SnapshotStatusReleased,
+			fields.Version():  update.ExpectedVersion,
+		}).
+		SetMap(map[string]any{
+			fields.Status():      model.SnapshotStatusUnreleased,
+			fields.PublishedAt(): nil,
+			fields.PublishedBy(): nil,
+			fields.UpdatedBy():   update.UpdatedBy,
+			fields.UpdatedAt():   update.ChangedAt,
+			fields.Version():     update.ExpectedVersion + 1,
+		}).Exec(ctx)
+	if err != nil {
+		return WrapDatabaseError(err)
+	}
+	if affected == 0 {
+		return Unchanged("snapshot unpublication")
+	}
+	return nil
+}
+
+// IncrementRuntimeVersion advances the runtime cache generation without integer overflow.
+//
+// Parameters: ctx carries cancellation and transaction state; environmentID selects the authorized environment; configID selects the configuration.
+// Returns: nil after advancing the runtime generation and UTC update time while retaining the edit version; ErrNoRowsAffected at the integer limit.
+// Throws: none.
+func (r *SnapshotPublicationRepositoryImpl) IncrementRuntimeVersion(ctx context.Context, environmentID, configID int64) error {
+	fields := new(model.Config).LormCols()
+	if err := lockScopedConfig(ctx, r.Engine, environmentID, configID); err != nil {
 		return err
 	}
-	if publishedAt.IsZero() {
-		return base.InvalidArgument("published_at is zero")
+	affected, err := r.Engine.Update[*model.Config]().Where(builder.IsNull(fields.DeletedAt())).ID(configID).
+		Where(builder.Lt("runtime_version", int64(math.MaxInt64))).
+		Set(fields.RuntimeVersion(), builder.Expr("runtime_version + 1")).
+		Set(fields.UpdatedAt(), time.Now().UTC()).
+		Exec(ctx)
+	if err != nil {
+		return WrapDatabaseError(err)
 	}
-	_, err := base.ExecuteTx(ctx, tx, "snapshot publication", `
-UPDATE snapshots AS s
-INNER JOIN configs AS c ON c.id = s.config_id AND c.project_id = s.project_id AND c.deleted_at IS NULL
-INNER JOIN projects AS p ON p.id = s.project_id AND p.deleted_at IS NULL
-INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
-SET s.status = ?, s.published_at = ?, s.published_by = ?, s.updated_by = ?,
-    s.updated_at = ?, s.version = s.version + 1
-WHERE e.id = ? AND c.id = ? AND s.id = ?
-  AND s.status = ? AND s.version = ? AND s.deleted_at IS NULL`,
-		model.SnapshotStatusReleased, publishedAt, updatedBy, updatedBy, publishedAt,
-		environmentID, configID, snapshotID, model.SnapshotStatusUnreleased, expectedVersion)
-	return err
+	if affected == 0 {
+		return Unchanged("config runtime version")
+	}
+	return nil
 }
 
-func (r *SnapshotPublicationRepository) SetUnreleased(ctx context.Context, tx *xorm.Session, environmentID, configID, snapshotID, expectedVersion, updatedBy int64, updatedAt time.Time) error {
-	if err := validatePublicationWrite(environmentID, configID, snapshotID, expectedVersion, updatedBy); err != nil {
-		return err
-	}
-	if updatedAt.IsZero() {
-		return base.InvalidArgument("updated_at is zero")
-	}
-	_, err := base.ExecuteTx(ctx, tx, "snapshot unpublication", `
-UPDATE snapshots AS s
-INNER JOIN configs AS c ON c.id = s.config_id AND c.project_id = s.project_id AND c.deleted_at IS NULL
-INNER JOIN projects AS p ON p.id = s.project_id AND p.deleted_at IS NULL
-INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
-SET s.status = ?, s.published_at = NULL, s.published_by = NULL, s.updated_by = ?,
-    s.updated_at = ?, s.version = s.version + 1
-WHERE e.id = ? AND c.id = ? AND s.id = ?
-  AND s.status = ? AND s.version = ? AND s.deleted_at IS NULL`,
-		model.SnapshotStatusUnreleased, updatedBy, updatedAt, environmentID, configID,
-		snapshotID, model.SnapshotStatusReleased, expectedVersion)
-	return err
-}
-
-func (r *SnapshotPublicationRepository) IncrementRuntimeVersion(ctx context.Context, tx *xorm.Session, environmentID, configID int64) error {
-	if err := validateEnvironmentResource(environmentID, "config_id", configID); err != nil {
-		return err
-	}
-	_, err := base.ExecuteTx(ctx, tx, "config runtime version", `
-UPDATE configs AS c
-INNER JOIN projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL
-INNER JOIN environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL
-SET c.runtime_version = c.runtime_version + 1
-WHERE e.id = ? AND c.id = ? AND c.deleted_at IS NULL
-  AND c.runtime_version < 9223372036854775807`, environmentID, configID)
-	return err
-}
-
-func validatePublicationWrite(environmentID, configID, snapshotID, expectedVersion, updatedBy int64) error {
-	if err := validateEnvironmentResource(environmentID, "config_id", configID); err != nil {
-		return err
-	}
-	if err := base.ValidateID("snapshot_id", snapshotID); err != nil {
-		return err
-	}
-	if expectedVersion < 0 {
-		return base.InvalidArgument("version must not be negative")
-	}
-	return base.ValidateID("updated_by", updatedBy)
-}
+var _ SnapshotPublicationRepository = (*SnapshotPublicationRepositoryImpl)(nil)
