@@ -19,7 +19,7 @@ if ! printf '%s\n' "$tag" | grep -Eq '^v(0|[1-9][0-9]*)[.](0|[1-9][0-9]*)[.](0|[
   exit 1
 fi
 
-repo_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
+repo_dir=${KIRBY_RELEASE_SOURCE_DIR:-$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)}
 release_dir="$repo_dir/dist/release"
 head_commit=$(git -C "$repo_dir" rev-parse HEAD)
 version=${tag#v}
@@ -41,17 +41,10 @@ if [ -n "$changes" ]; then
 fi
 
 if git -C "$repo_dir" show-ref --verify --quiet "refs/tags/$tag"; then
-  if [ "$(git -C "$repo_dir" cat-file -t "refs/tags/$tag")" != tag ]; then
-    echo "release tag must be an annotated tag" >&2
-    exit 1
-  fi
-  tagged_commit=$(git -C "$repo_dir" rev-parse "$tag^{}")
+  tagged_commit=$(git -C "$repo_dir" rev-parse --verify "refs/tags/$tag^{commit}")
   if [ "$tagged_commit" != "$head_commit" ]; then
     echo "release tag $tag does not point to HEAD $head_commit" >&2
     exit 1
-  fi
-  if [ "$dry_run" = false ]; then
-    git -C "$repo_dir" verify-tag "$tag"
   fi
 elif [ "$dry_run" = false ]; then
   echo "release tag $tag does not exist" >&2
