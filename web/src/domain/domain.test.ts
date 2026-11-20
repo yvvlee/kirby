@@ -5,35 +5,12 @@ import {
   registerEnvironmentScopeCleanup,
 } from '@/auth/environment-scope'
 
-import { actorAccess, assignableRoles, SYSTEM_PERMISSIONS } from './access'
 import { formatDiffValue } from './format-diff'
 import {
   normalizeSnapshotList,
   parseSnapshotContent,
   snapshotStatusLabel,
 } from './snapshots'
-
-describe('permission model', () => {
-  it('limits environment administrators to member management', () => {
-    expect(
-      actorAccess({ permissions: [SYSTEM_PERMISSIONS.manageMembers] }),
-    ).toEqual({
-      manageEnvironments: false,
-      manageUsers: false,
-      manageRoles: false,
-      manageMembers: true,
-    })
-  })
-
-  it('filters roles containing system permissions', () => {
-    const roles = [
-      { id: 1, permissions: [{ key: 'project:read' }] },
-      { id: 2, permissions: [{ key: 'system:user:manage' }] },
-      { id: 3 },
-    ]
-    expect(assignableRoles(roles, false).map((role) => role.id)).toEqual([1])
-  })
-})
 
 describe('snapshot model', () => {
   it('accepts only released and unreleased states', () => {

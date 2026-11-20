@@ -1,3 +1,4 @@
+import { localizedError } from '@/i18n/errors'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   type PropsWithChildren,
@@ -100,10 +101,10 @@ export function EnvironmentProvider({ children }: PropsWithChildren) {
         sameId(item.id, environmentId),
       )
       if (!environment) {
-        throw new Error(`environment is not available: ${environmentId}`)
+        throw localizedError('环境不可用：{{id}}', { id: environmentId })
       }
       if (!environment.enabled) {
-        throw new Error(`environment is disabled: ${environmentId}`)
+        throw localizedError('环境已禁用：{{id}}', { id: environmentId })
       }
 
       switchSequence.current += 1

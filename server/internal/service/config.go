@@ -7,20 +7,19 @@ import (
 
 	adminv1 "github.com/yvvlee/kirby/server/api/admin"
 	commonv1 "github.com/yvvlee/kirby/server/api/common"
-	"github.com/yvvlee/kirby/server/internal/converter"
+	"github.com/yvvlee/kirby/server/internal/entity"
 	"github.com/yvvlee/kirby/server/internal/logic"
-	"github.com/yvvlee/kirby/server/internal/model"
 	"github.com/yvvlee/kirby/server/internal/permission"
 	"github.com/yvvlee/kirby/server/internal/repository"
 )
 
 type configLogic interface {
-	Create(ctx context.Context, actor permission.Actor, environmentID int64, input logic.ConfigCreateInput) (*model.Config, error)
-	Update(ctx context.Context, actor permission.Actor, environmentID int64, input logic.ConfigUpdateInput) (*model.Config, error)
-	UpdateValue(ctx context.Context, actor permission.Actor, environmentID int64, input logic.ConfigValueInput) (*model.Config, error)
-	List(ctx context.Context, actor permission.Actor, environmentID int64, filter repository.ConfigFilter) ([]model.Config, map[int64]bool, error)
+	Create(ctx context.Context, param *entity.CreateConfigParam) (*commonv1.Config, error)
+	Update(ctx context.Context, param *entity.UpdateConfigParam) (*commonv1.Config, error)
+	UpdateValue(ctx context.Context, param *entity.UpdateConfigValueParam) (*commonv1.Config, error)
+	List(ctx context.Context, param *entity.ListConfigParam) ([]*adminv1.ListConfigItem, error)
 	Delete(ctx context.Context, actor permission.Actor, environmentID, configID int64) error
-	Detail(ctx context.Context, actor permission.Actor, environmentID, configID int64) (*model.Config, *commonv1.TreeNode, error)
+	Detail(ctx context.Context, actor permission.Actor, environmentID, configID int64) (*commonv1.Config, *commonv1.TreeNode, error)
 }
 
 type ConfigService struct{ configLogic configLogic }
@@ -46,12 +45,17 @@ func (s *ConfigService) CreateConfig(ctx context.Context, request *adminv1.Creat
 	if err != nil {
 		return nil, apiError(err)
 	}
-	item, err := s.configLogic.Create(ctx, actor, request.EnvironmentId, logic.ConfigCreateInput{
-		ProjectID:   request.ProjectId,
-		Key:         request.Key,
-		Description: request.Description,
+	item, err := s.configLogic.Create(ctx, &entity.CreateConfigParam{
+		Actor:         actor,
+		EnvironmentID: request.EnvironmentId,
+		ProjectID:     request.ProjectId,
+		Key:           request.Key,
+		Description:   request.Description,
 	})
-	return configReply(item, err)
+	if err != nil {
+		return nil, apiError(err)
+	}
+	return &adminv1.ConfigReply{Config: item}, nil
 }
 
 // UpdateConfig maps the authenticated API request to the application operation.
@@ -64,14 +68,19 @@ func (s *ConfigService) UpdateConfig(ctx context.Context, request *adminv1.Updat
 	if err != nil {
 		return nil, apiError(err)
 	}
-	item, err := s.configLogic.Update(ctx, actor, request.EnvironmentId, logic.ConfigUpdateInput{
-		ConfigID:    request.Id,
-		Description: request.Description,
-		FieldType:   request.Type,
-		IsArray:     request.IsArray,
-		Version:     int64(request.Version),
+	item, err := s.configLogic.Update(ctx, &entity.UpdateConfigParam{
+		Actor:         actor,
+		EnvironmentID: request.EnvironmentId,
+		ConfigID:      request.Id,
+		Description:   request.Description,
+		FieldType:     request.Type,
+		IsArray:       request.IsArray,
+		Version:       int64(request.Version),
 	})
-	return configReply(item, err)
+	if err != nil {
+		return nil, apiError(err)
+	}
+	return &adminv1.ConfigReply{Config: item}, nil
 }
 
 // UpdateConfigValue maps the authenticated API request to the application operation.
@@ -84,12 +93,17 @@ func (s *ConfigService) UpdateConfigValue(ctx context.Context, request *adminv1.
 	if err != nil {
 		return nil, apiError(err)
 	}
-	item, err := s.configLogic.UpdateValue(ctx, actor, request.EnvironmentId, logic.ConfigValueInput{
-		ConfigID: request.Id,
-		Value:    request.Value,
-		Version:  int64(request.Version),
+	item, err := s.configLogic.UpdateValue(ctx, &entity.UpdateConfigValueParam{
+		Actor:         actor,
+		EnvironmentID: request.EnvironmentId,
+		ConfigID:      request.Id,
+		Value:         request.Value,
+		Version:       int64(request.Version),
 	})
-	return configReply(item, err)
+	if err != nil {
+		return nil, apiError(err)
+	}
+	return &adminv1.ConfigReply{Config: item}, nil
 }
 
 // ListConfig maps the authenticated API request to the application operation.
@@ -102,26 +116,19 @@ func (s *ConfigService) ListConfig(ctx context.Context, request *adminv1.ListCon
 	if err != nil {
 		return nil, apiError(err)
 	}
-	items, released, err := s.configLogic.List(ctx, actor, request.EnvironmentId, repository.ConfigFilter{
-		ProjectID:  request.ProjectId,
-		ProjectKey: request.ProjectKey,
-		Key:        request.Key,
+	items, err := s.configLogic.List(ctx, &entity.ListConfigParam{
+		Actor:         actor,
+		EnvironmentID: request.EnvironmentId,
+		Filter: repository.ConfigFilter{
+			ProjectID:  request.ProjectId,
+			ProjectKey: request.ProjectKey,
+			Key:        request.Key,
+		},
 	})
 	if err != nil {
 		return nil, apiError(err)
 	}
-	result := make([]*adminv1.ListConfigItem, 0, len(items))
-	for index := range items {
-		converted, err := converter.ConfigToProto(&items[index])
-		if err != nil {
-			return nil, apiError(err)
-		}
-		result = append(result, &adminv1.ListConfigItem{
-			Config:     converted,
-			IsReleased: released[items[index].ID],
-		})
-	}
-	return &adminv1.ListConfigReply{List: result}, nil
+	return &adminv1.ListConfigReply{List: items}, nil
 }
 
 // DeleteConfig maps the authenticated API request to the application operation.
@@ -154,23 +161,8 @@ func (s *ConfigService) ConfigDetail(ctx context.Context, request *adminv1.Confi
 	if err != nil {
 		return nil, apiError(err)
 	}
-	converted, err := converter.ConfigToProto(item)
-	if err != nil {
-		return nil, apiError(err)
-	}
 	return &adminv1.ConfigDetailReply{
-		Config: converted,
+		Config: item,
 		Tree:   tree,
 	}, nil
-}
-
-func configReply(item *model.Config, err error) (*adminv1.ConfigReply, error) {
-	if err != nil {
-		return nil, apiError(err)
-	}
-	converted, err := converter.ConfigToProto(item)
-	if err != nil {
-		return nil, apiError(err)
-	}
-	return &adminv1.ConfigReply{Config: converted}, nil
 }

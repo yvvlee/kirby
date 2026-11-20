@@ -15,6 +15,6 @@ export function createScopedFileUpload(
   const ScopedFileUpload = (props: ScopedProps) => (
     <FileUpload {...props} environmentId={environment} projectId={project} />
   )
-  ScopedFileUpload.displayName = `ScopedFileUpload_${environment}_${project}`
+  ScopedFileUpload.nickname = `ScopedFileUpload_${environment}_${project}`
   return connect(ScopedFileUpload)
 }

@@ -1,12 +1,8 @@
 package converter
 
 import (
-	"fmt"
-
 	commonv1 "github.com/yvvlee/kirby/server/api/common"
 	"github.com/yvvlee/kirby/server/internal/model"
-	"github.com/yvvlee/kirby/server/internal/util/safeint"
-	"github.com/yvvlee/kirby/server/internal/util/timeutil"
 )
 
 // ConfigToProto converts persisted data to an API message without hiding conversion errors.
@@ -23,10 +19,6 @@ func ConfigToProto(item *model.Config) (*commonv1.Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	runtimeVersion, err := safeint.Uint64FromInt64(item.RuntimeVersion)
-	if err != nil {
-		return nil, fmt.Errorf("invalid config runtime version")
-	}
 	return &commonv1.Config{
 		Id:             item.ID,
 		ProjectId:      item.ProjectID,
@@ -35,11 +27,11 @@ func ConfigToProto(item *model.Config) (*commonv1.Config, error) {
 		IsArray:        item.IsArray,
 		Type:           fieldType,
 		Value:          item.Value,
-		RuntimeVersion: runtimeVersion,
+		RuntimeVersion: uint64(item.RuntimeVersion),
 		CreatedBy:      formatActor(item.CreatedBy),
 		UpdatedBy:      formatActor(item.UpdatedBy),
-		CreatedAt:      timeutil.FormatRFC3339(item.CreatedAt),
-		UpdatedAt:      timeutil.FormatRFC3339(item.UpdatedAt),
+		CreatedAt:      timestamp(item.CreatedAt),
+		UpdatedAt:      timestamp(item.UpdatedAt),
 		Version:        version,
 	}, nil
 }

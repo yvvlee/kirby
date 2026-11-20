@@ -3,20 +3,22 @@ package service
 import (
 	"context"
 
+	"google.golang.org/protobuf/types/known/emptypb"
+
 	adminv1 "github.com/yvvlee/kirby/server/api/admin"
 	commonv1 "github.com/yvvlee/kirby/server/api/common"
-	"github.com/yvvlee/kirby/server/internal/converter"
+	"github.com/yvvlee/kirby/server/internal/entity"
 	"github.com/yvvlee/kirby/server/internal/logic"
-	"github.com/yvvlee/kirby/server/internal/model"
 	"github.com/yvvlee/kirby/server/internal/permission"
 	"github.com/yvvlee/kirby/server/internal/repository"
 )
 
 type projectLogic interface {
-	Create(ctx context.Context, actor permission.Actor, environmentID int64, item *model.Project) (*model.Project, error)
-	Update(ctx context.Context, actor permission.Actor, environmentID, projectID int64, update repository.ProjectUpdate) (*model.Project, error)
-	List(ctx context.Context, actor permission.Actor, environmentID int64, keyword string) ([]model.Project, error)
-	Detail(ctx context.Context, actor permission.Actor, environmentID, projectID int64) (*model.Project, error)
+	Delete(ctx context.Context, actor permission.Actor, projectID int64) error
+	Create(ctx context.Context, param *entity.CreateProjectParam) (*commonv1.Project, error)
+	Update(ctx context.Context, param *entity.UpdateProjectParam) (*commonv1.Project, error)
+	List(ctx context.Context, param *entity.ListProjectParam) ([]*commonv1.Project, error)
+	Detail(ctx context.Context, actor permission.Actor, environmentID, projectID int64) (*commonv1.Project, error)
 }
 
 type ProjectService struct{ projectLogic projectLogic }
@@ -42,12 +44,16 @@ func (s *ProjectService) CreateProject(ctx context.Context, request *adminv1.Cre
 	if err != nil {
 		return nil, apiError(err)
 	}
-	item, err := s.projectLogic.Create(ctx, actor, 0, &model.Project{
+	item, err := s.projectLogic.Create(ctx, &entity.CreateProjectParam{
+		Actor:       actor,
 		Key:         request.Key,
 		Name:        request.Name,
 		Description: request.Description,
 	})
-	return projectReply(item, err)
+	if err != nil {
+		return nil, apiError(err)
+	}
+	return &adminv1.ProjectReply{Project: item}, nil
 }
 
 // UpdateProject maps the authenticated API request to the application operation.
@@ -60,12 +66,19 @@ func (s *ProjectService) UpdateProject(ctx context.Context, request *adminv1.Upd
 	if err != nil {
 		return nil, apiError(err)
 	}
-	item, err := s.projectLogic.Update(ctx, actor, 0, request.Id, repository.ProjectUpdate{
-		Name:        request.Name,
-		Description: request.Description,
-		Version:     int64(request.Version),
+	item, err := s.projectLogic.Update(ctx, &entity.UpdateProjectParam{
+		Actor:     actor,
+		ProjectID: request.Id,
+		Update: repository.ProjectUpdate{
+			Name:        request.Name,
+			Description: request.Description,
+			Version:     int64(request.Version),
+		},
 	})
-	return projectReply(item, err)
+	if err != nil {
+		return nil, apiError(err)
+	}
+	return &adminv1.ProjectReply{Project: item}, nil
 }
 
 // ListProject maps the authenticated API request to the application operation.
@@ -82,19 +95,15 @@ func (s *ProjectService) ListProject(ctx context.Context, request *adminv1.ListP
 	if request.EnvironmentId != nil {
 		environmentID = *request.EnvironmentId
 	}
-	items, err := s.projectLogic.List(ctx, actor, environmentID, request.Keyword)
+	items, err := s.projectLogic.List(ctx, &entity.ListProjectParam{
+		Actor:         actor,
+		EnvironmentID: environmentID,
+		Keyword:       request.Keyword,
+	})
 	if err != nil {
 		return nil, apiError(err)
 	}
-	result := make([]*commonv1.Project, 0, len(items))
-	for index := range items {
-		converted, err := converter.ProjectToProto(&items[index])
-		if err != nil {
-			return nil, apiError(err)
-		}
-		result = append(result, converted)
-	}
-	return &adminv1.ListProjectReply{List: result}, nil
+	return &adminv1.ListProjectReply{List: items}, nil
 }
 
 // ProjectDetail maps the authenticated API request to the application operation.
@@ -112,16 +121,23 @@ func (s *ProjectService) ProjectDetail(ctx context.Context, request *adminv1.Pro
 		environmentID = *request.EnvironmentId
 	}
 	item, err := s.projectLogic.Detail(ctx, actor, environmentID, request.Id)
-	return projectReply(item, err)
+	if err != nil {
+		return nil, apiError(err)
+	}
+	return &adminv1.ProjectReply{Project: item}, nil
 }
 
-func projectReply(item *model.Project, err error) (*adminv1.ProjectReply, error) {
+// DeleteProject removes only a project owned by the authenticated caller.
+// Parameters: ctx carries authentication; request selects the project.
+// Returns: an empty reply or a translated error.
+// Throws: none; errors are returned.
+func (s *ProjectService) DeleteProject(ctx context.Context, request *adminv1.ProjectIDRequest) (*emptypb.Empty, error) {
+	actor, err := permission.ActorFromContext(ctx)
 	if err != nil {
 		return nil, apiError(err)
 	}
-	converted, err := converter.ProjectToProto(item)
-	if err != nil {
+	if err := s.projectLogic.Delete(ctx, actor, request.Id); err != nil {
 		return nil, apiError(err)
 	}
-	return &adminv1.ProjectReply{Project: converted}, nil
+	return &emptypb.Empty{}, nil
 }

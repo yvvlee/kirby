@@ -17,7 +17,6 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 
 	"github.com/yvvlee/kirby/server/internal/conf"
-	"github.com/yvvlee/kirby/server/internal/util/safeint"
 )
 
 const (
@@ -88,7 +87,6 @@ type S3Storage struct {
 	presignClient  s3PresignAPI
 	bucket         string
 	publicBaseURL  url.URL
-	now            func() time.Time
 }
 
 // NewS3 constructs one S3 client for storage operations and same-origin upload policies.
@@ -99,7 +97,7 @@ func NewS3(cfg conf.S3Config) (*S3Storage, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	sharedCredentials := credentials.NewStaticV4(cfg.AccessKey.Value(), cfg.SecretKey.Value(), "")
+	sharedCredentials := credentials.NewStaticV4(cfg.AccessKey, cfg.SecretKey, "")
 	client, err := minio.New(cfg.Endpoint, &minio.Options{
 		Creds:  sharedCredentials,
 		Secure: cfg.UseSSL,
@@ -112,7 +110,7 @@ func NewS3(cfg conf.S3Config) (*S3Storage, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse S3 public base URL: invalid configuration")
 	}
-	return newS3(&minioInternalClient{Client: client}, client, cfg.Bucket, publicBaseURL, time.Now), nil
+	return newS3(&minioInternalClient{Client: client}, client, cfg.Bucket, publicBaseURL), nil
 }
 
 func newS3(
@@ -120,14 +118,12 @@ func newS3(
 	presignClient s3PresignAPI,
 	bucket string,
 	publicBaseURL *url.URL,
-	now func() time.Time,
 ) *S3Storage {
 	return &S3Storage{
 		internalClient: internalClient,
 		presignClient:  presignClient,
 		bucket:         bucket,
 		publicBaseURL:  *publicBaseURL,
-		now:            now,
 	}
 }
 
@@ -158,7 +154,7 @@ func (s *S3Storage) PresignUpload(ctx context.Context, input PresignUploadInput)
 	if err != nil {
 		return nil, err
 	}
-	expiresAt := s.now().UTC().Add(input.ExpiresIn)
+	expiresAt := time.Now().UTC().Add(input.ExpiresIn)
 	policy := minio.NewPostPolicy()
 	if err := policy.SetBucket(s.bucket); err != nil {
 		return nil, fmt.Errorf("%w: build S3 upload policy", ErrInvalidInput)
@@ -226,10 +222,7 @@ func (s *S3Storage) CompleteUpload(ctx context.Context, key string) (*Metadata, 
 		return nil, safeS3Error("open validated S3 upload", err)
 	}
 	defer source.Close()
-	publishSize, err := safeint.Int64FromUint64(metadata.Size)
-	if err != nil {
-		return nil, fmt.Errorf("%w: S3 object size is invalid", ErrObjectIntegrity)
-	}
+	publishSize := int64(metadata.Size)
 	publishInfo, err := s.internalClient.PutObjectIfAbsent(ctx, objectWriteInput{
 		Bucket:      s.bucket,
 		Key:         finalKey,
@@ -291,10 +284,7 @@ func (s *S3Storage) ReadMetadata(ctx context.Context, key string) (*Metadata, er
 	if !scope.Temporary {
 		objectURL = s.publicURL(key)
 	}
-	objectSize, err := safeint.Uint64FromInt64(info.Size)
-	if err != nil {
-		return nil, fmt.Errorf("%w: S3 object size is invalid", ErrObjectIntegrity)
-	}
+	objectSize := uint64(info.Size)
 	return &Metadata{
 		Key:                 key,
 		URL:                 objectURL,

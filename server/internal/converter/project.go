@@ -3,7 +3,6 @@ package converter
 import (
 	commonv1 "github.com/yvvlee/kirby/server/api/common"
 	"github.com/yvvlee/kirby/server/internal/model"
-	"github.com/yvvlee/kirby/server/internal/util/timeutil"
 )
 
 // ProjectToProto converts persisted data to an API message without hiding conversion errors.
@@ -23,8 +22,8 @@ func ProjectToProto(item *model.Project) (*commonv1.Project, error) {
 		Description: item.Description,
 		CreatedBy:   formatActor(item.CreatedBy),
 		UpdatedBy:   formatActor(item.UpdatedBy),
-		CreatedAt:   timeutil.FormatRFC3339(item.CreatedAt),
-		UpdatedAt:   timeutil.FormatRFC3339(item.UpdatedAt),
+		CreatedAt:   timestamp(item.CreatedAt),
+		UpdatedAt:   timestamp(item.UpdatedAt),
 		Version:     version,
 	}, nil
 }

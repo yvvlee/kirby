@@ -2,59 +2,33 @@ package service
 
 import (
 	"context"
-	"errors"
 	"testing"
 
-	"time"
-
-	"github.com/yvvlee/kirby/server/internal/converter"
-
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	adminv1 "github.com/yvvlee/kirby/server/api/admin"
+	commonv1 "github.com/yvvlee/kirby/server/api/common"
+	"github.com/yvvlee/kirby/server/internal/entity"
 	"github.com/yvvlee/kirby/server/internal/logic"
-	"github.com/yvvlee/kirby/server/internal/model"
 	"github.com/yvvlee/kirby/server/internal/permission"
 )
 
 type serviceLogicFake struct {
-	items  []model.ProjectAPIKey
+	items  []*commonv1.ProjectApiKey
 	secret *logic.APIKeySecretResult
 }
 
-func (f serviceLogicFake) List(context.Context, permission.Actor, int64, int64) ([]model.ProjectAPIKey, error) {
+func (f serviceLogicFake) List(context.Context, permission.Actor, int64, int64) ([]*commonv1.ProjectApiKey, error) {
 	return f.items, nil
 }
-func (f serviceLogicFake) Create(context.Context, permission.Actor, int64, int64, string) (*logic.APIKeySecretResult, error) {
+func (f serviceLogicFake) Create(context.Context, *entity.CreateAPIKeyParam) (*logic.APIKeySecretResult, error) {
 	return f.secret, nil
 }
-func (f serviceLogicFake) Rotate(context.Context, permission.Actor, int64, int64, int64) (*logic.APIKeySecretResult, error) {
+func (f serviceLogicFake) Rotate(context.Context, *entity.RotateAPIKeyParam) (*logic.APIKeySecretResult, error) {
 	return f.secret, nil
 }
-func (serviceLogicFake) Revoke(context.Context, permission.Actor, int64, int64, int64) error {
+func (serviceLogicFake) Revoke(context.Context, *entity.RevokeAPIKeyParam) error {
 	return nil
-}
-
-func TestProjectAPIKeyProtoNeverContainsDigest(t *testing.T) {
-	now := time.Date(2026, time.August, 17, 8, 0, 0, 0, time.UTC)
-	item := model.ProjectAPIKey{
-		RecordMeta: model.RecordMeta{
-			ID:        41,
-			CreatedAt: now,
-			UpdatedAt: now,
-		},
-		ProjectID:    20,
-		PublicID:     "kirby_pk_public",
-		Name:         "production",
-		SecretHash:   []byte("database-only-digest"),
-		SecretSuffix: "abcd",
-		CreatedBy:    9,
-	}
-	converted := converter.APIKeyToProto(&item)
-	assert.Equal(t, int64(41), converted.Id)
-	assert.Equal(t, "abcd", converted.SecretSuffix)
-	assert.NotContains(t, converted.String(), "database-only-digest")
 }
 
 func TestProjectAPIKeyServiceRejectsRequestsWithoutAdminIdentity(t *testing.T) {
@@ -70,10 +44,4 @@ func TestProjectAPIKeyServiceRejectsRequestsWithoutAdminIdentity(t *testing.T) {
 		Name:          "key",
 	})
 	assert.Error(t, err)
-}
-
-func TestSecretReplyPreservesFailureWithoutExposingDetails(t *testing.T) {
-	_, err := secretReply(nil, errors.New("internal database details"))
-	require.Error(t, err)
-	require.NotContains(t, err.Error(), "internal database details")
 }

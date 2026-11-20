@@ -18,6 +18,7 @@ import (
 	"google.golang.org/grpc/reflection"
 
 	runtimev1 "github.com/yvvlee/kirby/server/api/runtime"
+	"github.com/yvvlee/kirby/server/internal/i18n"
 	adminmiddleware "github.com/yvvlee/kirby/server/internal/middleware"
 )
 
@@ -50,7 +51,7 @@ func newRuntimeGRPCServer(address string, timeout time.Duration, middlewares []k
 		if len(replyHeader) > 0 {
 			_ = grpc.SetHeader(ctx, replyHeader)
 		}
-		return reply, err
+		return reply, localizeGRPCError(err, incoming)
 	}
 	chain := append([]grpc.UnaryServerInterceptor{boundary}, interceptors...)
 	native := grpc.NewServer(grpc.ChainUnaryInterceptor(chain...))
@@ -62,6 +63,15 @@ func newRuntimeGRPCServer(address string, timeout time.Duration, middlewares []k
 		server:  native,
 		health:  healthServer,
 	}
+}
+
+func localizeGRPCError(err error, incoming metadata.MD) error {
+	languages := incoming.Get("accept-language")
+	language := ""
+	if len(languages) > 0 {
+		language = languages[0]
+	}
+	return i18n.LocalizeError(err, i18n.Negotiate(language))
 }
 
 // Start opens the runtime listener and advertises service readiness.
@@ -212,7 +222,7 @@ func NewGRPCServer(deps *Dependencies) *runtimeGRPCServer {
 	runtimeGRPCSelector := selector.Server(runtimeRate).Path(runtimev1.OperationApiConfig).Build()
 	grpcServer := newRuntimeGRPCServer(
 		deps.Config.GRPC.Address,
-		deps.Config.GRPC.Timeout.Duration,
+		time.Duration(deps.Config.GRPC.Timeout)*time.Millisecond,
 		[]kratosmiddleware.Middleware{recovery.Recovery(), adminmiddleware.ValidateRequest(), adminmiddleware.TransportLog(deps.Logger), runtimeGRPCSelector},
 		adminmiddleware.UnaryAPIKey,
 	)

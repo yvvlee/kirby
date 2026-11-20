@@ -1,0 +1,13 @@
+syntax = "proto3";
+package kirby.admin.v1;
+import "google/api/annotations.proto";
+option go_package = "github.com/yvvlee/kirby/server/api/admin;adminv1";
+
+service SystemSettingsService {
+ rpc GetRegistrationStatus(GetSystemSettingsRequest) returns (SystemSettingsReply) { option (google.api.http) = {get: "/auth/registration-status"}; }
+  rpc GetSystemSettings(GetSystemSettingsRequest) returns (SystemSettingsReply) { option (google.api.http) = {get: "/admin/system-settings"}; }
+  rpc UpdateSystemSettings(UpdateSystemSettingsRequest) returns (SystemSettingsReply) { option (google.api.http) = {put: "/admin/system-settings", body: "*"}; }
+}
+message GetSystemSettingsRequest {}
+message UpdateSystemSettingsRequest { bool allow_self_registration = 1; }
+message SystemSettingsReply { bool allow_self_registration = 1; }

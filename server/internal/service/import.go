@@ -5,13 +5,13 @@ import (
 	"fmt"
 
 	adminv1 "github.com/yvvlee/kirby/server/api/admin"
-	"github.com/yvvlee/kirby/server/internal/converter"
+	"github.com/yvvlee/kirby/server/internal/entity"
 	"github.com/yvvlee/kirby/server/internal/logic"
 	"github.com/yvvlee/kirby/server/internal/permission"
 )
 
 type importLogic interface {
-	Import(ctx context.Context, actor permission.Actor, request logic.ImportRequest) (*logic.ImportResult, error)
+	Import(ctx context.Context, param *entity.ImportSnapshotParam) (*logic.ImportResult, error)
 }
 
 type ImportService struct {
@@ -37,7 +37,8 @@ func (s *ImportService) ImportSnapshot(ctx context.Context, request *adminv1.Imp
 	if err != nil {
 		return nil, apiError(err)
 	}
-	result, err := s.importLogic.Import(ctx, actor, logic.ImportRequest{
+	result, err := s.importLogic.Import(ctx, &entity.ImportSnapshotParam{
+		Actor:               actor,
 		SourceEnvironmentID: request.SourceEnvironmentId,
 		SourceSnapshotID:    request.SourceSnapshotId,
 		TargetEnvironmentID: request.TargetEnvironmentId,
@@ -46,7 +47,7 @@ func (s *ImportService) ImportSnapshot(ctx context.Context, request *adminv1.Imp
 		Description:         request.Description,
 		Tags:                request.Tags,
 		IdempotencyKey:      request.IdempotencyKey,
-		ConflictStrategy:    logic.ConflictStrategy(request.ConflictStrategy),
+		ConflictStrategy:    entity.ConflictStrategy(request.ConflictStrategy),
 	})
 	if err != nil {
 		return nil, apiError(err)
@@ -54,12 +55,8 @@ func (s *ImportService) ImportSnapshot(ctx context.Context, request *adminv1.Imp
 	if result == nil || result.Snapshot == nil {
 		return nil, apiError(fmt.Errorf("snapshot import returned no result"))
 	}
-	converted, err := converter.SnapshotToProto(result.Snapshot)
-	if err != nil {
-		return nil, apiError(err)
-	}
 	return &adminv1.ImportSnapshotReply{
-		Snapshot: converted,
+		Snapshot: result.Snapshot,
 		Replayed: result.Replayed,
 	}, nil
 }

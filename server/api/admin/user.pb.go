@@ -28,9 +28,10 @@ const (
 type CreateUserRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Username      string                 `protobuf:"bytes,1,opt,name=username,proto3" json:"username,omitempty"`
-	DisplayName   string                 `protobuf:"bytes,2,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	Nickname      string                 `protobuf:"bytes,2,opt,name=nickname,proto3" json:"nickname,omitempty"`
 	Password      string                 `protobuf:"bytes,3,opt,name=password,proto3" json:"password,omitempty"`
 	IsSystemAdmin bool                   `protobuf:"varint,4,opt,name=is_system_admin,json=isSystemAdmin,proto3" json:"is_system_admin,omitempty"`
+	Email         string                 `protobuf:"bytes,5,opt,name=email,proto3" json:"email,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -72,9 +73,9 @@ func (x *CreateUserRequest) GetUsername() string {
 	return ""
 }
 
-func (x *CreateUserRequest) GetDisplayName() string {
+func (x *CreateUserRequest) GetNickname() string {
 	if x != nil {
-		return x.DisplayName
+		return x.Nickname
 	}
 	return ""
 }
@@ -93,10 +94,17 @@ func (x *CreateUserRequest) GetIsSystemAdmin() bool {
 	return false
 }
 
+func (x *CreateUserRequest) GetEmail() string {
+	if x != nil {
+		return x.Email
+	}
+	return ""
+}
+
 type UpdateUserRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	UserId        int64                  `protobuf:"varint,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
-	DisplayName   string                 `protobuf:"bytes,2,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	Nickname      string                 `protobuf:"bytes,2,opt,name=nickname,proto3" json:"nickname,omitempty"`
 	IsSystemAdmin bool                   `protobuf:"varint,3,opt,name=is_system_admin,json=isSystemAdmin,proto3" json:"is_system_admin,omitempty"`
 	Version       uint32                 `protobuf:"varint,55,opt,name=version,proto3" json:"version,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -140,9 +148,9 @@ func (x *UpdateUserRequest) GetUserId() int64 {
 	return 0
 }
 
-func (x *UpdateUserRequest) GetDisplayName() string {
+func (x *UpdateUserRequest) GetNickname() string {
 	if x != nil {
-		return x.DisplayName
+		return x.Nickname
 	}
 	return ""
 }
@@ -365,25 +373,23 @@ var File_admin_user_proto protoreflect.FileDescriptor
 
 const file_admin_user_proto_rawDesc = "" +
 	"\n" +
-	"\x10admin/user.proto\x12\x0ekirby.admin.v1\x1a\x1cgoogle/api/annotations.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a\x13common/entity.proto\x1a\x17validate/validate.proto\"\xba\x01\n" +
-	"\x11CreateUserRequest\x12&\n" +
-	"\busername\x18\x01 \x01(\tB\n" +
-	"\xfaB\ar\x05\x10\x01\x18\x80\x01R\busername\x12-\n" +
-	"\fdisplay_name\x18\x02 \x01(\tB\n" +
-	"\xfaB\ar\x05\x10\x01\x18\x80\x01R\vdisplayName\x12&\n" +
-	"\bpassword\x18\x03 \x01(\tB\n" +
-	"\xfaB\ar\x05\x10\f\x18\x80\bR\bpassword\x12&\n" +
-	"\x0fis_system_admin\x18\x04 \x01(\bR\risSystemAdmin\"\xa6\x01\n" +
+	"\x10admin/user.proto\x12\x0ekirby.admin.v1\x1a\x1cgoogle/api/annotations.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a\x13common/entity.proto\x1a\x17validate/validate.proto\"\xfe\x01\n" +
+	"\x11CreateUserRequest\x12D\n" +
+	"\busername\x18\x01 \x01(\tB(\xfaB%r#\x10\x01\x18\x80\x012\x1c^[A-Za-z0-9][A-Za-z0-9_.-]*$R\busername\x12&\n" +
+	"\bnickname\x18\x02 \x01(\tB\n" +
+	"\xfaB\ar\x05\x10\x01\x18\x80\x01R\bnickname\x12/\n" +
+	"\bpassword\x18\x03 \x01(\tB\x13\xfaB\x10r\x0e \b( 2\b^[!-~]+$R\bpassword\x12&\n" +
+	"\x0fis_system_admin\x18\x04 \x01(\bR\risSystemAdmin\x12\"\n" +
+	"\x05email\x18\x05 \x01(\tB\f\xfaB\tr\a\x10\x03\x18\xc0\x02`\x01R\x05email\"\x9f\x01\n" +
 	"\x11UpdateUserRequest\x12 \n" +
-	"\auser_id\x18\x01 \x01(\x03B\a\xfaB\x04\"\x02 \x00R\x06userId\x12-\n" +
-	"\fdisplay_name\x18\x02 \x01(\tB\n" +
-	"\xfaB\ar\x05\x10\x01\x18\x80\x01R\vdisplayName\x12&\n" +
-	"\x0fis_system_admin\x18\x03 \x01(\bR\risSystemAdmin\x12\x18\n" +
-	"\aversion\x187 \x01(\rR\aversion\"e\n" +
-	"\x19UpdateUserPasswordRequest\x12 \n" +
 	"\auser_id\x18\x01 \x01(\x03B\a\xfaB\x04\"\x02 \x00R\x06userId\x12&\n" +
-	"\bpassword\x18\x02 \x01(\tB\n" +
-	"\xfaB\ar\x05\x10\f\x18\x80\bR\bpassword\"o\n" +
+	"\bnickname\x18\x02 \x01(\tB\n" +
+	"\xfaB\ar\x05\x10\x01\x18\x80\x01R\bnickname\x12&\n" +
+	"\x0fis_system_admin\x18\x03 \x01(\bR\risSystemAdmin\x12\x18\n" +
+	"\aversion\x187 \x01(\rR\aversion\"n\n" +
+	"\x19UpdateUserPasswordRequest\x12 \n" +
+	"\auser_id\x18\x01 \x01(\x03B\a\xfaB\x04\"\x02 \x00R\x06userId\x12/\n" +
+	"\bpassword\x18\x02 \x01(\tB\x13\xfaB\x10r\x0e \b( 2\b^[!-~]+$R\bpassword\"o\n" +
 	"\x17UpdateUserStatusRequest\x12 \n" +
 	"\auser_id\x18\x01 \x01(\x03B\a\xfaB\x04\"\x02 \x00R\x06userId\x12\x18\n" +
 	"\aenabled\x18\x02 \x01(\bR\aenabled\x12\x18\n" +

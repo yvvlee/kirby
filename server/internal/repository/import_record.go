@@ -15,7 +15,7 @@ import (
 
 type ImportRecordRepository interface {
 	Claim(ctx context.Context, record *model.ImportRecord) (*model.ImportRecord, bool, error)
-	Complete(ctx context.Context, recordID, targetSnapshotID int64, resultJSON string) error
+	Complete(ctx context.Context, recordID, targetSnapshotID int64, resultJSON string) (rowsAffected int64, err error)
 }
 
 type ImportRecordRepositoryImpl struct {
@@ -51,7 +51,6 @@ func (r *ImportRecordRepositoryImpl) Claim(ctx context.Context, record *model.Im
 }
 
 func (r *ImportRecordRepositoryImpl) insertClaim(ctx context.Context, record *model.ImportRecord) (bool, error) {
-	record.PrepareInsert()
 	if r.Engine.SupportsReturning() && !r.Engine.SupportsLastInsertId() {
 		return r.insertPostgresClaim(ctx, record)
 	}
@@ -125,11 +124,11 @@ func (r *ImportRecordRepositoryImpl) lockExistingClaim(ctx context.Context, reco
 // Complete 将pending记录标记为成功并写入结果。
 //
 // Parameters: ctx carries cancellation and transaction state; recordID identifies the pending import claim; targetSnapshotID identifies the snapshot created by this import; resultJSON stores the replay response.
-// Returns: nil after a pending claim becomes successful; ErrNoRowsAffected if it is no longer pending.
+// Returns: rowsAffected after a pending claim becomes successful; ErrNoRowsAffected if it is no longer pending.
 // Throws: none.
-func (r *ImportRecordRepositoryImpl) Complete(ctx context.Context, recordID, targetSnapshotID int64, resultJSON string) error {
+func (r *ImportRecordRepositoryImpl) Complete(ctx context.Context, recordID, targetSnapshotID int64, resultJSON string) (rowsAffected int64, err error) {
 	fields := new(model.ImportRecord).LormCols()
-	affected, err := r.Engine.Update[*model.ImportRecord]().ID(recordID).
+	rowsAffected, err = r.Engine.Update[*model.ImportRecord]().ID(recordID).
 		Where(builder.Eq{fields.Status(): model.ImportStatusPending}).
 		Set(fields.Version(), builder.Expr("version + 1")).
 		SetMap(map[string]any{
@@ -137,15 +136,17 @@ func (r *ImportRecordRepositoryImpl) Complete(ctx context.Context, recordID, tar
 			fields.Status():           model.ImportStatusSucceeded,
 			fields.ResultJSON():       resultJSON,
 			fields.ErrorMessage():     "",
-			fields.UpdatedAt():        time.Now().UTC(),
+			fields.UpdatedAt():        time.Now(),
 		}).Exec(ctx)
 	if err != nil {
-		return WrapDatabaseError(err)
+		err = WrapDatabaseError(err)
+		return
 	}
-	if affected == 0 {
-		return Unchanged("import record")
+	if rowsAffected == 0 {
+		err = Unchanged("import record")
+		return
 	}
-	return nil
+	return
 }
 
 var _ ImportRecordRepository = (*ImportRecordRepositoryImpl)(nil)

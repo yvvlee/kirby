@@ -16,14 +16,6 @@ var (
 	ErrInvalidArgument = errors.New("repository: invalid argument")
 )
 
-// InvalidArgument returns a repository error that callers can classify.
-// Parameters: name identifies the invalid field.
-// Returns: an error wrapping ErrInvalidArgument.
-// Throws: none.
-func InvalidArgument(name string) error {
-	return fmt.Errorf("%w: %s", ErrInvalidArgument, name)
-}
-
 // Missing returns a repository error that callers can classify.
 // Parameters: resource identifies the inaccessible resource.
 // Returns: an error wrapping ErrNotFound.

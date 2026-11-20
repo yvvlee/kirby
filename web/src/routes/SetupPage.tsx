@@ -8,16 +8,12 @@ import { getApiErrorMessage } from '@/api/errors'
 import { createInitialAdministrator, type InitialAdministrator } from '@/api/setup'
 import { useSetup } from '@/app/setup-state'
 import { useAuth } from '@/auth/auth-state'
+import { newPasswordRules, PASSWORD_POLICY_HINT } from '@/auth/password-policy'
+import { useTranslation } from '@/i18n'
+import LanguageSwitcher from '@/i18n/LanguageSwitcher'
 
 type SetupForm = InitialAdministrator & {
   confirm_password: string
-}
-
-function validatePassword(_rule: unknown, value?: string): Promise<void> {
-  if (!value) return Promise.resolve()
-  const length = new TextEncoder().encode(value).length
-  if (length >= 12 && length <= 1024) return Promise.resolve()
-  return Promise.reject(new Error('密码长度须为 12 至 1024 字节'))
 }
 
 /**
@@ -27,19 +23,21 @@ function validatePassword(_rule: unknown, value?: string): Promise<void> {
  * Throws: none; account creation errors are displayed beside the form.
  */
 export default function SetupPage() {
+  const { t } = useTranslation()
   const auth = useAuth()
   const setup = useSetup()
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<unknown>(null)
   const [created, setCreated] = useState(false)
 
-  const submit = async ({ username, display_name, password }: SetupForm) => {
+  const submit = async ({ username, nickname, password, email }: SetupForm) => {
     setBusy(true)
-    setError('')
+    setError(null)
     try {
       await createInitialAdministrator({
         username,
-        display_name,
+        email,
+        nickname,
         password,
       })
       setCreated(true)
@@ -49,7 +47,7 @@ export default function SetupPage() {
         await setup.reload().catch(() => undefined)
         return
       }
-      setError(getApiErrorMessage(reason, '创建管理员失败'))
+      setError(reason)
     } finally {
       setBusy(false)
     }
@@ -62,51 +60,45 @@ export default function SetupPage() {
   return (
     <main className="login-page" aria-labelledby="setup-title">
       <section className="login-panel">
+        <LanguageSwitcher />
         <p className="login-brand">Kirby</p>
-        <Typography.Title id="setup-title" level={1}>创建初始管理员</Typography.Title>
-        <Typography.Paragraph>设置管理员账号后，即可登录配置管理平台。</Typography.Paragraph>
-        {error ? <Alert type="error" showIcon message={error} /> : null}
-        <Form<SetupForm> layout="vertical" onFinish={submit} requiredMark={false}>
-          <Form.Item name="username" label="用户名" rules={[{
+        <Typography.Title id="setup-title" level={1}>{t('创建初始管理员')}</Typography.Title>
+        <Typography.Paragraph>{t('设置管理员账号后，即可登录配置管理平台。')}</Typography.Paragraph>
+        {error ? <Alert type="error" showIcon message={getApiErrorMessage(error, t('创建管理员失败'))} /> : null}
+        <Form<SetupForm> layout="vertical" onFinish={submit} requiredMark={false} autoComplete="off">
+          <Form.Item name="username" label={t('用户名')} rules={[{
             required: true,
             whitespace: true,
-            message: '请输入用户名',
+            message: t('请输入用户名'),
           }]}>
-            <Input prefix={<UserOutlined />} autoComplete="username" autoFocus maxLength={128} />
+            <Input prefix={<UserOutlined />} autoComplete="off" autoFocus maxLength={128} />
           </Form.Item>
-          <Form.Item name="display_name" label="显示名" rules={[{
+          <Form.Item name="nickname" label={t('昵称')} rules={[{
             required: true,
             whitespace: true,
-            message: '请输入显示名',
+            message: t('请输入昵称'),
           }]}>
-            <Input autoComplete="nickname" maxLength={128} />
+            <Input autoComplete="off" maxLength={128} />
           </Form.Item>
-          <Form.Item name="password" label="密码" rules={[
+          <Form.Item name="email" label={t('邮箱')} rules={[{required:true,type:"email", message: t('请输入有效邮箱')}]}><Input autoComplete="off" /></Form.Item>
+          <Form.Item name="password" label={t('密码')} rules={newPasswordRules()} extra={t(PASSWORD_POLICY_HINT)}>
+            <Input.Password prefix={<LockOutlined />} autoComplete="off" />
+          </Form.Item>
+          <Form.Item name="confirm_password" label={t('确认密码')} dependencies={['password']} rules={[
             {
               required: true,
-              message: '请输入密码',
-            },
-            {
-              validator: validatePassword,
-            },
-          ]}>
-            <Input.Password prefix={<LockOutlined />} autoComplete="new-password" />
-          </Form.Item>
-          <Form.Item name="confirm_password" label="确认密码" dependencies={['password']} rules={[
-            {
-              required: true,
-              message: '请再次输入密码',
+              message: t('请再次输入密码'),
             },
             ({ getFieldValue }) => ({
               validator(_, value: string) {
                 if (!value || getFieldValue('password') === value) return Promise.resolve()
-                return Promise.reject(new Error('两次输入的密码不一致'))
+                return Promise.reject(new Error(t('两次输入的密码不一致')))
               },
             }),
           ]}>
-            <Input.Password prefix={<LockOutlined />} autoComplete="new-password" />
+            <Input.Password prefix={<LockOutlined />} autoComplete="off" />
           </Form.Item>
-          <Button block type="primary" htmlType="submit" loading={busy}>创建管理员</Button>
+          <Button block type="primary" htmlType="submit" loading={busy}>{t('创建管理员')}</Button>
         </Form>
       </section>
     </main>

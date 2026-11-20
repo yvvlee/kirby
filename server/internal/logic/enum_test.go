@@ -53,11 +53,13 @@ func TestUpdateAllowsEnumFirstValueSecondEvolution(t *testing.T) {
 	}
 	logicLayer := NewEnumLogic(enums, configs, &enumStructureRepositoryFake{order: &order}, enumAuthorizerFake{}, &enumAuditRepositoryFake{order: &order}, directTransactions{})
 
-	_, err = logicLayer.Update(context.Background(), permission.Actor{UserID: 9}, 1, EnumUpdateInput{
-		EnumID:      8,
-		Key:         "Status",
-		Name:        "Status",
-		Description: "",
+	_, err = logicLayer.Update(context.Background(), &entity.UpdateEnumParam{
+		Actor:         permission.Actor{UserID: 9},
+		EnvironmentID: 1,
+		EnumID:        8,
+		Key:           "Status",
+		Name:          "Status",
+		Description:   "",
 		Values: []*commonv1.SelectOption{{
 			Label: "Disabled",
 			Value: "DISABLED",
@@ -67,11 +69,13 @@ func TestUpdateAllowsEnumFirstValueSecondEvolution(t *testing.T) {
 	require.NoError(t, err, "enum changes must be possible before the draft value is repaired")
 	assert.Equal(t, []string{"enum.find", "config.lock", "structure.lock", "enum.lock", "enum.update", "audit", "enum.find"}, order)
 	order = order[:0]
-	_, err = logicLayer.Update(context.Background(), permission.Actor{UserID: 9}, 1, EnumUpdateInput{
-		EnumID:  8,
-		Key:     "StatusRenamed",
-		Name:    "Status",
-		Version: 3,
+	_, err = logicLayer.Update(context.Background(), &entity.UpdateEnumParam{
+		Actor:         permission.Actor{UserID: 9},
+		EnvironmentID: 1,
+		EnumID:        8,
+		Key:           "StatusRenamed",
+		Name:          "Status",
+		Version:       3,
 	})
 	require.ErrorIs(t, err, entity.ErrConflict)
 	assert.Equal(t, []string{"enum.find", "config.lock", "structure.lock", "enum.lock"}, order)
@@ -87,9 +91,9 @@ type enumAuditRepositoryFake struct {
 	order *[]string
 }
 
-func (f *enumAuditRepositoryFake) RecordForEnvironment(context.Context, int64, *model.AuditLog) error {
+func (f *enumAuditRepositoryFake) RecordForEnvironment(context.Context, int64, *model.AuditLog) (rowsAffected int64, err error) {
 	*f.order = append(*f.order, "audit")
-	return nil
+	return
 }
 
 type enumConfigRepositoryFake struct {
@@ -124,8 +128,8 @@ type enumRepositoryFake struct {
 	item  *model.ConfigEnum
 }
 
-func (f *enumRepositoryFake) Create(context.Context, int64, int64, *model.ConfigEnum) error {
-	return nil
+func (f *enumRepositoryFake) Create(context.Context, int64, int64, *model.ConfigEnum) (rowsAffected int64, err error) {
+	return
 }
 func (f *enumRepositoryFake) FindByID(context.Context, int64, int64) (*model.ConfigEnum, error) {
 	*f.order = append(*f.order, "enum.find")
@@ -139,12 +143,12 @@ func (f *enumRepositoryFake) ListForConfig(context.Context, int64, int64) ([]mod
 	*f.order = append(*f.order, "enum.lock")
 	return []model.ConfigEnum{*f.item}, nil
 }
-func (f *enumRepositoryFake) Update(_ context.Context, _, _ int64, update repository.ConfigEnumUpdate) error {
+func (f *enumRepositoryFake) Update(_ context.Context, _, _ int64, update repository.ConfigEnumUpdate) (rowsAffected int64, err error) {
 	*f.order = append(*f.order, "enum.update")
 	f.item.Key, f.item.Name, f.item.Description, f.item.ValuesJSON = update.Key, update.Name, update.Description, update.ValuesJSON
 	f.item.Version++
-	return nil
+	return
 }
-func (f *enumRepositoryFake) Delete(context.Context, int64, int64, int64) error {
-	return nil
+func (f *enumRepositoryFake) Delete(context.Context, int64, int64) (rowsAffected int64, err error) {
+	return
 }

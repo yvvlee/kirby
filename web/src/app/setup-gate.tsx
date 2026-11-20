@@ -1,3 +1,4 @@
+import { useTranslation } from '@/i18n'
 import { Button, Result, Spin } from 'antd'
 import { type PropsWithChildren, useCallback, useEffect, useMemo, useState } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
@@ -24,6 +25,7 @@ type InstallationState =
  * Throws: none; status failures remain visible until a successful retry.
  */
 export function SetupGate({ children }: PropsWithChildren) {
+  const { t } = useTranslation()
   const location = useLocation()
   const [state, setState] = useState<InstallationState>({ status: 'loading' })
 
@@ -60,9 +62,9 @@ export function SetupGate({ children }: PropsWithChildren) {
     return (
       <Result
         status="error"
-        title="无法读取初始化状态"
-        subTitle={getApiErrorMessage(state.error, '请检查连接后重试')}
-        extra={<Button type="primary" onClick={() => { void reload().catch(() => undefined) }}>重试</Button>}
+        title={t('无法读取初始化状态')}
+        subTitle={getApiErrorMessage(state.error, t('请检查连接后重试'))}
+        extra={<Button type="primary" onClick={() => { void reload().catch(() => undefined) }}>{t('重试')}</Button>}
       />
     )
   }

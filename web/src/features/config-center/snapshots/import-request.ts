@@ -1,3 +1,5 @@
+import { localizedError } from '@/i18n/errors'
+
 export type ImportRequestIdentity = { signature: string; key: string }
 
 export function nextImportRequestIdentity(
@@ -5,7 +7,7 @@ export function nextImportRequestIdentity(
   signature: string,
   createKey: () => string,
 ): ImportRequestIdentity {
-  if (!signature) throw new TypeError('快照导入请求签名不能为空')
+  if (!signature) throw localizedError('快照导入请求签名不能为空', {}, TypeError)
   if (!current.key) return { signature, key: createKey() }
   if (current.signature && current.signature !== signature) {
     return { signature, key: createKey() }

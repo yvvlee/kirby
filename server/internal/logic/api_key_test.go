@@ -1,6 +1,7 @@
 package logic
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"testing"
@@ -10,30 +11,27 @@ import (
 	"github.com/stretchr/testify/require"
 
 	credential "github.com/yvvlee/kirby/server/internal/auth/api_key"
-	"github.com/yvvlee/kirby/server/internal/conf"
 	"github.com/yvvlee/kirby/server/internal/entity"
 	"github.com/yvvlee/kirby/server/internal/model"
 	"github.com/yvvlee/kirby/server/internal/permission"
 	"github.com/yvvlee/kirby/server/internal/repository"
 )
 
-var apiKeyTestTime = time.Date(2026, time.August, 17, 8, 0, 0, 0, time.UTC)
-
 type repositoryFake struct {
 	repository.ProjectAPIKeyRepository
 	item          *model.ProjectAPIKey
 	createdDigest []byte
-	findPublicID  string
+	findHash      []byte
 }
 
-func (r *repositoryFake) Create(_ context.Context, _, projectID int64, item *model.ProjectAPIKey) error {
+func (r *repositoryFake) Create(_ context.Context, _, projectID int64, item *model.ProjectAPIKey) (rowsAffected int64, err error) {
 	item.ID = 41
 	item.ProjectID = projectID
 	r.createdDigest = append([]byte(nil), item.SecretHash...)
 	clone := *item
 	clone.SecretHash = append([]byte(nil), item.SecretHash...)
 	r.item = &clone
-	return nil
+	return
 }
 
 func (r *repositoryFake) List(context.Context, int64, int64) ([]model.ProjectAPIKey, error) {
@@ -48,7 +46,7 @@ func (r *repositoryFake) FindByID(context.Context, int64, int64, int64) (*model.
 		return nil, errors.New("missing test key")
 	}
 	clone := *r.item
-	r.findPublicID = clone.PublicID
+	r.findHash = append([]byte(nil), clone.SecretHash...)
 	return &clone, nil
 }
 
@@ -57,22 +55,24 @@ func (r *repositoryFake) LockByID(context.Context, int64, int64, int64) (*model.
 	return &clone, nil
 }
 
-func (r *repositoryFake) Rotate(_ context.Context, mutation repository.APIKeyMutation, replacement *model.ProjectAPIKey) error {
-	if mutation.CurrentPublicID != r.item.PublicID {
-		return errors.New("unexpected current public id")
+func (r *repositoryFake) Rotate(_ context.Context, mutation repository.APIKeyMutation, replacement *model.ProjectAPIKey) (rowsAffected int64, err error) {
+	if !bytes.Equal(mutation.CurrentSecretHash, r.item.SecretHash) {
+		err = errors.New("unexpected expected digest")
+		return
 	}
 	clone := *replacement
 	clone.SecretHash = append([]byte(nil), replacement.SecretHash...)
 	r.item = &clone
-	return nil
+	return
 }
 
-func (r *repositoryFake) Revoke(_ context.Context, mutation repository.APIKeyMutation, revokedAt time.Time) error {
-	if mutation.CurrentPublicID != r.item.PublicID {
-		return errors.New("unexpected current public id")
+func (r *repositoryFake) Revoke(_ context.Context, mutation repository.APIKeyMutation, revokedAt time.Time) (rowsAffected int64, err error) {
+	if !bytes.Equal(mutation.CurrentSecretHash, r.item.SecretHash) {
+		err = errors.New("unexpected expected digest")
+		return
 	}
 	r.item.RevokedAt = &revokedAt
-	return nil
+	return
 }
 
 type apiKeyAuthorizerFake struct {
@@ -95,17 +95,16 @@ type auditFake struct {
 	actions []string
 }
 
-func (a *auditFake) RecordForEnvironment(_ context.Context, _ int64, item *model.AuditLog) error {
+func (a *auditFake) RecordForEnvironment(_ context.Context, _ int64, item *model.AuditLog) (rowsAffected int64, err error) {
 	a.actions = append(a.actions, item.Action)
-	return nil
+	return
 }
 
 func newLogicForTest(t *testing.T, repository *repositoryFake, authorizer *apiKeyAuthorizerFake, audits *auditFake) *APIKeyLogic {
 	t.Helper()
-	manager, err := credential.New(conf.NewSecret("01234567890123456789012345678901"))
+	manager, err := credential.New("01234567890123456789012345678901")
 	require.NoError(t, err)
 	logicLayer := NewAPIKeyLogic(repository, manager, authorizer, audits, directTransactions{})
-	logicLayer.now = func() time.Time { return apiKeyTestTime }
 	return logicLayer
 }
 
@@ -120,13 +119,18 @@ func TestCreateReturnsSecretOnceAndNeverReturnsDigest(t *testing.T) {
 	audits := &auditFake{}
 	logicLayer := newLogicForTest(t, repository, authorizer, audits)
 
-	created, err := logicLayer.Create(context.Background(), permission.Actor{
-		UserID:    9,
-		RequestID: "request",
-	}, 5, 20, "production")
+	created, err := logicLayer.Create(context.Background(), &entity.CreateAPIKeyParam{
+		Actor: permission.Actor{
+			UserID:    9,
+			RequestID: "request",
+		},
+		EnvironmentID: 5,
+		ProjectID:     20,
+		Name:          "production",
+	})
 	require.NoError(t, err)
 	assert.NotEmpty(t, created.Secret)
-	assert.Nil(t, created.Key.SecretHash)
+	assert.NotContains(t, created.Key.String(), string(repository.createdDigest))
 	assert.Len(t, repository.createdDigest, 32)
 	assert.NotContains(t, string(repository.createdDigest), created.Secret)
 	assert.Equal(t, []string{"project_api_key.create"}, audits.actions)
@@ -134,26 +138,46 @@ func TestCreateReturnsSecretOnceAndNeverReturnsDigest(t *testing.T) {
 	listed, err := logicLayer.List(context.Background(), permission.Actor{UserID: 9}, 5, 20)
 	require.NoError(t, err)
 	require.Len(t, listed, 1)
-	assert.Nil(t, listed[0].SecretHash)
+	assert.NotContains(t, listed[0].String(), string(repository.createdDigest))
 	assert.Equal(t, created.Key.SecretSuffix, listed[0].SecretSuffix)
 }
 
-func TestRotateInvalidatesOldPublicIDAndRevokeIsTerminal(t *testing.T) {
+func TestRotateInvalidatesOldSecretAndRevokeIsTerminal(t *testing.T) {
 	repository := &repositoryFake{}
 	authorizer := &apiKeyAuthorizerFake{allowed: map[string]bool{permission.ProjectAPIKeyManage: true}}
 	audits := &auditFake{}
 	logicLayer := newLogicForTest(t, repository, authorizer, audits)
-	created, err := logicLayer.Create(context.Background(), permission.Actor{UserID: 9}, 5, 20, "production")
+	created, err := logicLayer.Create(context.Background(), &entity.CreateAPIKeyParam{
+		Actor:         permission.Actor{UserID: 9},
+		EnvironmentID: 5,
+		ProjectID:     20,
+		Name:          "production",
+	})
 	require.NoError(t, err)
 
-	rotated, err := logicLayer.Rotate(context.Background(), permission.Actor{UserID: 9}, 5, 20, created.Key.ID)
+	rotated, err := logicLayer.Rotate(context.Background(), &entity.RotateAPIKeyParam{
+		Actor:         permission.Actor{UserID: 9},
+		EnvironmentID: 5,
+		ProjectID:     20,
+		KeyID:         created.Key.Id,
+	})
 	require.NoError(t, err)
 	assert.NotEqual(t, created.Secret, rotated.Secret)
-	assert.NotEqual(t, created.Key.PublicID, rotated.Key.PublicID)
-	assert.Nil(t, rotated.Key.SecretHash)
+	assert.NotEqual(t, created.Secret, rotated.Secret)
+	assert.NotContains(t, rotated.Key.String(), "secret_hash")
 
-	require.NoError(t, logicLayer.Revoke(context.Background(), permission.Actor{UserID: 9}, 5, 20, created.Key.ID))
-	_, err = logicLayer.Rotate(context.Background(), permission.Actor{UserID: 9}, 5, 20, created.Key.ID)
+	require.NoError(t, logicLayer.Revoke(context.Background(), &entity.RevokeAPIKeyParam{
+		Actor:         permission.Actor{UserID: 9},
+		EnvironmentID: 5,
+		ProjectID:     20,
+		KeyID:         created.Key.Id,
+	}))
+	_, err = logicLayer.Rotate(context.Background(), &entity.RotateAPIKeyParam{
+		Actor:         permission.Actor{UserID: 9},
+		EnvironmentID: 5,
+		ProjectID:     20,
+		KeyID:         created.Key.Id,
+	})
 	assert.ErrorIs(t, err, entity.ErrConflict)
 	assert.Equal(t, []string{"project_api_key.create", "project_api_key.rotate", "project_api_key.revoke"}, audits.actions)
 }
@@ -165,6 +189,11 @@ func TestManagementPermissionsAreDistinct(t *testing.T) {
 
 	_, err := logicLayer.List(context.Background(), permission.Actor{UserID: 9}, 5, 20)
 	require.NoError(t, err)
-	_, err = logicLayer.Create(context.Background(), permission.Actor{UserID: 9}, 5, 20, "denied")
+	_, err = logicLayer.Create(context.Background(), &entity.CreateAPIKeyParam{
+		Actor:         permission.Actor{UserID: 9},
+		EnvironmentID: 5,
+		ProjectID:     20,
+		Name:          "denied",
+	})
 	assert.ErrorIs(t, err, permission.ErrForbidden)
 }

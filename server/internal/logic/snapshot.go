@@ -14,19 +14,6 @@ import (
 	"github.com/yvvlee/kirby/server/internal/repository"
 )
 
-type SnapshotCreateInput struct {
-	ProjectID   int64
-	ConfigID    int64
-	Description string
-	Tags        []commonv1.Snapshot_Tag
-}
-
-type SnapshotListInput struct {
-	ProjectID int64
-	ConfigID  int64
-	Page      repository.PageRequest
-}
-
 type SnapshotLogic struct {
 	configs      repository.ConfigRepository
 	structures   repository.StructureRepository
@@ -64,24 +51,25 @@ func NewSnapshotLogic(
 
 // Create creates the resource within the authorized scope.
 //
-// Parameters: ctx carries cancellation and transaction state; actor identifies the authenticated caller; environmentID selects the authorized environment; input contains the source project and configuration plus snapshot description and tags.
+// Parameters: ctx carries cancellation and transaction state; param carries the caller identity, scope, and the source project and configuration plus snapshot description and tags.
 // Returns: the created resource; returns permission, schema-validation, or transactional write failures.
 // Throws: none.
-func (l *SnapshotLogic) Create(ctx context.Context, actor permission.Actor, environmentID int64, input SnapshotCreateInput) (*model.Snapshot, error) {
+func (l *SnapshotLogic) Create(ctx context.Context, param *entity.CreateSnapshotParam) (*commonv1.Snapshot, error) {
+	actor, environmentID := param.Actor, param.EnvironmentID
 	if err := l.permissions.Require(ctx, actor.UserID, environmentID, permission.SnapshotWrite, permission.ConfigRead, permission.StructureRead, permission.EnumRead); err != nil {
 		return nil, err
 	}
-	if err := validateTags(input.Tags); err != nil {
+	if err := validateTags(param.Tags); err != nil {
 		return nil, err
 	}
-	tagsJSON, err := converter.EncodeTags(input.Tags)
+	tagsJSON, err := converter.EncodeTags(param.Tags)
 	if err != nil {
 		return nil, entity.Invalid("invalid snapshot tags")
 	}
 	item := &model.Snapshot{
-		ProjectID:   input.ProjectID,
-		ConfigID:    input.ConfigID,
-		Description: input.Description,
+		ProjectID:   param.ProjectID,
+		ConfigID:    param.ConfigID,
+		Description: param.Description,
 		TagsJSON:    tagsJSON,
 		Meta: model.Meta{
 			CreatedBy: actor.UserID,
@@ -89,11 +77,11 @@ func (l *SnapshotLogic) Create(ctx context.Context, actor permission.Actor, envi
 		},
 	}
 	err = l.transactions.TX(ctx, func(txctx context.Context) error {
-		preview, err := l.lockedPreview(txctx, environmentID, input.ConfigID)
+		preview, err := l.lockedPreview(txctx, environmentID, param.ConfigID)
 		if err != nil {
 			return err
 		}
-		if preview.Config.ProjectId != input.ProjectID {
+		if preview.Config.ProjectId != param.ProjectID {
 			return repository.Missing("config")
 		}
 		content, err := entity.EncodeConfigSnapshot(preview)
@@ -102,18 +90,23 @@ func (l *SnapshotLogic) Create(ctx context.Context, actor permission.Actor, envi
 		}
 		item.ConfigKey = preview.Config.Key
 		item.Content = content
-		if err := l.snapshots.Create(txctx, environmentID, input.ProjectID, input.ConfigID, item); err != nil {
+		if _, err := l.snapshots.Create(txctx, environmentID, param.ProjectID, param.ConfigID, item); err != nil {
 			return err
 		}
-		if err := l.snapshots.SetCurrent(txctx, environmentID, input.ConfigID, item.ID, actor.UserID); err != nil {
+		if _, err := l.snapshots.SetCurrent(txctx, environmentID, param.ConfigID, item.ID, actor.UserID); err != nil {
 			return err
 		}
-		return l.audits.RecordForEnvironment(txctx, environmentID, snapshotAudit(actor, "snapshot.create", item.ID))
+		_, err = l.audits.RecordForEnvironment(txctx, environmentID, snapshotAudit(actor, "snapshot.create", item.ID))
+		return err
 	})
 	if err != nil {
 		return nil, err
 	}
-	return l.snapshots.FindByID(ctx, environmentID, item.ID)
+	created, err := l.snapshots.FindByID(ctx, environmentID, item.ID)
+	if err != nil {
+		return nil, err
+	}
+	return converter.SnapshotToProto(created)
 }
 
 // Preview builds snapshot content from locked configuration resources.
@@ -167,31 +160,37 @@ func (l *SnapshotLogic) Delete(ctx context.Context, actor permission.Actor, envi
 		if locked.Status == model.SnapshotStatusReleased {
 			return entity.Conflict("released snapshot cannot be deleted")
 		}
-		if err := l.snapshots.Delete(txctx, environmentID, snapshotID, actor.UserID); err != nil {
+		if _, err := l.snapshots.Delete(txctx, environmentID, snapshotID); err != nil {
 			return err
 		}
-		return l.audits.RecordForEnvironment(txctx, environmentID, snapshotAudit(actor, "snapshot.delete", snapshotID))
+		_, err = l.audits.RecordForEnvironment(txctx, environmentID, snapshotAudit(actor, "snapshot.delete", snapshotID))
+		return err
 	})
 }
 
 // Get returns an authorized snapshot.
 //
 // Parameters: ctx carries cancellation and transaction state; actor identifies the authenticated caller; environmentID selects the authorized environment; snapshotID selects the snapshot.
-// Returns: the authorized snapshot, or a permission or missing-resource error.
+// Returns: the authorized snapshot, or a permission, missing-resource, or conversion error.
 // Throws: none.
-func (l *SnapshotLogic) Get(ctx context.Context, actor permission.Actor, environmentID, snapshotID int64) (*model.Snapshot, error) {
+func (l *SnapshotLogic) Get(ctx context.Context, actor permission.Actor, environmentID, snapshotID int64) (*commonv1.Snapshot, error) {
 	if err := l.permissions.Require(ctx, actor.UserID, environmentID, permission.SnapshotRead); err != nil {
 		return nil, err
 	}
-	return l.snapshots.FindByID(ctx, environmentID, snapshotID)
+	found, err := l.snapshots.FindByID(ctx, environmentID, snapshotID)
+	if err != nil {
+		return nil, err
+	}
+	return converter.SnapshotToProto(found)
 }
 
 // Load preserves the draft before replacing it with the selected snapshot.
 //
-// Parameters: ctx carries cancellation and transaction state; actor identifies the authenticated caller; environmentID selects the authorized environment; configID selects the configuration; snapshotID selects the snapshot.
+// Parameters: ctx carries cancellation and transaction state; param selects the authorized environment, configuration, and snapshot.
 // Returns: the selected snapshot after saving the draft and restoring its configuration; all writes roll back together on failure.
 // Throws: none.
-func (l *SnapshotLogic) Load(ctx context.Context, actor permission.Actor, environmentID, configID, snapshotID int64) (*model.Snapshot, error) {
+func (l *SnapshotLogic) Load(ctx context.Context, param *entity.LoadSnapshotParam) (*commonv1.Snapshot, error) {
+	actor, environmentID, configID, snapshotID := param.Actor, param.EnvironmentID, param.ConfigID, param.SnapshotID
 	if err := l.permissions.Require(ctx, actor.UserID, environmentID,
 		permission.SnapshotWrite, permission.ConfigWrite, permission.StructureWrite, permission.EnumWrite,
 		permission.SnapshotRead, permission.ConfigRead, permission.StructureRead, permission.EnumRead,
@@ -211,7 +210,11 @@ func (l *SnapshotLogic) Load(ctx context.Context, actor permission.Actor, enviro
 	if err != nil {
 		return nil, err
 	}
-	return l.snapshots.FindByID(ctx, environmentID, snapshotID)
+	loaded, err := l.snapshots.FindByID(ctx, environmentID, snapshotID)
+	if err != nil {
+		return nil, err
+	}
+	return converter.SnapshotToProto(loaded)
 }
 
 func (l *SnapshotLogic) loadSnapshot(ctx context.Context, actor permission.Actor, environmentID, configID, snapshotID int64) error {
@@ -243,10 +246,11 @@ func (l *SnapshotLogic) loadSnapshot(ctx context.Context, actor permission.Actor
 	if err := l.restoreConfig(ctx, actor, environmentID, current, content); err != nil {
 		return err
 	}
-	if err := l.snapshots.SetCurrent(ctx, environmentID, configID, snapshotID, actor.UserID); err != nil {
+	if _, err := l.snapshots.SetCurrent(ctx, environmentID, configID, snapshotID, actor.UserID); err != nil {
 		return err
 	}
-	return l.audits.RecordForEnvironment(ctx, environmentID, snapshotAudit(actor, "snapshot.load", snapshotID))
+	_, err = l.audits.RecordForEnvironment(ctx, environmentID, snapshotAudit(actor, "snapshot.load", snapshotID))
+	return err
 }
 
 func (l *SnapshotLogic) autoSave(ctx context.Context, actor permission.Actor, environmentID int64, current *model.Config, preview *entity.ConfigSnapshot) error {
@@ -273,10 +277,11 @@ func (l *SnapshotLogic) autoSave(ctx context.Context, actor permission.Actor, en
 			UpdatedBy: actor.UserID,
 		},
 	}
-	if err := l.snapshots.Create(ctx, environmentID, current.ProjectID, current.ID, saved); err != nil {
+	if _, err := l.snapshots.Create(ctx, environmentID, current.ProjectID, current.ID, saved); err != nil {
 		return err
 	}
-	return l.audits.RecordForEnvironment(ctx, environmentID, snapshotAudit(actor, "snapshot.autosave", saved.ID))
+	_, err = l.audits.RecordForEnvironment(ctx, environmentID, snapshotAudit(actor, "snapshot.autosave", saved.ID))
+	return err
 }
 
 func (l *SnapshotLogic) restoreConfig(ctx context.Context, actor permission.Actor, environmentID int64, current *model.Config, content *entity.ConfigSnapshot) error {
@@ -292,7 +297,7 @@ func (l *SnapshotLogic) restoreConfig(ctx context.Context, actor permission.Acto
 	if err != nil {
 		return err
 	}
-	if err := l.configs.Update(ctx, environmentID, current.ID, repository.ConfigUpdate{
+	if _, err := l.configs.Update(ctx, environmentID, current.ID, repository.ConfigUpdate{
 		Description: content.Config.Description,
 		IsArray:     content.Config.IsArray,
 		TypeJSON:    typeJSON,
@@ -301,63 +306,90 @@ func (l *SnapshotLogic) restoreConfig(ctx context.Context, actor permission.Acto
 	}); err != nil {
 		return err
 	}
-	if err := l.configs.UpdateValue(ctx, environmentID, current.ID, repository.ConfigValueUpdate{
+	if _, err := l.configs.UpdateValue(ctx, environmentID, current.ID, repository.ConfigValueUpdate{
 		Value:     content.Config.Value,
 		UpdatedBy: actor.UserID,
 		Version:   current.Version + 1,
 	}); err != nil {
 		return err
 	}
-	if err := l.structures.Reconcile(ctx, environmentID, current.ID, structures, actor.UserID); err != nil {
+	if _, err := l.structures.Reconcile(ctx, environmentID, current.ID, structures, actor.UserID); err != nil {
 		return err
 	}
-	return l.enums.Reconcile(ctx, environmentID, current.ID, enums, actor.UserID)
+	_, err = l.enums.Reconcile(ctx, environmentID, current.ID, enums, actor.UserID)
+	return err
 }
 
 // Current returns the snapshot currently selected for the configuration.
 //
 // Parameters: ctx carries cancellation and transaction state; actor identifies the authenticated caller; environmentID selects the authorized environment; configID selects the configuration.
-// Returns: the current authorized snapshot, or a permission or missing-resource error.
+// Returns: the current authorized snapshot, or a permission, missing-resource, or conversion error.
 // Throws: none.
-func (l *SnapshotLogic) Current(ctx context.Context, actor permission.Actor, environmentID, configID int64) (*model.Snapshot, error) {
+func (l *SnapshotLogic) Current(ctx context.Context, actor permission.Actor, environmentID, configID int64) (*commonv1.Snapshot, error) {
 	if err := l.permissions.Require(ctx, actor.UserID, environmentID, permission.SnapshotRead); err != nil {
 		return nil, err
 	}
-	return l.snapshots.FindCurrentForConfig(ctx, environmentID, configID)
+	current, err := l.snapshots.FindCurrentForConfig(ctx, environmentID, configID)
+	if err != nil {
+		return nil, err
+	}
+	return converter.SnapshotToProto(current)
 }
 
 // Released returns the published snapshot for the configuration.
 //
 // Parameters: ctx carries cancellation and transaction state; actor identifies the authenticated caller; environmentID selects the authorized environment; configID selects the configuration.
-// Returns: the published authorized snapshot, or a permission or missing-resource error.
+// Returns: the published authorized snapshot, or a permission, missing-resource, or conversion error.
 // Throws: none.
-func (l *SnapshotLogic) Released(ctx context.Context, actor permission.Actor, environmentID, configID int64) (*model.Snapshot, error) {
+func (l *SnapshotLogic) Released(ctx context.Context, actor permission.Actor, environmentID, configID int64) (*commonv1.Snapshot, error) {
 	if err := l.permissions.Require(ctx, actor.UserID, environmentID, permission.SnapshotRead); err != nil {
 		return nil, err
 	}
-	return l.snapshots.FindReleasedForConfig(ctx, environmentID, configID)
+	released, err := l.snapshots.FindReleasedForConfig(ctx, environmentID, configID)
+	if err != nil {
+		return nil, err
+	}
+	return converter.SnapshotToProto(released)
 }
 
 // List returns the resources visible in the selected scope.
 //
-// Parameters: ctx carries cancellation and transaction state; actor identifies the authenticated caller; environmentID selects the authorized environment; input selects the project, configuration, and requested page.
-// Returns: the authorized records, or a permission or repository error.
+// Parameters: ctx carries cancellation and transaction state; param carries the caller identity, scope, and the project, configuration, and requested page.
+// Returns: the authorized records, or a permission, repository, or conversion error.
 // Throws: none.
-func (l *SnapshotLogic) List(ctx context.Context, actor permission.Actor, environmentID int64, input SnapshotListInput) (repository.PageResult[model.Snapshot], error) {
-	if err := l.permissions.Require(ctx, actor.UserID, environmentID, permission.SnapshotRead); err != nil {
-		return repository.PageResult[model.Snapshot]{}, err
+func (l *SnapshotLogic) List(ctx context.Context, param *entity.ListSnapshotParam) (repository.PageResult[*commonv1.SimpleSnapshot], error) {
+	environmentID := param.EnvironmentID
+	if err := l.permissions.Require(ctx, param.Actor.UserID, environmentID, permission.SnapshotRead); err != nil {
+		return repository.PageResult[*commonv1.SimpleSnapshot]{}, err
 	}
-	config, err := l.configs.FindByID(ctx, environmentID, input.ConfigID)
+	config, err := l.configs.FindByID(ctx, environmentID, param.ConfigID)
 	if err != nil {
-		return repository.PageResult[model.Snapshot]{}, err
+		return repository.PageResult[*commonv1.SimpleSnapshot]{}, err
 	}
-	if config.ProjectID != input.ProjectID {
-		return repository.PageResult[model.Snapshot]{}, repository.Missing("config")
+	if config.ProjectID != param.ProjectID {
+		return repository.PageResult[*commonv1.SimpleSnapshot]{}, repository.Missing("config")
 	}
-	return l.snapshots.List(ctx, environmentID, repository.SnapshotFilter{
-		ProjectID: input.ProjectID,
-		ConfigID:  input.ConfigID,
-	}, input.Page)
+	page, err := l.snapshots.List(ctx, environmentID, repository.SnapshotFilter{
+		ProjectID: param.ProjectID,
+		ConfigID:  param.ConfigID,
+	}, param.Page)
+	if err != nil {
+		return repository.PageResult[*commonv1.SimpleSnapshot]{}, err
+	}
+	items := make([]*commonv1.SimpleSnapshot, 0, len(page.Items))
+	for index := range page.Items {
+		converted, err := converter.SimpleSnapshotToProto(&page.Items[index])
+		if err != nil {
+			return repository.PageResult[*commonv1.SimpleSnapshot]{}, err
+		}
+		items = append(items, converted)
+	}
+	return repository.PageResult[*commonv1.SimpleSnapshot]{
+		Items:  items,
+		Total:  page.Total,
+		Offset: page.Offset,
+		Limit:  page.Limit,
+	}, nil
 }
 
 func (l *SnapshotLogic) lockedPreview(ctx context.Context, environmentID, configID int64) (*entity.ConfigSnapshot, error) {

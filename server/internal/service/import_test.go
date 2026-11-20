@@ -14,21 +14,19 @@ import (
 	adminv1 "github.com/yvvlee/kirby/server/api/admin"
 	commonv1 "github.com/yvvlee/kirby/server/api/common"
 	authjwt "github.com/yvvlee/kirby/server/internal/auth/jwt"
-	"github.com/yvvlee/kirby/server/internal/conf"
+	"github.com/yvvlee/kirby/server/internal/entity"
 	"github.com/yvvlee/kirby/server/internal/logic"
 	"github.com/yvvlee/kirby/server/internal/middleware"
 	"github.com/yvvlee/kirby/server/internal/model"
-	"github.com/yvvlee/kirby/server/internal/permission"
 )
 
 type importLogicFake struct {
-	request logic.ImportRequest
-	actor   permission.Actor
-	result  *logic.ImportResult
+	param  *entity.ImportSnapshotParam
+	result *logic.ImportResult
 }
 
-func (f *importLogicFake) Import(_ context.Context, actor permission.Actor, request logic.ImportRequest) (*logic.ImportResult, error) {
-	f.actor, f.request = actor, request
+func (f *importLogicFake) Import(_ context.Context, param *entity.ImportSnapshotParam) (*logic.ImportResult, error) {
+	f.param = param
 	return f.result, nil
 }
 
@@ -64,8 +62,8 @@ func authenticatedContext(t *testing.T) context.Context {
 		Issuer:    "test",
 		ActiveKID: "primary",
 		AccessTTL: 15 * time.Minute,
-		Keys: map[string]conf.Secret{
-			"primary": conf.NewSecret("01234567890123456789012345678901"),
+		Keys: map[string]string{
+			"primary": "01234567890123456789012345678901",
 		},
 	})
 	require.NoError(t, err)
@@ -85,7 +83,16 @@ func authenticatedContext(t *testing.T) context.Context {
 
 func TestImportServiceMapsGeneratedContractToBusinessRequest(t *testing.T) {
 	targetID := int64(50)
-	fake := &importLogicFake{result: &logic.ImportResult{Snapshot: &model.Snapshot{Meta: model.Meta{ID: 400}, ProjectID: 20, ConfigID: 50, ConfigKey: "feature", TagsJSON: "[]", Status: model.SnapshotStatusUnreleased}, Replayed: true}}
+	fake := &importLogicFake{result: &logic.ImportResult{
+		Snapshot: &commonv1.Snapshot{
+			Id:        400,
+			ProjectId: 20,
+			ConfigId:  50,
+			ConfigKey: "feature",
+			Status:    commonv1.Snapshot_UNRELEASED,
+		},
+		Replayed: true,
+	}}
 	service := &ImportService{importLogic: fake}
 	reply, err := service.ImportSnapshot(authenticatedContext(t), &adminv1.ImportSnapshotRequest{
 		TargetEnvironmentId: 2, SourceEnvironmentId: 1, SourceSnapshotId: 12, TargetProjectId: 20,
@@ -94,9 +101,10 @@ func TestImportServiceMapsGeneratedContractToBusinessRequest(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.True(t, reply.Replayed)
-	assert.Equal(t, int64(9), fake.actor.UserID)
-	assert.Equal(t, logic.StrategyReplace, fake.request.ConflictStrategy)
-	assert.Equal(t, &targetID, fake.request.TargetConfigID)
+	assert.Equal(t, int64(400), reply.Snapshot.Id)
+	assert.Equal(t, int64(9), fake.param.Actor.UserID)
+	assert.Equal(t, logic.StrategyReplace, fake.param.ConflictStrategy)
+	assert.Equal(t, &targetID, fake.param.TargetConfigID)
 }
 
 func TestImportServiceRejectsMissingCurrentJWTIdentity(t *testing.T) {

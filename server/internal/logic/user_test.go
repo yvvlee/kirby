@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/yvvlee/kirby/server/internal/entity"
 	"github.com/yvvlee/kirby/server/internal/model"
 	"github.com/yvvlee/kirby/server/internal/permission"
 	"github.com/yvvlee/kirby/server/internal/repository"
@@ -22,17 +23,17 @@ func (f *fakeUserRepository) GetByID(_ context.Context, id int64) (*model.User, 
 	result.ID = id
 	return &result, nil
 }
-func (f *fakeUserRepository) CreateManagedUser(_ context.Context, user *model.User, audit *model.AuditLog) error {
+func (f *fakeUserRepository) CreateManagedUser(_ context.Context, user *model.User, audit *model.AuditLog) (rowsAffected int64, err error) {
 	f.created = user
 	f.created.ID = 17
 	f.audit = audit
-	return nil
+	return
 }
 func (*fakeUserRepository) UpdateManagedUser(context.Context, repository.ManagedUserUpdate, *model.AuditLog) (*model.User, error) {
 	return nil, nil
 }
-func (*fakeUserRepository) UpdateManagedPassword(context.Context, int64, string, int64, *model.AuditLog) error {
-	return nil
+func (*fakeUserRepository) UpdateManagedPassword(context.Context, int64, string, int64, *model.AuditLog) (rowsAffected int64, err error) {
+	return
 }
 func (*fakeUserRepository) UpdateManagedStatus(context.Context, repository.ManagedUserStatusUpdate, *model.AuditLog) (*model.User, error) {
 	return nil, nil
@@ -69,11 +70,16 @@ func TestCreateHashesPasswordAndWritesAudit(t *testing.T) {
 		UserID:    9,
 		RequestID: "request-4",
 	}
-	created, err := logic.Create(context.Background(), actor, UserCreate{Username: "alice", DisplayName: "Alice", PlainPassword: "plain"})
+	created, err := logic.Create(context.Background(), &entity.UserCreateParam{
+		Actor:         actor,
+		Username:      "alice",
+		Nickname:      "Alice",
+		PlainPassword: "plain",
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if created.ID != 17 || hasher.input != "plain" || users.created.PasswordHash != hasher.hash || users.created.PasswordHash == hasher.input {
+	if created.Id != 17 || hasher.input != "plain" || users.created.PasswordHash != hasher.hash || users.created.PasswordHash == hasher.input {
 		t.Fatalf("password was not safely transformed: %#v", users.created)
 	}
 	if users.audit == nil || users.audit.Action != "user.create" || users.audit.RequestID != actor.RequestID || users.audit.ActorUserID == nil || *users.audit.ActorUserID != actor.UserID {
@@ -85,7 +91,12 @@ func TestOrdinaryUserCannotCreateGlobalUser(t *testing.T) {
 	users := new(fakeUserRepository)
 	hasher := &fakePasswordHasher{hash: "hash"}
 	logic := NewUserLogic(users, &fakeUserAuthorizer{}, hasher, userTestStorage())
-	_, err := logic.Create(context.Background(), permission.Actor{UserID: 3}, UserCreate{Username: "alice", DisplayName: "Alice", PlainPassword: "plain"})
+	_, err := logic.Create(context.Background(), &entity.UserCreateParam{
+		Actor:         permission.Actor{UserID: 3},
+		Username:      "alice",
+		Nickname:      "Alice",
+		PlainPassword: "plain",
+	})
 	if !errors.Is(err, permission.ErrForbidden) || users.created != nil || hasher.input != "" {
 		t.Fatalf("unauthorized create error=%v user=%#v hash-input=%q", err, users.created, hasher.input)
 	}

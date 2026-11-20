@@ -9,10 +9,11 @@ import (
 	jwtlib "github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/require"
 
+	commonv1 "github.com/yvvlee/kirby/server/api/common"
 	authjwt "github.com/yvvlee/kirby/server/internal/auth/jwt"
+	"github.com/yvvlee/kirby/server/internal/entity"
 	"github.com/yvvlee/kirby/server/internal/middleware"
 	"github.com/yvvlee/kirby/server/internal/model"
-	"github.com/yvvlee/kirby/server/internal/permission"
 	"github.com/yvvlee/kirby/server/internal/repository"
 
 	adminv1 "github.com/yvvlee/kirby/server/api/admin"
@@ -42,7 +43,7 @@ func (l *scopedEnvironmentLogic) VerifyProject(_ context.Context, _, projectID i
 	return l.verifyErr
 }
 
-func (l *scopedEnvironmentLogic) Update(context.Context, permission.Actor, int64, repository.EnvironmentUpdate) (*model.Environment, error) {
+func (l *scopedEnvironmentLogic) Update(context.Context, *entity.UpdateEnvironmentParam) (*commonv1.Environment, error) {
 	l.updates++
 	return nil, nil
 }

@@ -4,7 +4,7 @@
 
 The protected assets are administrator credentials, refresh sessions, JWT
 signing keys, project API keys, unpublished and published configuration,
-environment role assignments, audit records, uploaded objects, and dependency
+project memberships and environment permission grants, audit records, uploaded objects, and dependency
 or deployment credentials.
 
 ## Trust boundaries

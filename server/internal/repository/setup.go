@@ -17,8 +17,8 @@ var ErrAlreadyInitialized = errors.New("installation administrator already initi
 // SetupRepository persists the installation's permanent initialization state.
 type SetupRepository interface {
 	IsInitialized(ctx context.Context) (bool, error)
-	CreateInitialAdmin(ctx context.Context, user *model.User) error
-	MarkInitialized(ctx context.Context) error
+	CreateInitialAdmin(ctx context.Context, user *model.User) (rowsAffected int64, err error)
+	MarkInitialized(ctx context.Context) (rowsAffected int64, err error)
 }
 
 // SetupRepositoryImpl serializes administrator initialization across instances.
@@ -53,37 +53,40 @@ func (r *SetupRepositoryImpl) IsInitialized(ctx context.Context) (bool, error) {
 // CreateInitialAdmin atomically claims setup within the caller's transaction.
 //
 // Parameters: ctx carries the transaction; user contains the prepared administrator.
-// Returns: ErrAlreadyInitialized if claimed, or a database error.
+// Returns: rowsAffected from the initialization marker write, ErrAlreadyInitialized if claimed, or a database error.
 // Throws: none.
-func (r *SetupRepositoryImpl) CreateInitialAdmin(ctx context.Context, user *model.User) error {
+func (r *SetupRepositoryImpl) CreateInitialAdmin(ctx context.Context, user *model.User) (rowsAffected int64, err error) {
 	state, err := r.loadState(ctx, true)
 	if err != nil {
-		return err
+		return
 	}
 	if state.AdminInitialized {
-		return ErrAlreadyInitialized
+		err = ErrAlreadyInitialized
+		return
 	}
-	user.PrepareInsert()
-	if _, err := r.Engine.Insert[*model.User]().AddModel(user).Exec(ctx); err != nil {
-		return fmt.Errorf("create initial administrator: %w", err)
+	if _, err = r.Engine.Insert[*model.User]().AddModel(user).Exec(ctx); err != nil {
+		err = fmt.Errorf("create initial administrator: %w", err)
+		return
 	}
-	return r.markInitialized(ctx)
+	rowsAffected, err = r.markInitialized(ctx)
+	return
 }
 
 // MarkInitialized takes the same lock as web setup before the CLI changes any user.
 //
 // Parameters: ctx carries the administrator provisioning transaction.
-// Returns: a database error if the installation state cannot be persisted.
+// Returns: rowsAffected from the initialization marker write, 0 when already initialized, or a database error.
 // Throws: none.
-func (r *SetupRepositoryImpl) MarkInitialized(ctx context.Context) error {
+func (r *SetupRepositoryImpl) MarkInitialized(ctx context.Context) (rowsAffected int64, err error) {
 	state, err := r.loadState(ctx, true)
 	if err != nil {
-		return err
+		return
 	}
 	if state.AdminInitialized {
-		return nil
+		return
 	}
-	return r.markInitialized(ctx)
+	rowsAffected, err = r.markInitialized(ctx)
+	return
 }
 
 func (r *SetupRepositoryImpl) loadState(ctx context.Context, lock bool) (*model.ApplicationSecrets, error) {
@@ -102,14 +105,16 @@ func (r *SetupRepositoryImpl) loadState(ctx context.Context, lock bool) (*model.
 	return state, nil
 }
 
-func (r *SetupRepositoryImpl) markInitialized(ctx context.Context) error {
-	affected, err := r.Engine.Update[*model.ApplicationSecrets]().ID(1).
+func (r *SetupRepositoryImpl) markInitialized(ctx context.Context) (rowsAffected int64, err error) {
+	rowsAffected, err = r.Engine.Update[*model.ApplicationSecrets]().ID(1).
 		Set(new(model.ApplicationSecrets).LormCols().AdminInitialized(), true).Exec(ctx)
 	if err != nil {
-		return fmt.Errorf("complete administrator initialization: %w", err)
+		err = fmt.Errorf("complete administrator initialization: %w", err)
+		return
 	}
-	if affected != 1 {
-		return fmt.Errorf("complete administrator initialization: %w", ErrNoRowsAffected)
+	if rowsAffected != 1 {
+		err = fmt.Errorf("complete administrator initialization: %w", ErrNoRowsAffected)
+		return
 	}
-	return nil
+	return
 }

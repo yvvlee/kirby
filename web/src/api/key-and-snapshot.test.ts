@@ -32,7 +32,6 @@ describe('project API key contracts', () => {
         list: [
           {
             id: 7,
-            public_id: 'pub-1',
             secret_suffix: 'abcd',
             created_at: '2026-08-19T00:00:00Z',
           },
@@ -44,7 +43,6 @@ describe('project API key contracts', () => {
       list: [
         {
           id: 7,
-          publicId: 'pub-1',
           secretSuffix: 'abcd',
           createdAt: '2026-08-19T00:00:00Z',
         },

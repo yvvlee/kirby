@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"time"
 
+	commonv1 "github.com/yvvlee/kirby/server/api/common"
+	"github.com/yvvlee/kirby/server/internal/converter"
 	"github.com/yvvlee/kirby/server/internal/entity"
 	"github.com/yvvlee/kirby/server/internal/infra"
 	"github.com/yvvlee/kirby/server/internal/model"
@@ -16,7 +18,7 @@ import (
 // publishedContentCleaner removes only an obsolete versioned entry. Runtime correctness
 // comes from configs.runtime_version, so cleanup errors must not undo commits.
 type publishedContentCleaner interface {
-	DeletePublishedConfigVersion(ctx context.Context, projectID int64, configKey string, runtimeVersion int64) error
+	DeletePublishedConfigVersion(ctx context.Context, configID int64, configKey string, runtimeVersion int64) error
 }
 
 type PublishLogic struct {
@@ -30,7 +32,6 @@ type PublishLogic struct {
 	audits       repository.AuditLogRepository
 	transactions TransactionRunner
 	cache        publishedContentCleaner
-	now          func() time.Time
 }
 
 // NewPublishLogic creates PublishLogic with its configuration dependencies.
@@ -61,38 +62,45 @@ func NewPublishLogic(
 		audits:       audits,
 		transactions: transactions,
 		cache:        cache,
-		now:          time.Now,
 	}
 }
 
 // Publish switches the released snapshot and advances the runtime cache generation.
 //
-// Parameters: ctx carries cancellation and transaction state; actor identifies the authenticated caller; environmentID selects the authorized environment; snapshotID selects the snapshot; expectedVersion guards against concurrent changes.
+// Parameters: ctx carries cancellation and transaction state; param carries the caller identity, scope, the target snapshot, and the expected version guarding against concurrent changes.
 // Returns: the committed released snapshot; stale versions, invalid content, and transaction failures are returned. Cache cleanup failures are logged.
 // Throws: none.
-func (l *PublishLogic) Publish(ctx context.Context, actor permission.Actor, environmentID, snapshotID int64, expectedVersion uint32) (*model.Snapshot, error) {
-	return l.changePublication(ctx, publicationRequest{
-		actor:           actor,
-		environmentID:   environmentID,
-		snapshotID:      snapshotID,
-		expectedVersion: expectedVersion,
+func (l *PublishLogic) Publish(ctx context.Context, param *entity.PublishSnapshotParam) (*commonv1.Snapshot, error) {
+	item, err := l.changePublication(ctx, publicationRequest{
+		actor:           param.Actor,
+		environmentID:   param.EnvironmentID,
+		snapshotID:      param.SnapshotID,
+		expectedVersion: param.ExpectedVersion,
 		status:          model.SnapshotStatusReleased,
 	})
+	if err != nil {
+		return nil, err
+	}
+	return converter.SnapshotToProto(item)
 }
 
 // Unpublish clears the release and advances the runtime cache generation.
 //
-// Parameters: ctx carries cancellation and transaction state; actor identifies the authenticated caller; environmentID selects the authorized environment; snapshotID selects the snapshot; expectedVersion guards against concurrent changes.
+// Parameters: ctx carries cancellation and transaction state; param carries the caller identity, scope, the target snapshot, and the expected version guarding against concurrent changes.
 // Returns: the committed unreleased snapshot; stale versions and transaction failures are returned. Cache cleanup failures are logged.
 // Throws: none.
-func (l *PublishLogic) Unpublish(ctx context.Context, actor permission.Actor, environmentID, snapshotID int64, expectedVersion uint32) (*model.Snapshot, error) {
-	return l.changePublication(ctx, publicationRequest{
-		actor:           actor,
-		environmentID:   environmentID,
-		snapshotID:      snapshotID,
-		expectedVersion: expectedVersion,
+func (l *PublishLogic) Unpublish(ctx context.Context, param *entity.UnpublishSnapshotParam) (*commonv1.Snapshot, error) {
+	item, err := l.changePublication(ctx, publicationRequest{
+		actor:           param.Actor,
+		environmentID:   param.EnvironmentID,
+		snapshotID:      param.SnapshotID,
+		expectedVersion: param.ExpectedVersion,
 		status:          model.SnapshotStatusUnreleased,
 	})
+	if err != nil {
+		return nil, err
+	}
+	return converter.SnapshotToProto(item)
 }
 
 type publicationRequest struct {
@@ -156,7 +164,7 @@ func (l *PublishLogic) preparePublication(ctx context.Context, request publicati
 	if err := change.validate(); err != nil {
 		return nil, err
 	}
-	change.changedAt = l.now().UTC()
+	change.changedAt = time.Now().UTC()
 	return change, nil
 }
 
@@ -207,20 +215,23 @@ func (l *PublishLogic) persistPublication(ctx context.Context, change *publicati
 	if err := l.applyPublicationStatus(ctx, change); err != nil {
 		return err
 	}
-	if err := l.publications.IncrementRuntimeVersion(ctx, change.request.environmentID, change.config.ID); err != nil {
+	if _, err := l.publications.IncrementRuntimeVersion(ctx, change.request.environmentID, change.config.ID); err != nil {
 		return err
 	}
-	return l.audits.RecordForEnvironment(ctx, change.request.environmentID, publishAudit(change.request.actor, change.auditAction(), change.target.ID))
+	_, err := l.audits.RecordForEnvironment(ctx, change.request.environmentID, publishAudit(change.request.actor, change.auditAction(), change.target.ID))
+	return err
 }
 
 func (l *PublishLogic) applyPublicationStatus(ctx context.Context, change *publicationChange) error {
 	if change.request.status == model.SnapshotStatusUnreleased {
-		return l.publications.SetUnreleased(ctx, change.updateFor(change.target))
+		_, err := l.publications.SetUnreleased(ctx, change.updateFor(change.target))
+		return err
 	}
 	if err := l.retireReleasedSnapshot(ctx, change); err != nil {
 		return err
 	}
-	return l.publications.SetReleased(ctx, change.updateFor(change.target))
+	_, err := l.publications.SetReleased(ctx, change.updateFor(change.target))
+	return err
 }
 
 func (l *PublishLogic) retireReleasedSnapshot(ctx context.Context, change *publicationChange) error {
@@ -230,7 +241,8 @@ func (l *PublishLogic) retireReleasedSnapshot(ctx context.Context, change *publi
 	if change.released.Version == math.MaxInt64 {
 		return entity.Conflict("released snapshot version is exhausted")
 	}
-	return l.publications.SetUnreleased(ctx, change.updateFor(change.released))
+	_, err := l.publications.SetUnreleased(ctx, change.updateFor(change.released))
+	return err
 }
 
 func (change *publicationChange) updateFor(snapshot *model.Snapshot) repository.SnapshotPublicationUpdate {
@@ -269,7 +281,7 @@ func (change *publicationChange) result() *model.Snapshot {
 
 func (change *publicationChange) cleanupKey() cleanupKey {
 	return cleanupKey{
-		projectID:      change.config.ProjectID,
+		configID:       change.config.ID,
 		configKey:      change.config.Key,
 		runtimeVersion: change.config.RuntimeVersion,
 	}
@@ -351,14 +363,14 @@ func validateSnapshot(snapshot *model.Snapshot, config *model.Config) error {
 }
 
 type cleanupKey struct {
-	projectID      int64
+	configID       int64
 	configKey      string
 	runtimeVersion int64
 }
 
 func (l *PublishLogic) cleanup(ctx context.Context, key cleanupKey) {
-	if err := l.cache.DeletePublishedConfigVersion(ctx, key.projectID, key.configKey, key.runtimeVersion); err != nil {
-		l.logger.WithContext(ctx).Errorw("msg", "清理发布后的配置缓存失败", "project_id", key.projectID, "config_key", key.configKey, "runtime_version", key.runtimeVersion, "error", err)
+	if err := l.cache.DeletePublishedConfigVersion(ctx, key.configID, key.configKey, key.runtimeVersion); err != nil {
+		l.logger.WithContext(ctx).Errorw("msg", "清理发布后的配置缓存失败", "config_id", key.configID, "config_key", key.configKey, "runtime_version", key.runtimeVersion, "error", err)
 	}
 }
 

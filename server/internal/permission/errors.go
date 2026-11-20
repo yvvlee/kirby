@@ -26,10 +26,6 @@ func APIError(err error) error {
 	case errors.Is(err, repository.ErrNoRowsAffected),
 		errors.Is(err, repository.ErrUserVersionConflict),
 		errors.Is(err, repository.ErrLastSystemAdmin),
-		errors.Is(err, repository.ErrRoleInUse),
-		errors.Is(err, repository.ErrBuiltinRole),
-		errors.Is(err, repository.ErrSystemRolePermission),
-		errors.Is(err, repository.ErrPermissionSetMismatch),
 		errors.Is(err, repository.ErrUserListLimit),
 		errors.Is(err, ErrConcurrentChange):
 		return errorsv1.ErrorConflict("operation conflicts with current state")

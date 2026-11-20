@@ -9,7 +9,7 @@ import { queryKeys } from '@/app/query-keys'
 import type { EnumResource, ModelField } from '@/domain/schema'
 import { normalizeModel } from '@/domain/type-codec'
 import { normalizeTree } from '@/domain/type-codec'
-import { requireList } from '@/features/system/errors'
+import { localizedError } from '@/i18n/errors'
 
 export type Project = ApiEntity & {
   key: string
@@ -60,24 +60,32 @@ export type ConfigEnum = ApiEntity & EnumResource & {
   values: ConfigEnumValue[]
 }
 
-function requireObject(value: unknown, message: string): Record<string, unknown> {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new TypeError(message)
+function requireObject(value: unknown, message: string, params: Record<string, string | number> = {}): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) throw localizedError(message, params, TypeError)
   return value as Record<string, unknown>
+}
+
+function requireConfigList<T>(reply: unknown, name: string): T[] {
+  const source = requireObject(reply, '{{name}}响应缺少 list', { name })
+  if (!Array.isArray(source.list)) {
+    throw localizedError('{{name}}响应缺少 list', { name }, TypeError)
+  }
+  return source.list as T[]
 }
 
 export function normalizeProjectDetail(reply: unknown): Project {
   const source = requireObject(reply, '项目详情响应缺少 project')
   const project = requireObject(source.project, '项目详情响应缺少 project')
   if (!isIdentifier(project.id) || typeof project.key !== 'string' || typeof project.name !== 'string') {
-    throw new TypeError('项目详情响应中的 project 不完整')
+    throw localizedError('项目详情响应中的 project 不完整', {}, TypeError)
   }
   return project as Project
 }
 
 export function normalizeConfigList(reply: unknown): ConfigSummary[] {
-  return requireList<Record<string, unknown>>(reply, 'config list').map((item) => {
+  return requireConfigList<Record<string, unknown>>(reply, '配置列表').map((item) => {
     const config = requireObject(item.config, '配置列表项缺少 config')
-    if (!isIdentifier(config.id) || typeof config.key !== 'string') throw new TypeError('配置列表项中的 config 不完整')
+    if (!isIdentifier(config.id) || typeof config.key !== 'string') throw localizedError('配置列表项中的 config 不完整', {}, TypeError)
     return { ...config, isReleased: Boolean(item.isReleased) } as ConfigSummary
   })
 }
@@ -85,7 +93,7 @@ export function normalizeConfigList(reply: unknown): ConfigSummary[] {
 export function normalizeConfigDetail(reply: unknown): ConfigDetailReply {
   const source = requireObject(reply, '配置详情响应缺少 config')
   const rawConfig = requireObject(source.config, '配置详情响应缺少 config')
-  if (!isIdentifier(rawConfig.id) || typeof rawConfig.key !== 'string') throw new TypeError('配置详情响应中的 config 不完整')
+  if (!isIdentifier(rawConfig.id) || typeof rawConfig.key !== 'string') throw localizedError('配置详情响应中的 config 不完整', {}, TypeError)
   const type = requireObject(rawConfig.type, '配置详情响应缺少 type')
   const config = {
     ...rawConfig,
@@ -97,12 +105,12 @@ export function normalizeConfigDetail(reply: unknown): ConfigDetailReply {
 }
 
 export function normalizeModels(reply: unknown): ConfigModel[] {
-  return requireList<unknown>(reply, 'model list').map((item) => normalizeModel(item) as ConfigModel)
+  return requireConfigList<unknown>(reply, '模型列表').map((item) => normalizeModel(item) as ConfigModel)
 }
 
 export function normalizeEnums(reply: unknown): ConfigEnum[] {
-  return requireList<Record<string, unknown>>(reply, 'enum list').map((item) => {
-    if (!Array.isArray(item.values)) throw new TypeError('枚举响应缺少 values')
+  return requireConfigList<Record<string, unknown>>(reply, '枚举列表').map((item) => {
+    if (!Array.isArray(item.values)) throw localizedError('枚举响应缺少 values', {}, TypeError)
     return item as ConfigEnum
   })
 }
@@ -112,7 +120,7 @@ export function useProjectsQuery(environmentId: Identifier | null, keyword: stri
   return useQuery({
     queryKey: environmentId === null ? queryKeys.globalProjects(filter) : queryKeys.projects(environmentId, filter),
     queryFn: async () => {
-      return requireList<Project>(await listProjects(environmentId, filter), 'project list')
+      return requireConfigList<Project>(await listProjects(environmentId, filter), '项目列表')
     },
     enabled: true,
   })
@@ -122,7 +130,7 @@ export function useProjectQuery(environmentId: Identifier | null, projectId: Ide
   return useQuery({
     queryKey: environmentId === null ? ['environment', 'none', 'project', String(projectId)] : queryKeys.project(environmentId, projectId),
     queryFn: async () => {
-      if (environmentId === null) throw new Error('当前没有可用环境')
+      if (environmentId === null) throw localizedError('当前没有可用环境')
       return normalizeProjectDetail(await getProject(environmentId, projectId))
     },
     enabled: environmentId !== null,
@@ -134,7 +142,7 @@ export function useConfigsQuery(environmentId: Identifier | null, projectId: Ide
   return useQuery({
     queryKey: environmentId === null ? ['environment', 'none', 'project', String(projectId), 'configs', filter] : queryKeys.configs(environmentId, projectId, filter),
     queryFn: async () => {
-      if (environmentId === null) throw new Error('当前没有可用环境')
+      if (environmentId === null) throw localizedError('当前没有可用环境')
       return normalizeConfigList(await listConfigs(environmentId, { ...filter, project_id: projectId }))
     },
     enabled: environmentId !== null,
@@ -145,7 +153,7 @@ export function useModelsQuery(environmentId: Identifier | null, projectId: Iden
   return useQuery({
     queryKey: environmentId === null ? ['environment', 'none', 'models'] : queryKeys.models(environmentId, projectId, configId),
     queryFn: async () => {
-      if (environmentId === null) throw new Error('当前没有可用环境')
+      if (environmentId === null) throw localizedError('当前没有可用环境')
       return normalizeModels(await listModels(environmentId, { project_id: projectId, config_id: configId }))
     },
     enabled: environmentId !== null,
@@ -156,7 +164,7 @@ export function useEnumsQuery(environmentId: Identifier | null, projectId: Ident
   return useQuery({
     queryKey: environmentId === null ? ['environment', 'none', 'enums'] : queryKeys.enums(environmentId, projectId, configId),
     queryFn: async () => {
-      if (environmentId === null) throw new Error('当前没有可用环境')
+      if (environmentId === null) throw localizedError('当前没有可用环境')
       return normalizeEnums(await listEnums(environmentId, { project_id: projectId, config_id: configId }))
     },
     enabled: environmentId !== null,
@@ -167,7 +175,7 @@ export function useConfigDetailQuery(environmentId: Identifier | null, projectId
   return useQuery({
     queryKey: environmentId === null ? ['environment', 'none', 'config', String(configId)] : queryKeys.config(environmentId, projectId, configId),
     queryFn: async () => {
-      if (environmentId === null) throw new Error('当前没有可用环境')
+      if (environmentId === null) throw localizedError('当前没有可用环境')
       return normalizeConfigDetail(await getConfig(environmentId, configId))
     },
     enabled: environmentId !== null,

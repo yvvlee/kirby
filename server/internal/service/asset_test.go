@@ -76,7 +76,7 @@ func TestServicePresignAndComplete(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "image/png", presign.Headers["Content-Type"])
 	assert.Equal(t, object.UploadMethodPut, presign.UploadMethod)
-	assert.Equal(t, "2026-08-17T10:15:00Z", presign.ExpiresAt)
+	assert.True(t, presign.ExpiresAt.AsTime().Equal(time.Date(2026, 8, 17, 10, 15, 0, 0, time.UTC)))
 
 	storage.metadata = &object.Metadata{
 		Key:                 presign.ObjectKey,

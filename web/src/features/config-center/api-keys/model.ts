@@ -1,19 +1,20 @@
 import type { ApiKeySecretReply, ProjectApiKey } from '@/api/api-keys'
+import { localizedError } from '@/i18n/errors'
 
 export function requireKeyList(reply: unknown): ProjectApiKey[] {
   if (typeof reply !== 'object' || reply === null || !('list' in reply) || !Array.isArray(reply.list)) {
-    throw new TypeError('API Key 列表响应缺少 list')
+    throw localizedError('API Key 列表响应缺少 list', {}, TypeError)
   }
   reply.list.forEach((item) => {
-    if (typeof item !== 'object' || item === null || Array.isArray(item)) throw new TypeError('API Key 列表项必须是对象')
-    if (Object.hasOwn(item, 'secret')) throw new Error('API Key 列表不得包含完整 Secret')
+    if (typeof item !== 'object' || item === null || Array.isArray(item)) throw localizedError('API Key 列表项必须是对象', {}, TypeError)
+    if (Object.hasOwn(item, 'secret')) throw localizedError('API Key 列表不得包含完整 Secret')
   })
   return reply.list as ProjectApiKey[]
 }
 
 export function requireSecretReply(reply: ApiKeySecretReply): string {
   if (!reply.apiKey || typeof reply.secret !== 'string' || !reply.secret) {
-    throw new TypeError('API Key 响应缺少一次性 Secret')
+    throw localizedError('API Key 响应缺少一次性 Secret', {}, TypeError)
   }
   return reply.secret
 }

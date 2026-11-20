@@ -1,4 +1,5 @@
-import { baseTypeOptions } from '@/domain/schema'
+import { getBaseTypeOptions } from '@/domain/schema'
+import { t } from '@/i18n'
 
 type NamedResource = { key: string; name?: string }
 export type DataTypeOption = { label: string; value: string }
@@ -16,11 +17,11 @@ export function buildDataTypeGroups({
   limit: boolean
 }): DataTypeGroup[] {
   const groups: DataTypeGroup[] = [
-    { label: '基本类型', options: baseTypeOptions },
+    { label: t('基本类型'), options: getBaseTypeOptions() },
   ]
   if (enums.length > 0) {
     groups.push({
-      label: '枚举',
+      label: t('枚举'),
       options: enums.map((item) => ({
         label: item.name ?? item.key,
         value: JSON.stringify({ enumKey: item.key }),
@@ -30,7 +31,7 @@ export function buildDataTypeGroups({
   const selectableModels = limit ? limitedModels : models
   if (selectableModels.length > 0) {
     groups.push({
-      label: '模型',
+      label: t('模型'),
       options: selectableModels.map((item) => ({
         label: item.name ?? item.key,
         value: JSON.stringify({ structureKey: item.key }),

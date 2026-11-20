@@ -62,31 +62,35 @@ func TestCreateRejectsInvalidDraftThenSucceedsAfterValueRepair(t *testing.T) {
 	audits := &snapshotAuditRepositoryFake{order: &order}
 	logicLayer := NewSnapshotLogic(configs, structures, &snapshotEnumRepositoryFake{order: &order}, snapshots, snapshotAuthorizerFake{}, audits, directTransactions{})
 
-	_, err = logicLayer.Create(context.Background(), permission.Actor{
-		UserID:    9,
-		RequestID: "request-1",
-	}, 1, SnapshotCreateInput{
-		ProjectID:   3,
-		ConfigID:    7,
-		Description: "first snapshot",
-		Tags:        nil,
+	_, err = logicLayer.Create(context.Background(), &entity.CreateSnapshotParam{
+		Actor: permission.Actor{
+			UserID:    9,
+			RequestID: "request-1",
+		},
+		EnvironmentID: 1,
+		ProjectID:     3,
+		ConfigID:      7,
+		Description:   "first snapshot",
+		Tags:          nil,
 	})
 	assert.ErrorIs(t, err, entity.ErrInvalid)
 	assert.False(t, snapshots.created, "invalid data must never enter a snapshot")
 
 	configs.item.Value = `{"name":"Ada","age":42}`
 	order = order[:0]
-	created, err := logicLayer.Create(context.Background(), permission.Actor{
-		UserID:    9,
-		RequestID: "request-1",
-	}, 1, SnapshotCreateInput{
-		ProjectID:   3,
-		ConfigID:    7,
-		Description: "first snapshot",
-		Tags:        []commonv1.Snapshot_Tag{commonv1.Snapshot_REVIEW},
+	created, err := logicLayer.Create(context.Background(), &entity.CreateSnapshotParam{
+		Actor: permission.Actor{
+			UserID:    9,
+			RequestID: "request-1",
+		},
+		EnvironmentID: 1,
+		ProjectID:     3,
+		ConfigID:      7,
+		Description:   "first snapshot",
+		Tags:          []commonv1.Snapshot_Tag{commonv1.Snapshot_REVIEW},
 	})
 	require.NoError(t, err)
-	assert.Equal(t, int64(11), created.ID)
+	assert.Equal(t, int64(11), created.Id)
 	assert.Equal(t, []string{"config.lock", "structure.lock", "enum.lock", "snapshot.create", "snapshot.current", "audit", "snapshot.find"}, order)
 	decoded, err := entity.DecodeConfigSnapshot(created.Content)
 	require.NoError(t, err)
@@ -120,7 +124,7 @@ func TestLoadRejectsSnapshotFromDifferentConfigBeforeWriting(t *testing.T) {
 		},
 	}
 	logicLayer := NewSnapshotLogic(configs, &snapshotStructureRepositoryFake{order: &order}, &snapshotEnumRepositoryFake{order: &order}, snapshots, snapshotAuthorizerFake{}, &snapshotAuditRepositoryFake{order: &order}, directTransactions{})
-	_, err := logicLayer.Load(context.Background(), permission.Actor{UserID: 9}, 1, 7, 11)
+	_, err := logicLayer.Load(context.Background(), &entity.LoadSnapshotParam{Actor: permission.Actor{UserID: 9}, EnvironmentID: 1, ConfigID: 7, SnapshotID: 11})
 	assert.ErrorIs(t, err, repository.ErrNotFound)
 	assert.Equal(t, []string{"snapshot.find"}, order)
 }
@@ -129,7 +133,7 @@ func TestWriteOnlyRoleCannotLoadSnapshotContent(t *testing.T) {
 	order := make([]string, 0)
 	logicLayer := NewSnapshotLogic(&snapshotConfigRepositoryFake{order: &order}, &snapshotStructureRepositoryFake{order: &order}, &snapshotEnumRepositoryFake{order: &order}, &snapshotRepositoryFake{order: &order}, snapshotWriteOnlyAuthorizer{}, &snapshotAuditRepositoryFake{order: &order}, directTransactions{})
 
-	_, err := logicLayer.Load(context.Background(), permission.Actor{UserID: 9}, 1, 7, 11)
+	_, err := logicLayer.Load(context.Background(), &entity.LoadSnapshotParam{Actor: permission.Actor{UserID: 9}, EnvironmentID: 1, ConfigID: 7, SnapshotID: 11})
 	assert.ErrorIs(t, err, permission.ErrForbidden)
 	assert.Empty(t, order)
 }
@@ -229,7 +233,7 @@ func TestLoadAutoSavesValidDraftWhenCurrentSnapshotIsMissing(t *testing.T) {
 		audits,
 		directTransactions{},
 	)
-	_, err = logicLayer.Load(context.Background(), permission.Actor{UserID: 9}, 1, 7, 11)
+	_, err = logicLayer.Load(context.Background(), &entity.LoadSnapshotParam{Actor: permission.Actor{UserID: 9}, EnvironmentID: 1, ConfigID: 7, SnapshotID: 11})
 	require.NoError(t, err)
 	require.Len(t, snapshots.createdItems, 1)
 	autoSaved, err := entity.DecodeConfigSnapshot(snapshots.createdItems[0].Content)
@@ -266,11 +270,11 @@ type snapshotAuditRepositoryFake struct {
 	items []*model.AuditLog
 }
 
-func (f *snapshotAuditRepositoryFake) RecordForEnvironment(_ context.Context, _ int64, item *model.AuditLog) error {
+func (f *snapshotAuditRepositoryFake) RecordForEnvironment(_ context.Context, _ int64, item *model.AuditLog) (rowsAffected int64, err error) {
 	*f.order = append(*f.order, "audit")
 	f.last = item
 	f.items = append(f.items, item)
-	return nil
+	return
 }
 
 type snapshotConfigRepositoryFake struct {
@@ -288,13 +292,13 @@ func (f *snapshotConfigRepositoryFake) LockByID(context.Context, int64, int64) (
 	clone := *f.item
 	return &clone, nil
 }
-func (f *snapshotConfigRepositoryFake) Update(context.Context, int64, int64, repository.ConfigUpdate) error {
+func (f *snapshotConfigRepositoryFake) Update(context.Context, int64, int64, repository.ConfigUpdate) (rowsAffected int64, err error) {
 	*f.order = append(*f.order, "config.update")
-	return nil
+	return
 }
-func (f *snapshotConfigRepositoryFake) UpdateValue(context.Context, int64, int64, repository.ConfigValueUpdate) error {
+func (f *snapshotConfigRepositoryFake) UpdateValue(context.Context, int64, int64, repository.ConfigValueUpdate) (rowsAffected int64, err error) {
 	*f.order = append(*f.order, "config.value.update")
-	return nil
+	return
 }
 
 type snapshotStructureRepositoryFake struct {
@@ -307,9 +311,9 @@ func (f *snapshotStructureRepositoryFake) ListForConfig(context.Context, int64, 
 	*f.order = append(*f.order, "structure.lock")
 	return f.items, nil
 }
-func (f *snapshotStructureRepositoryFake) Reconcile(context.Context, int64, int64, []*model.Structure, int64) error {
+func (f *snapshotStructureRepositoryFake) Reconcile(context.Context, int64, int64, []*model.Structure, int64) (rowsAffected int64, err error) {
 	*f.order = append(*f.order, "structure.reconcile")
-	return nil
+	return
 }
 
 type snapshotEnumRepositoryFake struct {
@@ -322,9 +326,9 @@ func (f *snapshotEnumRepositoryFake) ListForConfig(context.Context, int64, int64
 	*f.order = append(*f.order, "enum.lock")
 	return f.items, nil
 }
-func (f *snapshotEnumRepositoryFake) Reconcile(context.Context, int64, int64, []*model.ConfigEnum, int64) error {
+func (f *snapshotEnumRepositoryFake) Reconcile(context.Context, int64, int64, []*model.ConfigEnum, int64) (rowsAffected int64, err error) {
 	*f.order = append(*f.order, "enum.reconcile")
-	return nil
+	return
 }
 
 type snapshotRepositoryFake struct {
@@ -336,7 +340,7 @@ type snapshotRepositoryFake struct {
 	createdItems []*model.Snapshot
 }
 
-func (f *snapshotRepositoryFake) Create(_ context.Context, _, _, _ int64, item *model.Snapshot) error {
+func (f *snapshotRepositoryFake) Create(_ context.Context, _, _, _ int64, item *model.Snapshot) (rowsAffected int64, err error) {
 	*f.order = append(*f.order, "snapshot.create")
 	f.created = true
 	item.ID = int64(11 + len(f.createdItems))
@@ -348,7 +352,7 @@ func (f *snapshotRepositoryFake) Create(_ context.Context, _, _, _ int64, item *
 	if f.item == nil {
 		f.item = item
 	}
-	return nil
+	return
 }
 func (f *snapshotRepositoryFake) FindByID(context.Context, int64, int64) (*model.Snapshot, error) {
 	*f.order = append(*f.order, "snapshot.find")
@@ -372,8 +376,8 @@ func (f *snapshotRepositoryFake) FindCurrentForConfig(context.Context, int64, in
 	clone := *f.current
 	return &clone, nil
 }
-func (f *snapshotRepositoryFake) Delete(context.Context, int64, int64, int64) error {
-	return nil
+func (f *snapshotRepositoryFake) Delete(context.Context, int64, int64) (rowsAffected int64, err error) {
+	return
 }
 func (f *snapshotRepositoryFake) LockByID(context.Context, int64, int64) (*model.Snapshot, error) {
 	*f.order = append(*f.order, "snapshot.lock")
@@ -383,10 +387,10 @@ func (f *snapshotRepositoryFake) LockByID(context.Context, int64, int64) (*model
 	clone := *f.item
 	return &clone, nil
 }
-func (f *snapshotRepositoryFake) SetCurrent(context.Context, int64, int64, int64, int64) error {
+func (f *snapshotRepositoryFake) SetCurrent(context.Context, int64, int64, int64, int64) (rowsAffected int64, err error) {
 	*f.order = append(*f.order, "snapshot.current")
 	if f.item != nil {
 		f.item.IsUsing = true
 	}
-	return nil
+	return
 }

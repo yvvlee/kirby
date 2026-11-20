@@ -12,6 +12,7 @@ import (
 
 	adminv1 "github.com/yvvlee/kirby/server/api/admin"
 	errorsv1 "github.com/yvvlee/kirby/server/api/errors"
+	"github.com/yvvlee/kirby/server/internal/auth/passwordpolicy"
 	authsession "github.com/yvvlee/kirby/server/internal/auth/session"
 	"github.com/yvvlee/kirby/server/internal/conf"
 	"github.com/yvvlee/kirby/server/internal/logic"
@@ -20,7 +21,7 @@ import (
 
 type setupLogic interface {
 	GetSetupStatus(ctx context.Context) (bool, error)
-	CreateInitialAdmin(ctx context.Context, username string, displayName string, plainPassword string) error
+	CreateInitialAdmin(ctx context.Context, username string, nickname string, plainPassword string, email string) error
 }
 
 // SetupService exposes only the operations required before the first login.
@@ -73,7 +74,7 @@ func (s *SetupService) CreateInitialAdmin(ctx context.Context, request *adminv1.
 	if err := validateInitialAdmin(request); err != nil {
 		return nil, err
 	}
-	err := s.logic.CreateInitialAdmin(ctx, request.Username, request.DisplayName, request.Password)
+	err := s.logic.CreateInitialAdmin(ctx, strings.ToLower(strings.TrimSpace(request.Username)), request.Nickname, request.Password, strings.ToLower(strings.TrimSpace(request.Email)))
 	if errors.Is(err, repository.ErrAlreadyInitialized) {
 		return nil, errorsv1.ErrorConflict("administrator setup is already complete")
 	}
@@ -90,11 +91,11 @@ func validateInitialAdmin(request *adminv1.CreateInitialAdminRequest) error {
 	if err := request.Validate(); err != nil {
 		return errorsv1.ErrorBadRequest("administrator credentials are invalid")
 	}
-	if !validSetupName(request.Username) || !validSetupName(request.DisplayName) {
+	if !validSetupName(request.Username) || !validSetupName(request.Nickname) {
 		return errorsv1.ErrorBadRequest("administrator name is invalid")
 	}
-	if !utf8.ValidString(request.Password) || strings.TrimSpace(request.Password) == "" || strings.IndexFunc(request.Password, unicode.IsControl) != -1 {
-		return errorsv1.ErrorBadRequest("administrator password is invalid")
+	if err := passwordpolicy.Validate(request.Password); err != nil {
+		return errorsv1.ErrorBadRequest("%s", err.Error())
 	}
 	return nil
 }

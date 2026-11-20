@@ -3,13 +3,13 @@ package permission
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
 	"strings"
 	"time"
 
+	json "github.com/bytedance/sonic"
 	kratoslog "github.com/go-kratos/kratos/v2/log"
 
 	"github.com/yvvlee/kirby/server/internal/infra/cache"
@@ -17,27 +17,23 @@ import (
 )
 
 const (
-	ProjectRead             = "project:read"
-	ProjectWrite            = "project:write"
-	ProjectAPIKeyRead       = "project:api_key:read"
-	ProjectAPIKeyManage     = "project:api_key:manage"
-	ConfigRead              = "config:read"
-	ConfigWrite             = "config:write"
-	StructureRead           = "structure:read"
-	StructureWrite          = "structure:write"
-	EnumRead                = "enum:read"
-	EnumWrite               = "enum:write"
-	SnapshotRead            = "snapshot:read"
-	SnapshotWrite           = "snapshot:write"
-	SnapshotPublish         = "snapshot:publish"
-	SnapshotExport          = "snapshot:export"
-	SnapshotImport          = "snapshot:import"
-	AssetWrite              = "asset:write"
-	EnvironmentMemberManage = "environment:member:manage"
-	SystemUserManage        = "system:user:manage"
-	SystemRoleManage        = "system:role:manage"
-	SystemEnvironmentManage = "system:environment:manage"
-	SystemProjectManage     = "system:project:manage"
+	ProjectRead         = "project:read"
+	ProjectWrite        = "project:write"
+	ProjectAPIKeyRead   = "project:api_key:read"
+	ProjectAPIKeyManage = "project:api_key:manage"
+	ConfigRead          = "config:read"
+	ConfigWrite         = "config:write"
+	StructureRead       = "structure:read"
+	StructureWrite      = "structure:write"
+	EnumRead            = "enum:read"
+	EnumWrite           = "enum:write"
+	SnapshotRead        = "snapshot:read"
+	SnapshotWrite       = "snapshot:write"
+	SnapshotPublish     = "snapshot:publish"
+	SnapshotExport      = "snapshot:export"
+	SnapshotImport      = "snapshot:import"
+	AssetWrite          = "asset:write"
+	SystemUserManage    = "system:user:manage"
 
 	cacheTTL        = time.Minute
 	maxResolveRetry = 3
@@ -53,7 +49,6 @@ type source interface {
 	Identity(ctx context.Context, userID, environmentID int64) (repository.PermissionIdentity, error)
 	SystemAdmin(ctx context.Context, userID int64) (bool, error)
 	KeysForUserEnvironment(ctx context.Context, userID, environmentID int64) ([]string, error)
-	List(ctx context.Context) ([]repositoryPermission, error)
 }
 
 // repositoryPermission is the subset required by Resolver. A concrete adapter
@@ -62,23 +57,6 @@ type repositoryPermission struct{ Key string }
 
 type repositorySource struct {
 	repository.PermissionRepository
-}
-
-// List projects the permission catalog to the keys required by authorization.
-//
-// Parameters: ctx controls the catalog read.
-// Returns: permission keys, or the repository error.
-// Throws: none; failures are returned as errors.
-func (s repositorySource) List(ctx context.Context) ([]repositoryPermission, error) {
-	items, err := s.PermissionRepository.List(ctx)
-	if err != nil {
-		return nil, err
-	}
-	result := make([]repositoryPermission, 0, len(items))
-	for _, item := range items {
-		result = append(result, repositoryPermission{Key: item.Key})
-	}
-	return result, nil
 }
 
 // Resolver always rechecks current user and environment status in MySQL. Only
@@ -128,11 +106,10 @@ func (r *Resolver) resolveAttempt(ctx context.Context, userID, environmentID int
 	if err != nil {
 		return nil, false, err
 	}
-	if identity.SystemAdmin {
-		keys, err := r.allPermissionKeys(ctx)
-		return keys, true, err
+	if identity.ProjectRole == string(ProjectRoleOwner) {
+		return ownerPermissionKeys(), false, nil
 	}
-	contentKey := permissionContentKey(userID, environmentID, identity.EnvironmentVersion)
+	contentKey := permissionContentKey(userID, environmentID, identity.EnvironmentVersion) + identity.ProjectRole
 	keys, cached, err := r.loadPermissions(ctx, userID, environmentID, contentKey)
 	if err != nil {
 		return nil, false, err
@@ -141,11 +118,7 @@ func (r *Resolver) resolveAttempt(ctx context.Context, userID, environmentID int
 	if err != nil {
 		return nil, false, err
 	}
-	if confirmed.SystemAdmin {
-		keys, err := r.allPermissionKeys(ctx)
-		return keys, true, err
-	}
-	if confirmed.EnvironmentVersion != identity.EnvironmentVersion {
+	if confirmed.EnvironmentVersion != identity.EnvironmentVersion || confirmed.ProjectRole != identity.ProjectRole {
 		return nil, false, ErrConcurrentChange
 	}
 	if !cached {
@@ -208,7 +181,7 @@ func (r *Resolver) identity(ctx context.Context, userID, environmentID int64) (r
 		}
 		return repository.PermissionIdentity{}, ErrForbidden
 	}
-	if !identity.SystemAdmin && (!identity.EnvironmentEnabled || !identity.EnvironmentMember) {
+	if !identity.EnvironmentEnabled || !identity.EnvironmentMember {
 		return repository.PermissionIdentity{}, ErrForbidden
 	}
 	if identity.EnvironmentVersion < 0 {
@@ -223,12 +196,9 @@ func (r *Resolver) identity(ctx context.Context, userID, environmentID int64) (r
 // Returns: nil when authorized, ErrForbidden for a missing permission, or a resolution error.
 // Throws: none; failures are returned as errors.
 func (r *Resolver) Require(ctx context.Context, userID, environmentID int64, required ...string) error {
-	keys, systemAdmin, err := r.Resolve(ctx, userID, environmentID)
+	keys, _, err := r.Resolve(ctx, userID, environmentID)
 	if err != nil {
 		return err
-	}
-	if systemAdmin {
-		return nil
 	}
 	available := make(map[string]struct{}, len(keys))
 	for _, key := range keys {
@@ -287,18 +257,6 @@ func (r *Resolver) Invalidate(ctx context.Context, userID, environmentID int64) 
 	return nil
 }
 
-func (r *Resolver) allPermissionKeys(ctx context.Context) ([]string, error) {
-	permissions, err := r.source.List(ctx)
-	if err != nil {
-		return nil, err
-	}
-	keys := make([]string, 0, len(permissions))
-	for _, item := range permissions {
-		keys = append(keys, item.Key)
-	}
-	return normalize(keys), nil
-}
-
 func permissionContentKey(userID, environmentID, version int64) string {
 	return fmt.Sprintf("permission:user:%d:environment:%d:version:%d", userID, environmentID, version)
 }
@@ -323,4 +281,13 @@ func normalize(keys []string) []string {
 		write++
 	}
 	return result[:write]
+}
+
+// ownerPermissionKeys is independent of configurable grants so an Owner cannot be locked out.
+func ownerPermissionKeys() []string {
+	return []string{
+		ProjectRead, ProjectWrite, ProjectAPIKeyRead, ProjectAPIKeyManage,
+		ConfigRead, ConfigWrite, StructureRead, StructureWrite, EnumRead, EnumWrite,
+		SnapshotRead, SnapshotWrite, SnapshotPublish, SnapshotExport, SnapshotImport, AssetWrite,
+	}
 }

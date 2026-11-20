@@ -107,7 +107,7 @@ func verifyInstallationCredentials(t *testing.T, first, second *model.Applicatio
 	cfg := &conf.Config{
 		JWT: conf.JWTConfig{
 			Issuer:    "kirby-integration",
-			AccessTTL: conf.Duration{Duration: 15 * time.Minute},
+			AccessTTL: 15 * 60 * 1000,
 		},
 	}
 	issuer, err := auth.ProvideJWTManager(cfg, first)
@@ -124,5 +124,5 @@ func verifyInstallationCredentials(t *testing.T, first, second *model.Applicatio
 	require.NoError(t, err)
 	credential, err := one.Generate()
 	require.NoError(t, err)
-	require.True(t, two.Verify(credential.Full, credential.PublicID, credential.Hash))
+	require.True(t, two.Verify(credential.Full, credential.Hash))
 }

@@ -4,15 +4,19 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"time"
 
+	kratoserrors "github.com/go-kratos/kratos/v2/errors"
 	"github.com/go-kratos/kratos/v2/middleware/recovery"
 	"github.com/go-kratos/kratos/v2/middleware/selector"
 	kratoshttp "github.com/go-kratos/kratos/v2/transport/http"
 
 	adminv1 "github.com/yvvlee/kirby/server/api/admin"
+	errorsv1 "github.com/yvvlee/kirby/server/api/errors"
 	runtimev1 "github.com/yvvlee/kirby/server/api/runtime"
 	authsession "github.com/yvvlee/kirby/server/internal/auth/session"
 	"github.com/yvvlee/kirby/server/internal/health"
+	"github.com/yvvlee/kirby/server/internal/i18n"
 	"github.com/yvvlee/kirby/server/internal/infra/object"
 	adminmiddleware "github.com/yvvlee/kirby/server/internal/middleware"
 )
@@ -34,14 +38,17 @@ func NewHTTPServer(deps *Dependencies, webHandler http.Handler, probe *health.Pr
 	adminSelector := selector.Server(adminRate, adminAuth).Match(func(_ context.Context, operation string) bool {
 		return strings.HasPrefix(operation, "/kirby.admin.v1.") && !publicManagementOperation(operation)
 	}).Build()
-	authSelector := selector.Server(authRate).Path(adminv1.OperationAuthServiceLogin, adminv1.OperationAuthServiceRefresh, adminv1.OperationSetupServiceCreateInitialAdmin).Build()
+	authSelector := selector.Server(authRate).Path(adminv1.OperationAuthServiceRegister, adminv1.OperationAuthServiceLogin, adminv1.OperationAuthServiceRefresh, adminv1.OperationSetupServiceCreateInitialAdmin).Build()
 	runtimeHTTPSelector := selector.Server(runtimeRate, adminmiddleware.HTTPAPIKey).Path(runtimev1.OperationApiConfig).Build()
 
 	httpServer := kratoshttp.NewServer(
 		kratoshttp.Address(deps.Config.HTTP.Address),
-		kratoshttp.Timeout(deps.Config.HTTP.Timeout.Duration),
-		kratoshttp.Filter(HTTPBoundary(deps.Logger), APIPrefix(), SameOrigin(origins)),
+		kratoshttp.Timeout(time.Duration(deps.Config.HTTP.Timeout)*time.Millisecond),
+		kratoshttp.Filter(HTTPBoundary(deps.Logger), browserInvitations(webHandler), APIPrefix(), SameOrigin(origins)),
 		kratoshttp.Middleware(recovery.Recovery(), adminmiddleware.ValidateRequest(), authSelector, adminSelector, runtimeHTTPSelector),
+		kratoshttp.ErrorEncoder(localizedErrorEncoder),
+		kratoshttp.NotFoundHandler(http.HandlerFunc(localizedNotFoundHandler)),
+		kratoshttp.MethodNotAllowedHandler(http.HandlerFunc(localizedMethodNotAllowedHandler)),
 	)
 	registerHTTP(httpServer, deps)
 	health.Register(httpServer, probe)
@@ -63,9 +70,25 @@ func NewHTTPServer(deps *Dependencies, webHandler http.Handler, probe *health.Pr
 	return httpServer, nil
 }
 
+func localizedErrorEncoder(writer http.ResponseWriter, request *http.Request, err error) {
+	kratoshttp.DefaultErrorEncoder(writer, request, i18n.LocalizeError(err, i18n.Negotiate(request.Header.Get("Accept-Language"))))
+}
+
+func localizedNotFoundHandler(writer http.ResponseWriter, request *http.Request) {
+	localizedErrorEncoder(writer, request, errorsv1.ErrorNotFound("resource not found"))
+}
+
+func localizedMethodNotAllowedHandler(writer http.ResponseWriter, request *http.Request) {
+	err := kratoserrors.New(http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed")
+	localizedErrorEncoder(writer, request, err)
+}
+
 func publicManagementOperation(operation string) bool {
 	switch operation {
-	case adminv1.OperationAuthServiceLogin,
+	case adminv1.OperationSystemSettingsServiceGetRegistrationStatus,
+		adminv1.OperationProjectInvitationServiceGetProjectInvitation,
+		adminv1.OperationAuthServiceLogin,
+		adminv1.OperationAuthServiceRegister,
 		adminv1.OperationAuthServiceRefresh,
 		adminv1.OperationAuthServiceLogout,
 		adminv1.OperationSetupServiceGetSetupStatus,
@@ -84,11 +107,14 @@ func registerObjectStorageProxy(server *kratoshttp.Server, prefix string, handle
 }
 
 func registerHTTP(server *kratoshttp.Server, deps *Dependencies) {
+	adminv1.RegisterProjectInvitationServiceHTTPServer(server, deps.ProjectInvitations)
 	adminv1.RegisterAuthServiceHTTPServer(server, deps.Auth)
 	adminv1.RegisterSetupServiceHTTPServer(server, deps.Setup)
 	adminv1.RegisterEnvironmentServiceHTTPServer(server, deps.Environments)
+	adminv1.RegisterEnvironmentPermissionServiceHTTPServer(server, deps.EnvironmentPermissions)
 	adminv1.RegisterUserServiceHTTPServer(server, deps.UsersService)
-	adminv1.RegisterRoleServiceHTTPServer(server, deps.Roles)
+	adminv1.RegisterSystemSettingsServiceHTTPServer(server, deps.SystemSettings)
+	adminv1.RegisterProjectMemberServiceHTTPServer(server, deps.ProjectMembers)
 	adminv1.RegisterProjectServiceHTTPServer(server, deps.Projects)
 	adminv1.RegisterConfigServiceHTTPServer(server, deps.Configs)
 	adminv1.RegisterStructureServiceHTTPServer(server, deps.Structures)

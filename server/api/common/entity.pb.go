@@ -9,6 +9,7 @@ package commonv1
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -100,7 +101,7 @@ func (x Field_BaseType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Field_BaseType.Descriptor instead.
 func (Field_BaseType) EnumDescriptor() ([]byte, []int) {
-	return file_common_entity_proto_rawDescGZIP(), []int{9, 0}
+	return file_common_entity_proto_rawDescGZIP(), []int{6, 0}
 }
 
 type Snapshot_Status int32
@@ -149,7 +150,7 @@ func (x Snapshot_Status) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Snapshot_Status.Descriptor instead.
 func (Snapshot_Status) EnumDescriptor() ([]byte, []int) {
-	return file_common_entity_proto_rawDescGZIP(), []int{11, 0}
+	return file_common_entity_proto_rawDescGZIP(), []int{8, 0}
 }
 
 type Snapshot_Tag int32
@@ -210,7 +211,7 @@ func (x Snapshot_Tag) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Snapshot_Tag.Descriptor instead.
 func (Snapshot_Tag) EnumDescriptor() ([]byte, []int) {
-	return file_common_entity_proto_rawDescGZIP(), []int{11, 1}
+	return file_common_entity_proto_rawDescGZIP(), []int{8, 1}
 }
 
 type Environment struct {
@@ -221,8 +222,8 @@ type Environment struct {
 	Description   string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
 	Enabled       bool                   `protobuf:"varint,5,opt,name=enabled,proto3" json:"enabled,omitempty"`
 	ProjectId     int64                  `protobuf:"varint,6,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	CreatedAt     string                 `protobuf:"bytes,51,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt     string                 `protobuf:"bytes,52,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,51,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,52,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	Version       uint32                 `protobuf:"varint,55,opt,name=version,proto3" json:"version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -300,18 +301,18 @@ func (x *Environment) GetProjectId() int64 {
 	return 0
 }
 
-func (x *Environment) GetCreatedAt() string {
+func (x *Environment) GetCreatedAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.CreatedAt
 	}
-	return ""
+	return nil
 }
 
-func (x *Environment) GetUpdatedAt() string {
+func (x *Environment) GetUpdatedAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.UpdatedAt
 	}
-	return ""
+	return nil
 }
 
 func (x *Environment) GetVersion() uint32 {
@@ -325,11 +326,12 @@ type User struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
 	Username      string                 `protobuf:"bytes,2,opt,name=username,proto3" json:"username,omitempty"`
-	DisplayName   string                 `protobuf:"bytes,3,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	Nickname      string                 `protobuf:"bytes,3,opt,name=nickname,proto3" json:"nickname,omitempty"`
+	Email         string                 `protobuf:"bytes,7,opt,name=email,proto3" json:"email,omitempty"`
 	Enabled       bool                   `protobuf:"varint,4,opt,name=enabled,proto3" json:"enabled,omitempty"`
 	IsSystemAdmin bool                   `protobuf:"varint,5,opt,name=is_system_admin,json=isSystemAdmin,proto3" json:"is_system_admin,omitempty"`
-	CreatedAt     string                 `protobuf:"bytes,51,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt     string                 `protobuf:"bytes,52,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,51,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,52,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	Version       uint32                 `protobuf:"varint,55,opt,name=version,proto3" json:"version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -379,9 +381,16 @@ func (x *User) GetUsername() string {
 	return ""
 }
 
-func (x *User) GetDisplayName() string {
+func (x *User) GetNickname() string {
 	if x != nil {
-		return x.DisplayName
+		return x.Nickname
+	}
+	return ""
+}
+
+func (x *User) GetEmail() string {
+	if x != nil {
+		return x.Email
 	}
 	return ""
 }
@@ -400,18 +409,18 @@ func (x *User) GetIsSystemAdmin() bool {
 	return false
 }
 
-func (x *User) GetCreatedAt() string {
+func (x *User) GetCreatedAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.CreatedAt
 	}
-	return ""
+	return nil
 }
 
-func (x *User) GetUpdatedAt() string {
+func (x *User) GetUpdatedAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.UpdatedAt
 	}
-	return ""
+	return nil
 }
 
 func (x *User) GetVersion() uint32 {
@@ -419,234 +428,6 @@ func (x *User) GetVersion() uint32 {
 		return x.Version
 	}
 	return 0
-}
-
-type Role struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	Key           string                 `protobuf:"bytes,2,opt,name=key,proto3" json:"key,omitempty"`
-	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
-	Description   string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
-	Builtin       bool                   `protobuf:"varint,5,opt,name=builtin,proto3" json:"builtin,omitempty"`
-	Permissions   []*Permission          `protobuf:"bytes,6,rep,name=permissions,proto3" json:"permissions,omitempty"`
-	CreatedAt     string                 `protobuf:"bytes,51,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt     string                 `protobuf:"bytes,52,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	Version       uint32                 `protobuf:"varint,55,opt,name=version,proto3" json:"version,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *Role) Reset() {
-	*x = Role{}
-	mi := &file_common_entity_proto_msgTypes[2]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *Role) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*Role) ProtoMessage() {}
-
-func (x *Role) ProtoReflect() protoreflect.Message {
-	mi := &file_common_entity_proto_msgTypes[2]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use Role.ProtoReflect.Descriptor instead.
-func (*Role) Descriptor() ([]byte, []int) {
-	return file_common_entity_proto_rawDescGZIP(), []int{2}
-}
-
-func (x *Role) GetId() int64 {
-	if x != nil {
-		return x.Id
-	}
-	return 0
-}
-
-func (x *Role) GetKey() string {
-	if x != nil {
-		return x.Key
-	}
-	return ""
-}
-
-func (x *Role) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-func (x *Role) GetDescription() string {
-	if x != nil {
-		return x.Description
-	}
-	return ""
-}
-
-func (x *Role) GetBuiltin() bool {
-	if x != nil {
-		return x.Builtin
-	}
-	return false
-}
-
-func (x *Role) GetPermissions() []*Permission {
-	if x != nil {
-		return x.Permissions
-	}
-	return nil
-}
-
-func (x *Role) GetCreatedAt() string {
-	if x != nil {
-		return x.CreatedAt
-	}
-	return ""
-}
-
-func (x *Role) GetUpdatedAt() string {
-	if x != nil {
-		return x.UpdatedAt
-	}
-	return ""
-}
-
-func (x *Role) GetVersion() uint32 {
-	if x != nil {
-		return x.Version
-	}
-	return 0
-}
-
-type Permission struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	Key           string                 `protobuf:"bytes,2,opt,name=key,proto3" json:"key,omitempty"`
-	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
-	Description   string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *Permission) Reset() {
-	*x = Permission{}
-	mi := &file_common_entity_proto_msgTypes[3]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *Permission) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*Permission) ProtoMessage() {}
-
-func (x *Permission) ProtoReflect() protoreflect.Message {
-	mi := &file_common_entity_proto_msgTypes[3]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use Permission.ProtoReflect.Descriptor instead.
-func (*Permission) Descriptor() ([]byte, []int) {
-	return file_common_entity_proto_rawDescGZIP(), []int{3}
-}
-
-func (x *Permission) GetId() int64 {
-	if x != nil {
-		return x.Id
-	}
-	return 0
-}
-
-func (x *Permission) GetKey() string {
-	if x != nil {
-		return x.Key
-	}
-	return ""
-}
-
-func (x *Permission) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-func (x *Permission) GetDescription() string {
-	if x != nil {
-		return x.Description
-	}
-	return ""
-}
-
-type EnvironmentMember struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	User          *User                  `protobuf:"bytes,1,opt,name=user,proto3" json:"user,omitempty"`
-	Roles         []*Role                `protobuf:"bytes,2,rep,name=roles,proto3" json:"roles,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *EnvironmentMember) Reset() {
-	*x = EnvironmentMember{}
-	mi := &file_common_entity_proto_msgTypes[4]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *EnvironmentMember) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*EnvironmentMember) ProtoMessage() {}
-
-func (x *EnvironmentMember) ProtoReflect() protoreflect.Message {
-	mi := &file_common_entity_proto_msgTypes[4]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use EnvironmentMember.ProtoReflect.Descriptor instead.
-func (*EnvironmentMember) Descriptor() ([]byte, []int) {
-	return file_common_entity_proto_rawDescGZIP(), []int{4}
-}
-
-func (x *EnvironmentMember) GetUser() *User {
-	if x != nil {
-		return x.User
-	}
-	return nil
-}
-
-func (x *EnvironmentMember) GetRoles() []*Role {
-	if x != nil {
-		return x.Roles
-	}
-	return nil
 }
 
 type Project struct {
@@ -657,8 +438,8 @@ type Project struct {
 	Description   string                 `protobuf:"bytes,5,opt,name=description,proto3" json:"description,omitempty"`
 	CreatedBy     string                 `protobuf:"bytes,51,opt,name=created_by,json=createdBy,proto3" json:"created_by,omitempty"`
 	UpdatedBy     string                 `protobuf:"bytes,52,opt,name=updated_by,json=updatedBy,proto3" json:"updated_by,omitempty"`
-	CreatedAt     string                 `protobuf:"bytes,53,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt     string                 `protobuf:"bytes,54,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,53,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,54,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	Version       uint32                 `protobuf:"varint,55,opt,name=version,proto3" json:"version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -666,7 +447,7 @@ type Project struct {
 
 func (x *Project) Reset() {
 	*x = Project{}
-	mi := &file_common_entity_proto_msgTypes[5]
+	mi := &file_common_entity_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -678,7 +459,7 @@ func (x *Project) String() string {
 func (*Project) ProtoMessage() {}
 
 func (x *Project) ProtoReflect() protoreflect.Message {
-	mi := &file_common_entity_proto_msgTypes[5]
+	mi := &file_common_entity_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -691,7 +472,7 @@ func (x *Project) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Project.ProtoReflect.Descriptor instead.
 func (*Project) Descriptor() ([]byte, []int) {
-	return file_common_entity_proto_rawDescGZIP(), []int{5}
+	return file_common_entity_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *Project) GetId() int64 {
@@ -736,18 +517,18 @@ func (x *Project) GetUpdatedBy() string {
 	return ""
 }
 
-func (x *Project) GetCreatedAt() string {
+func (x *Project) GetCreatedAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.CreatedAt
 	}
-	return ""
+	return nil
 }
 
-func (x *Project) GetUpdatedAt() string {
+func (x *Project) GetUpdatedAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.UpdatedAt
 	}
-	return ""
+	return nil
 }
 
 func (x *Project) GetVersion() uint32 {
@@ -769,8 +550,8 @@ type Config struct {
 	RuntimeVersion uint64                 `protobuf:"varint,8,opt,name=runtime_version,json=runtimeVersion,proto3" json:"runtime_version,omitempty"`
 	CreatedBy      string                 `protobuf:"bytes,51,opt,name=created_by,json=createdBy,proto3" json:"created_by,omitempty"`
 	UpdatedBy      string                 `protobuf:"bytes,52,opt,name=updated_by,json=updatedBy,proto3" json:"updated_by,omitempty"`
-	CreatedAt      string                 `protobuf:"bytes,53,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt      string                 `protobuf:"bytes,54,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	CreatedAt      *timestamppb.Timestamp `protobuf:"bytes,53,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt      *timestamppb.Timestamp `protobuf:"bytes,54,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	Version        uint32                 `protobuf:"varint,55,opt,name=version,proto3" json:"version,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
@@ -778,7 +559,7 @@ type Config struct {
 
 func (x *Config) Reset() {
 	*x = Config{}
-	mi := &file_common_entity_proto_msgTypes[6]
+	mi := &file_common_entity_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -790,7 +571,7 @@ func (x *Config) String() string {
 func (*Config) ProtoMessage() {}
 
 func (x *Config) ProtoReflect() protoreflect.Message {
-	mi := &file_common_entity_proto_msgTypes[6]
+	mi := &file_common_entity_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -803,7 +584,7 @@ func (x *Config) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Config.ProtoReflect.Descriptor instead.
 func (*Config) Descriptor() ([]byte, []int) {
-	return file_common_entity_proto_rawDescGZIP(), []int{6}
+	return file_common_entity_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *Config) GetId() int64 {
@@ -876,18 +657,18 @@ func (x *Config) GetUpdatedBy() string {
 	return ""
 }
 
-func (x *Config) GetCreatedAt() string {
+func (x *Config) GetCreatedAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.CreatedAt
 	}
-	return ""
+	return nil
 }
 
-func (x *Config) GetUpdatedAt() string {
+func (x *Config) GetUpdatedAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.UpdatedAt
 	}
-	return ""
+	return nil
 }
 
 func (x *Config) GetVersion() uint32 {
@@ -907,8 +688,8 @@ type ConfigEnum struct {
 	Values        []*SelectOption        `protobuf:"bytes,6,rep,name=values,proto3" json:"values,omitempty"`
 	CreatedBy     string                 `protobuf:"bytes,51,opt,name=created_by,json=createdBy,proto3" json:"created_by,omitempty"`
 	UpdatedBy     string                 `protobuf:"bytes,52,opt,name=updated_by,json=updatedBy,proto3" json:"updated_by,omitempty"`
-	CreatedAt     string                 `protobuf:"bytes,53,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt     string                 `protobuf:"bytes,54,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,53,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,54,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	Version       uint32                 `protobuf:"varint,55,opt,name=version,proto3" json:"version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -916,7 +697,7 @@ type ConfigEnum struct {
 
 func (x *ConfigEnum) Reset() {
 	*x = ConfigEnum{}
-	mi := &file_common_entity_proto_msgTypes[7]
+	mi := &file_common_entity_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -928,7 +709,7 @@ func (x *ConfigEnum) String() string {
 func (*ConfigEnum) ProtoMessage() {}
 
 func (x *ConfigEnum) ProtoReflect() protoreflect.Message {
-	mi := &file_common_entity_proto_msgTypes[7]
+	mi := &file_common_entity_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -941,7 +722,7 @@ func (x *ConfigEnum) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConfigEnum.ProtoReflect.Descriptor instead.
 func (*ConfigEnum) Descriptor() ([]byte, []int) {
-	return file_common_entity_proto_rawDescGZIP(), []int{7}
+	return file_common_entity_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ConfigEnum) GetId() int64 {
@@ -1000,18 +781,18 @@ func (x *ConfigEnum) GetUpdatedBy() string {
 	return ""
 }
 
-func (x *ConfigEnum) GetCreatedAt() string {
+func (x *ConfigEnum) GetCreatedAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.CreatedAt
 	}
-	return ""
+	return nil
 }
 
-func (x *ConfigEnum) GetUpdatedAt() string {
+func (x *ConfigEnum) GetUpdatedAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.UpdatedAt
 	}
-	return ""
+	return nil
 }
 
 func (x *ConfigEnum) GetVersion() uint32 {
@@ -1031,8 +812,8 @@ type Structure struct {
 	Fields        []*Field               `protobuf:"bytes,6,rep,name=fields,proto3" json:"fields,omitempty"`
 	CreatedBy     string                 `protobuf:"bytes,51,opt,name=created_by,json=createdBy,proto3" json:"created_by,omitempty"`
 	UpdatedBy     string                 `protobuf:"bytes,52,opt,name=updated_by,json=updatedBy,proto3" json:"updated_by,omitempty"`
-	CreatedAt     string                 `protobuf:"bytes,53,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt     string                 `protobuf:"bytes,54,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,53,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,54,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	Version       uint32                 `protobuf:"varint,55,opt,name=version,proto3" json:"version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1040,7 +821,7 @@ type Structure struct {
 
 func (x *Structure) Reset() {
 	*x = Structure{}
-	mi := &file_common_entity_proto_msgTypes[8]
+	mi := &file_common_entity_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1052,7 +833,7 @@ func (x *Structure) String() string {
 func (*Structure) ProtoMessage() {}
 
 func (x *Structure) ProtoReflect() protoreflect.Message {
-	mi := &file_common_entity_proto_msgTypes[8]
+	mi := &file_common_entity_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1065,7 +846,7 @@ func (x *Structure) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Structure.ProtoReflect.Descriptor instead.
 func (*Structure) Descriptor() ([]byte, []int) {
-	return file_common_entity_proto_rawDescGZIP(), []int{8}
+	return file_common_entity_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *Structure) GetId() int64 {
@@ -1124,18 +905,18 @@ func (x *Structure) GetUpdatedBy() string {
 	return ""
 }
 
-func (x *Structure) GetCreatedAt() string {
+func (x *Structure) GetCreatedAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.CreatedAt
 	}
-	return ""
+	return nil
 }
 
-func (x *Structure) GetUpdatedAt() string {
+func (x *Structure) GetUpdatedAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.UpdatedAt
 	}
-	return ""
+	return nil
 }
 
 func (x *Structure) GetVersion() uint32 {
@@ -1158,7 +939,7 @@ type Field struct {
 
 func (x *Field) Reset() {
 	*x = Field{}
-	mi := &file_common_entity_proto_msgTypes[9]
+	mi := &file_common_entity_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1170,7 +951,7 @@ func (x *Field) String() string {
 func (*Field) ProtoMessage() {}
 
 func (x *Field) ProtoReflect() protoreflect.Message {
-	mi := &file_common_entity_proto_msgTypes[9]
+	mi := &file_common_entity_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1183,7 +964,7 @@ func (x *Field) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Field.ProtoReflect.Descriptor instead.
 func (*Field) Descriptor() ([]byte, []int) {
-	return file_common_entity_proto_rawDescGZIP(), []int{9}
+	return file_common_entity_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *Field) GetKey() string {
@@ -1231,7 +1012,7 @@ type TreeNode struct {
 
 func (x *TreeNode) Reset() {
 	*x = TreeNode{}
-	mi := &file_common_entity_proto_msgTypes[10]
+	mi := &file_common_entity_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1243,7 +1024,7 @@ func (x *TreeNode) String() string {
 func (*TreeNode) ProtoMessage() {}
 
 func (x *TreeNode) ProtoReflect() protoreflect.Message {
-	mi := &file_common_entity_proto_msgTypes[10]
+	mi := &file_common_entity_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1256,7 +1037,7 @@ func (x *TreeNode) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TreeNode.ProtoReflect.Descriptor instead.
 func (*TreeNode) Descriptor() ([]byte, []int) {
-	return file_common_entity_proto_rawDescGZIP(), []int{10}
+	return file_common_entity_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *TreeNode) GetValue() *Field {
@@ -1286,8 +1067,8 @@ type Snapshot struct {
 	IsUsing       bool                   `protobuf:"varint,9,opt,name=is_using,json=isUsing,proto3" json:"is_using,omitempty"`
 	CreatedBy     string                 `protobuf:"bytes,51,opt,name=created_by,json=createdBy,proto3" json:"created_by,omitempty"`
 	UpdatedBy     string                 `protobuf:"bytes,52,opt,name=updated_by,json=updatedBy,proto3" json:"updated_by,omitempty"`
-	CreatedAt     string                 `protobuf:"bytes,53,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt     string                 `protobuf:"bytes,54,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,53,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,54,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	Version       uint32                 `protobuf:"varint,55,opt,name=version,proto3" json:"version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1295,7 +1076,7 @@ type Snapshot struct {
 
 func (x *Snapshot) Reset() {
 	*x = Snapshot{}
-	mi := &file_common_entity_proto_msgTypes[11]
+	mi := &file_common_entity_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1307,7 +1088,7 @@ func (x *Snapshot) String() string {
 func (*Snapshot) ProtoMessage() {}
 
 func (x *Snapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_common_entity_proto_msgTypes[11]
+	mi := &file_common_entity_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1320,7 +1101,7 @@ func (x *Snapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Snapshot.ProtoReflect.Descriptor instead.
 func (*Snapshot) Descriptor() ([]byte, []int) {
-	return file_common_entity_proto_rawDescGZIP(), []int{11}
+	return file_common_entity_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *Snapshot) GetId() int64 {
@@ -1400,18 +1181,18 @@ func (x *Snapshot) GetUpdatedBy() string {
 	return ""
 }
 
-func (x *Snapshot) GetCreatedAt() string {
+func (x *Snapshot) GetCreatedAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.CreatedAt
 	}
-	return ""
+	return nil
 }
 
-func (x *Snapshot) GetUpdatedAt() string {
+func (x *Snapshot) GetUpdatedAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.UpdatedAt
 	}
-	return ""
+	return nil
 }
 
 func (x *Snapshot) GetVersion() uint32 {
@@ -1433,8 +1214,8 @@ type SimpleSnapshot struct {
 	IsUsing       bool                   `protobuf:"varint,8,opt,name=is_using,json=isUsing,proto3" json:"is_using,omitempty"`
 	CreatedBy     string                 `protobuf:"bytes,51,opt,name=created_by,json=createdBy,proto3" json:"created_by,omitempty"`
 	UpdatedBy     string                 `protobuf:"bytes,52,opt,name=updated_by,json=updatedBy,proto3" json:"updated_by,omitempty"`
-	CreatedAt     string                 `protobuf:"bytes,53,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt     string                 `protobuf:"bytes,54,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,53,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,54,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	Version       uint32                 `protobuf:"varint,55,opt,name=version,proto3" json:"version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1442,7 +1223,7 @@ type SimpleSnapshot struct {
 
 func (x *SimpleSnapshot) Reset() {
 	*x = SimpleSnapshot{}
-	mi := &file_common_entity_proto_msgTypes[12]
+	mi := &file_common_entity_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1454,7 +1235,7 @@ func (x *SimpleSnapshot) String() string {
 func (*SimpleSnapshot) ProtoMessage() {}
 
 func (x *SimpleSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_common_entity_proto_msgTypes[12]
+	mi := &file_common_entity_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1467,7 +1248,7 @@ func (x *SimpleSnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SimpleSnapshot.ProtoReflect.Descriptor instead.
 func (*SimpleSnapshot) Descriptor() ([]byte, []int) {
-	return file_common_entity_proto_rawDescGZIP(), []int{12}
+	return file_common_entity_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *SimpleSnapshot) GetId() int64 {
@@ -1540,18 +1321,18 @@ func (x *SimpleSnapshot) GetUpdatedBy() string {
 	return ""
 }
 
-func (x *SimpleSnapshot) GetCreatedAt() string {
+func (x *SimpleSnapshot) GetCreatedAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.CreatedAt
 	}
-	return ""
+	return nil
 }
 
-func (x *SimpleSnapshot) GetUpdatedAt() string {
+func (x *SimpleSnapshot) GetUpdatedAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.UpdatedAt
 	}
-	return ""
+	return nil
 }
 
 func (x *SimpleSnapshot) GetVersion() uint32 {
@@ -1564,12 +1345,11 @@ func (x *SimpleSnapshot) GetVersion() uint32 {
 type ProjectApiKey struct {
 	state      protoimpl.MessageState `protogen:"open.v1"`
 	Id         int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	PublicId   string                 `protobuf:"bytes,2,opt,name=public_id,json=publicId,proto3" json:"public_id,omitempty"`
 	Name       string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
 	CreatedBy  string                 `protobuf:"bytes,4,opt,name=created_by,json=createdBy,proto3" json:"created_by,omitempty"`
-	CreatedAt  string                 `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	LastUsedAt *string                `protobuf:"bytes,6,opt,name=last_used_at,json=lastUsedAt,proto3,oneof" json:"last_used_at,omitempty"`
-	RevokedAt  *string                `protobuf:"bytes,7,opt,name=revoked_at,json=revokedAt,proto3,oneof" json:"revoked_at,omitempty"`
+	CreatedAt  *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	LastUsedAt *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=last_used_at,json=lastUsedAt,proto3,oneof" json:"last_used_at,omitempty"`
+	RevokedAt  *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=revoked_at,json=revokedAt,proto3,oneof" json:"revoked_at,omitempty"`
 	// Only the trailing characters are stored and returned for identification.
 	// This value is not the secret and cannot be used to authenticate.
 	SecretSuffix  string `protobuf:"bytes,8,opt,name=secret_suffix,json=secretSuffix,proto3" json:"secret_suffix,omitempty"`
@@ -1579,7 +1359,7 @@ type ProjectApiKey struct {
 
 func (x *ProjectApiKey) Reset() {
 	*x = ProjectApiKey{}
-	mi := &file_common_entity_proto_msgTypes[13]
+	mi := &file_common_entity_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1591,7 +1371,7 @@ func (x *ProjectApiKey) String() string {
 func (*ProjectApiKey) ProtoMessage() {}
 
 func (x *ProjectApiKey) ProtoReflect() protoreflect.Message {
-	mi := &file_common_entity_proto_msgTypes[13]
+	mi := &file_common_entity_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1604,7 +1384,7 @@ func (x *ProjectApiKey) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProjectApiKey.ProtoReflect.Descriptor instead.
 func (*ProjectApiKey) Descriptor() ([]byte, []int) {
-	return file_common_entity_proto_rawDescGZIP(), []int{13}
+	return file_common_entity_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ProjectApiKey) GetId() int64 {
@@ -1612,13 +1392,6 @@ func (x *ProjectApiKey) GetId() int64 {
 		return x.Id
 	}
 	return 0
-}
-
-func (x *ProjectApiKey) GetPublicId() string {
-	if x != nil {
-		return x.PublicId
-	}
-	return ""
 }
 
 func (x *ProjectApiKey) GetName() string {
@@ -1635,25 +1408,25 @@ func (x *ProjectApiKey) GetCreatedBy() string {
 	return ""
 }
 
-func (x *ProjectApiKey) GetCreatedAt() string {
+func (x *ProjectApiKey) GetCreatedAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.CreatedAt
 	}
-	return ""
+	return nil
 }
 
-func (x *ProjectApiKey) GetLastUsedAt() string {
-	if x != nil && x.LastUsedAt != nil {
-		return *x.LastUsedAt
+func (x *ProjectApiKey) GetLastUsedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.LastUsedAt
 	}
-	return ""
+	return nil
 }
 
-func (x *ProjectApiKey) GetRevokedAt() string {
-	if x != nil && x.RevokedAt != nil {
-		return *x.RevokedAt
+func (x *ProjectApiKey) GetRevokedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.RevokedAt
 	}
-	return ""
+	return nil
 }
 
 func (x *ProjectApiKey) GetSecretSuffix() string {
@@ -1675,7 +1448,7 @@ type Asset struct {
 
 func (x *Asset) Reset() {
 	*x = Asset{}
-	mi := &file_common_entity_proto_msgTypes[14]
+	mi := &file_common_entity_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1687,7 +1460,7 @@ func (x *Asset) String() string {
 func (*Asset) ProtoMessage() {}
 
 func (x *Asset) ProtoReflect() protoreflect.Message {
-	mi := &file_common_entity_proto_msgTypes[14]
+	mi := &file_common_entity_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1700,7 +1473,7 @@ func (x *Asset) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Asset.ProtoReflect.Descriptor instead.
 func (*Asset) Descriptor() ([]byte, []int) {
-	return file_common_entity_proto_rawDescGZIP(), []int{14}
+	return file_common_entity_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *Asset) GetObjectKey() string {
@@ -1745,7 +1518,7 @@ type Field_Type struct {
 
 func (x *Field_Type) Reset() {
 	*x = Field_Type{}
-	mi := &file_common_entity_proto_msgTypes[15]
+	mi := &file_common_entity_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1757,7 +1530,7 @@ func (x *Field_Type) String() string {
 func (*Field_Type) ProtoMessage() {}
 
 func (x *Field_Type) ProtoReflect() protoreflect.Message {
-	mi := &file_common_entity_proto_msgTypes[15]
+	mi := &file_common_entity_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1770,7 +1543,7 @@ func (x *Field_Type) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Field_Type.ProtoReflect.Descriptor instead.
 func (*Field_Type) Descriptor() ([]byte, []int) {
-	return file_common_entity_proto_rawDescGZIP(), []int{9, 0}
+	return file_common_entity_proto_rawDescGZIP(), []int{6, 0}
 }
 
 func (x *Field_Type) GetKind() isField_Type_Kind {
@@ -1833,7 +1606,7 @@ var File_common_entity_proto protoreflect.FileDescriptor
 
 const file_common_entity_proto_rawDesc = "" +
 	"\n" +
-	"\x13common/entity.proto\x12\x0fkirby.common.v1\x1a\x17common/annotation.proto\x1a\x12common/types.proto\"\xf6\x01\n" +
+	"\x13common/entity.proto\x12\x0fkirby.common.v1\x1a\x17common/annotation.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x12common/types.proto\"\xae\x02\n" +
 	"\vEnvironment\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x10\n" +
 	"\x03key\x18\x02 \x01(\tR\x03key\x12\x12\n" +
@@ -1841,44 +1614,24 @@ const file_common_entity_proto_rawDesc = "" +
 	"\vdescription\x18\x04 \x01(\tR\vdescription\x12\x18\n" +
 	"\aenabled\x18\x05 \x01(\bR\aenabled\x12\x1d\n" +
 	"\n" +
-	"project_id\x18\x06 \x01(\x03R\tprojectId\x12\x1d\n" +
+	"project_id\x18\x06 \x01(\x03R\tprojectId\x129\n" +
 	"\n" +
-	"created_at\x183 \x01(\tR\tcreatedAt\x12\x1d\n" +
+	"created_at\x183 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"updated_at\x184 \x01(\tR\tupdatedAt\x12\x18\n" +
-	"\aversion\x187 \x01(\rR\aversion\"\xef\x01\n" +
+	"updated_at\x184 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\x18\n" +
+	"\aversion\x187 \x01(\rR\aversion\"\xb6\x02\n" +
 	"\x04User\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x1a\n" +
-	"\busername\x18\x02 \x01(\tR\busername\x12!\n" +
-	"\fdisplay_name\x18\x03 \x01(\tR\vdisplayName\x12\x18\n" +
+	"\busername\x18\x02 \x01(\tR\busername\x12\x1a\n" +
+	"\bnickname\x18\x03 \x01(\tR\bnickname\x12\x14\n" +
+	"\x05email\x18\a \x01(\tR\x05email\x12\x18\n" +
 	"\aenabled\x18\x04 \x01(\bR\aenabled\x12&\n" +
-	"\x0fis_system_admin\x18\x05 \x01(\bR\risSystemAdmin\x12\x1d\n" +
+	"\x0fis_system_admin\x18\x05 \x01(\bR\risSystemAdmin\x129\n" +
 	"\n" +
-	"created_at\x183 \x01(\tR\tcreatedAt\x12\x1d\n" +
+	"created_at\x183 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"updated_at\x184 \x01(\tR\tupdatedAt\x12\x18\n" +
-	"\aversion\x187 \x01(\rR\aversion\"\x8f\x02\n" +
-	"\x04Role\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x10\n" +
-	"\x03key\x18\x02 \x01(\tR\x03key\x12\x12\n" +
-	"\x04name\x18\x03 \x01(\tR\x04name\x12 \n" +
-	"\vdescription\x18\x04 \x01(\tR\vdescription\x12\x18\n" +
-	"\abuiltin\x18\x05 \x01(\bR\abuiltin\x12=\n" +
-	"\vpermissions\x18\x06 \x03(\v2\x1b.kirby.common.v1.PermissionR\vpermissions\x12\x1d\n" +
-	"\n" +
-	"created_at\x183 \x01(\tR\tcreatedAt\x12\x1d\n" +
-	"\n" +
-	"updated_at\x184 \x01(\tR\tupdatedAt\x12\x18\n" +
-	"\aversion\x187 \x01(\rR\aversion\"d\n" +
-	"\n" +
-	"Permission\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x10\n" +
-	"\x03key\x18\x02 \x01(\tR\x03key\x12\x12\n" +
-	"\x04name\x18\x03 \x01(\tR\x04name\x12 \n" +
-	"\vdescription\x18\x04 \x01(\tR\vdescription\"k\n" +
-	"\x11EnvironmentMember\x12)\n" +
-	"\x04user\x18\x01 \x01(\v2\x15.kirby.common.v1.UserR\x04user\x12+\n" +
-	"\x05roles\x18\x02 \x03(\v2\x15.kirby.common.v1.RoleR\x05roles\"\xf7\x01\n" +
+	"updated_at\x184 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\x18\n" +
+	"\aversion\x187 \x01(\rR\aversion\"\xaf\x02\n" +
 	"\aProject\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x10\n" +
 	"\x03key\x18\x03 \x01(\tR\x03key\x12\x12\n" +
@@ -1887,12 +1640,12 @@ const file_common_entity_proto_rawDesc = "" +
 	"\n" +
 	"created_by\x183 \x01(\tR\tcreatedBy\x12\x1d\n" +
 	"\n" +
-	"updated_by\x184 \x01(\tR\tupdatedBy\x12\x1d\n" +
+	"updated_by\x184 \x01(\tR\tupdatedBy\x129\n" +
 	"\n" +
-	"created_at\x185 \x01(\tR\tcreatedAt\x12\x1d\n" +
+	"created_at\x185 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"updated_at\x186 \x01(\tR\tupdatedAt\x12\x18\n" +
-	"\aversion\x187 \x01(\rR\aversion\"\x8c\x03\n" +
+	"updated_at\x186 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\x18\n" +
+	"\aversion\x187 \x01(\rR\aversion\"\xc4\x03\n" +
 	"\x06Config\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x1d\n" +
 	"\n" +
@@ -1906,12 +1659,12 @@ const file_common_entity_proto_rawDesc = "" +
 	"\n" +
 	"created_by\x183 \x01(\tR\tcreatedBy\x12\x1d\n" +
 	"\n" +
-	"updated_by\x184 \x01(\tR\tupdatedBy\x12\x1d\n" +
+	"updated_by\x184 \x01(\tR\tupdatedBy\x129\n" +
 	"\n" +
-	"created_at\x185 \x01(\tR\tcreatedAt\x12\x1d\n" +
+	"created_at\x185 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"updated_at\x186 \x01(\tR\tupdatedAt\x12\x18\n" +
-	"\aversion\x187 \x01(\rR\aversion\"\xce\x02\n" +
+	"updated_at\x186 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\x18\n" +
+	"\aversion\x187 \x01(\rR\aversion\"\x86\x03\n" +
 	"\n" +
 	"ConfigEnum\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x1b\n" +
@@ -1923,12 +1676,12 @@ const file_common_entity_proto_rawDesc = "" +
 	"\n" +
 	"created_by\x183 \x01(\tR\tcreatedBy\x12\x1d\n" +
 	"\n" +
-	"updated_by\x184 \x01(\tR\tupdatedBy\x12\x1d\n" +
+	"updated_by\x184 \x01(\tR\tupdatedBy\x129\n" +
 	"\n" +
-	"created_at\x185 \x01(\tR\tcreatedAt\x12\x1d\n" +
+	"created_at\x185 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"updated_at\x186 \x01(\tR\tupdatedAt\x12\x18\n" +
-	"\aversion\x187 \x01(\rR\aversion\"\xc6\x02\n" +
+	"updated_at\x186 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\x18\n" +
+	"\aversion\x187 \x01(\rR\aversion\"\xfe\x02\n" +
 	"\tStructure\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x1b\n" +
 	"\tconfig_id\x18\x02 \x01(\x03R\bconfigId\x12\x10\n" +
@@ -1939,11 +1692,11 @@ const file_common_entity_proto_rawDesc = "" +
 	"\n" +
 	"created_by\x183 \x01(\tR\tcreatedBy\x12\x1d\n" +
 	"\n" +
-	"updated_by\x184 \x01(\tR\tupdatedBy\x12\x1d\n" +
+	"updated_by\x184 \x01(\tR\tupdatedBy\x129\n" +
 	"\n" +
-	"created_at\x185 \x01(\tR\tcreatedAt\x12\x1d\n" +
+	"created_at\x185 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"updated_at\x186 \x01(\tR\tupdatedAt\x12\x18\n" +
+	"updated_at\x186 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\x18\n" +
 	"\aversion\x187 \x01(\rR\aversion\"\xf9\x05\n" +
 	"\x05Field\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x12\n" +
@@ -1977,7 +1730,7 @@ const file_common_entity_proto_rawDesc = "" +
 	"\x12字段基础类型\"o\n" +
 	"\bTreeNode\x12,\n" +
 	"\x05value\x18\x01 \x01(\v2\x16.kirby.common.v1.FieldR\x05value\x125\n" +
-	"\bchildren\x18\x02 \x03(\v2\x19.kirby.common.v1.TreeNodeR\bchildren\"\xa3\x06\n" +
+	"\bchildren\x18\x02 \x03(\v2\x19.kirby.common.v1.TreeNodeR\bchildren\"\xdb\x06\n" +
 	"\bSnapshot\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x1d\n" +
 	"\n" +
@@ -1993,11 +1746,11 @@ const file_common_entity_proto_rawDesc = "" +
 	"\n" +
 	"created_by\x183 \x01(\tR\tcreatedBy\x12\x1d\n" +
 	"\n" +
-	"updated_by\x184 \x01(\tR\tupdatedBy\x12\x1d\n" +
+	"updated_by\x184 \x01(\tR\tupdatedBy\x129\n" +
 	"\n" +
-	"created_at\x185 \x01(\tR\tcreatedAt\x12\x1d\n" +
+	"created_at\x185 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"updated_at\x186 \x01(\tR\tupdatedAt\x12\x18\n" +
+	"updated_at\x186 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\x18\n" +
 	"\aversion\x187 \x01(\rR\aversion\"\x82\x01\n" +
 	"\x06Status\x12\x1e\n" +
 	"\x12STATUS_UNSPECIFIED\x10\x00\x1a\x06\xba\xf7,\x02\b\x01\x12\x1f\n" +
@@ -2014,7 +1767,7 @@ const file_common_entity_proto_rawDesc = "" +
 	"\x04DEMO\x10\x05\x1a\n" +
 	"\xba\xf7,\x06\x12\x04Demo\x12\x16\n" +
 	"\x05REUSE\x10\x06\x1a\v\xba\xf7,\a\x12\x05Reuse\x1a\x12\xba\xf7,\x0e\n" +
-	"\f快照标签\"\xbb\x03\n" +
+	"\f快照标签\"\xf3\x03\n" +
 	"\x0eSimpleSnapshot\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x1d\n" +
 	"\n" +
@@ -2029,27 +1782,26 @@ const file_common_entity_proto_rawDesc = "" +
 	"\n" +
 	"created_by\x183 \x01(\tR\tcreatedBy\x12\x1d\n" +
 	"\n" +
-	"updated_by\x184 \x01(\tR\tupdatedBy\x12\x1d\n" +
+	"updated_by\x184 \x01(\tR\tupdatedBy\x129\n" +
 	"\n" +
-	"created_at\x185 \x01(\tR\tcreatedAt\x12\x1d\n" +
+	"created_at\x185 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"updated_at\x186 \x01(\tR\tupdatedAt\x12\x18\n" +
-	"\aversion\x187 \x01(\rR\aversion\"\x9e\x02\n" +
+	"updated_at\x186 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\x18\n" +
+	"\aversion\x187 \x01(\rR\aversion\"\xe6\x02\n" +
 	"\rProjectApiKey\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x1b\n" +
-	"\tpublic_id\x18\x02 \x01(\tR\bpublicId\x12\x12\n" +
+	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x12\n" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x12\x1d\n" +
 	"\n" +
-	"created_by\x18\x04 \x01(\tR\tcreatedBy\x12\x1d\n" +
+	"created_by\x18\x04 \x01(\tR\tcreatedBy\x129\n" +
 	"\n" +
-	"created_at\x18\x05 \x01(\tR\tcreatedAt\x12%\n" +
-	"\flast_used_at\x18\x06 \x01(\tH\x00R\n" +
-	"lastUsedAt\x88\x01\x01\x12\"\n" +
+	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12A\n" +
+	"\flast_used_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampH\x00R\n" +
+	"lastUsedAt\x88\x01\x01\x12>\n" +
 	"\n" +
-	"revoked_at\x18\a \x01(\tH\x01R\trevokedAt\x88\x01\x01\x12#\n" +
+	"revoked_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampH\x01R\trevokedAt\x88\x01\x01\x12#\n" +
 	"\rsecret_suffix\x18\b \x01(\tR\fsecretSuffixB\x0f\n" +
 	"\r_last_used_atB\r\n" +
-	"\v_revoked_at\"o\n" +
+	"\v_revoked_atJ\x04\b\x02\x10\x03R\tpublic_id\"o\n" +
 	"\x05Asset\x12\x1d\n" +
 	"\n" +
 	"object_key\x18\x01 \x01(\tR\tobjectKey\x12\x10\n" +
@@ -2070,49 +1822,63 @@ func file_common_entity_proto_rawDescGZIP() []byte {
 }
 
 var file_common_entity_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_common_entity_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_common_entity_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_common_entity_proto_goTypes = []any{
-	(Field_BaseType)(0),       // 0: kirby.common.v1.Field.BaseType
-	(Snapshot_Status)(0),      // 1: kirby.common.v1.Snapshot.Status
-	(Snapshot_Tag)(0),         // 2: kirby.common.v1.Snapshot.Tag
-	(*Environment)(nil),       // 3: kirby.common.v1.Environment
-	(*User)(nil),              // 4: kirby.common.v1.User
-	(*Role)(nil),              // 5: kirby.common.v1.Role
-	(*Permission)(nil),        // 6: kirby.common.v1.Permission
-	(*EnvironmentMember)(nil), // 7: kirby.common.v1.EnvironmentMember
-	(*Project)(nil),           // 8: kirby.common.v1.Project
-	(*Config)(nil),            // 9: kirby.common.v1.Config
-	(*ConfigEnum)(nil),        // 10: kirby.common.v1.ConfigEnum
-	(*Structure)(nil),         // 11: kirby.common.v1.Structure
-	(*Field)(nil),             // 12: kirby.common.v1.Field
-	(*TreeNode)(nil),          // 13: kirby.common.v1.TreeNode
-	(*Snapshot)(nil),          // 14: kirby.common.v1.Snapshot
-	(*SimpleSnapshot)(nil),    // 15: kirby.common.v1.SimpleSnapshot
-	(*ProjectApiKey)(nil),     // 16: kirby.common.v1.ProjectApiKey
-	(*Asset)(nil),             // 17: kirby.common.v1.Asset
-	(*Field_Type)(nil),        // 18: kirby.common.v1.Field.Type
-	(*SelectOption)(nil),      // 19: kirby.common.v1.SelectOption
+	(Field_BaseType)(0),           // 0: kirby.common.v1.Field.BaseType
+	(Snapshot_Status)(0),          // 1: kirby.common.v1.Snapshot.Status
+	(Snapshot_Tag)(0),             // 2: kirby.common.v1.Snapshot.Tag
+	(*Environment)(nil),           // 3: kirby.common.v1.Environment
+	(*User)(nil),                  // 4: kirby.common.v1.User
+	(*Project)(nil),               // 5: kirby.common.v1.Project
+	(*Config)(nil),                // 6: kirby.common.v1.Config
+	(*ConfigEnum)(nil),            // 7: kirby.common.v1.ConfigEnum
+	(*Structure)(nil),             // 8: kirby.common.v1.Structure
+	(*Field)(nil),                 // 9: kirby.common.v1.Field
+	(*TreeNode)(nil),              // 10: kirby.common.v1.TreeNode
+	(*Snapshot)(nil),              // 11: kirby.common.v1.Snapshot
+	(*SimpleSnapshot)(nil),        // 12: kirby.common.v1.SimpleSnapshot
+	(*ProjectApiKey)(nil),         // 13: kirby.common.v1.ProjectApiKey
+	(*Asset)(nil),                 // 14: kirby.common.v1.Asset
+	(*Field_Type)(nil),            // 15: kirby.common.v1.Field.Type
+	(*timestamppb.Timestamp)(nil), // 16: google.protobuf.Timestamp
+	(*SelectOption)(nil),          // 17: kirby.common.v1.SelectOption
 }
 var file_common_entity_proto_depIdxs = []int32{
-	6,  // 0: kirby.common.v1.Role.permissions:type_name -> kirby.common.v1.Permission
-	4,  // 1: kirby.common.v1.EnvironmentMember.user:type_name -> kirby.common.v1.User
-	5,  // 2: kirby.common.v1.EnvironmentMember.roles:type_name -> kirby.common.v1.Role
-	18, // 3: kirby.common.v1.Config.type:type_name -> kirby.common.v1.Field.Type
-	19, // 4: kirby.common.v1.ConfigEnum.values:type_name -> kirby.common.v1.SelectOption
-	12, // 5: kirby.common.v1.Structure.fields:type_name -> kirby.common.v1.Field
-	18, // 6: kirby.common.v1.Field.type:type_name -> kirby.common.v1.Field.Type
-	12, // 7: kirby.common.v1.TreeNode.value:type_name -> kirby.common.v1.Field
-	13, // 8: kirby.common.v1.TreeNode.children:type_name -> kirby.common.v1.TreeNode
-	1,  // 9: kirby.common.v1.Snapshot.status:type_name -> kirby.common.v1.Snapshot.Status
-	2,  // 10: kirby.common.v1.Snapshot.tags:type_name -> kirby.common.v1.Snapshot.Tag
-	1,  // 11: kirby.common.v1.SimpleSnapshot.status:type_name -> kirby.common.v1.Snapshot.Status
-	2,  // 12: kirby.common.v1.SimpleSnapshot.tags:type_name -> kirby.common.v1.Snapshot.Tag
-	0,  // 13: kirby.common.v1.Field.Type.base_type:type_name -> kirby.common.v1.Field.BaseType
-	14, // [14:14] is the sub-list for method output_type
-	14, // [14:14] is the sub-list for method input_type
-	14, // [14:14] is the sub-list for extension type_name
-	14, // [14:14] is the sub-list for extension extendee
-	0,  // [0:14] is the sub-list for field type_name
+	16, // 0: kirby.common.v1.Environment.created_at:type_name -> google.protobuf.Timestamp
+	16, // 1: kirby.common.v1.Environment.updated_at:type_name -> google.protobuf.Timestamp
+	16, // 2: kirby.common.v1.User.created_at:type_name -> google.protobuf.Timestamp
+	16, // 3: kirby.common.v1.User.updated_at:type_name -> google.protobuf.Timestamp
+	16, // 4: kirby.common.v1.Project.created_at:type_name -> google.protobuf.Timestamp
+	16, // 5: kirby.common.v1.Project.updated_at:type_name -> google.protobuf.Timestamp
+	15, // 6: kirby.common.v1.Config.type:type_name -> kirby.common.v1.Field.Type
+	16, // 7: kirby.common.v1.Config.created_at:type_name -> google.protobuf.Timestamp
+	16, // 8: kirby.common.v1.Config.updated_at:type_name -> google.protobuf.Timestamp
+	17, // 9: kirby.common.v1.ConfigEnum.values:type_name -> kirby.common.v1.SelectOption
+	16, // 10: kirby.common.v1.ConfigEnum.created_at:type_name -> google.protobuf.Timestamp
+	16, // 11: kirby.common.v1.ConfigEnum.updated_at:type_name -> google.protobuf.Timestamp
+	9,  // 12: kirby.common.v1.Structure.fields:type_name -> kirby.common.v1.Field
+	16, // 13: kirby.common.v1.Structure.created_at:type_name -> google.protobuf.Timestamp
+	16, // 14: kirby.common.v1.Structure.updated_at:type_name -> google.protobuf.Timestamp
+	15, // 15: kirby.common.v1.Field.type:type_name -> kirby.common.v1.Field.Type
+	9,  // 16: kirby.common.v1.TreeNode.value:type_name -> kirby.common.v1.Field
+	10, // 17: kirby.common.v1.TreeNode.children:type_name -> kirby.common.v1.TreeNode
+	1,  // 18: kirby.common.v1.Snapshot.status:type_name -> kirby.common.v1.Snapshot.Status
+	2,  // 19: kirby.common.v1.Snapshot.tags:type_name -> kirby.common.v1.Snapshot.Tag
+	16, // 20: kirby.common.v1.Snapshot.created_at:type_name -> google.protobuf.Timestamp
+	16, // 21: kirby.common.v1.Snapshot.updated_at:type_name -> google.protobuf.Timestamp
+	1,  // 22: kirby.common.v1.SimpleSnapshot.status:type_name -> kirby.common.v1.Snapshot.Status
+	2,  // 23: kirby.common.v1.SimpleSnapshot.tags:type_name -> kirby.common.v1.Snapshot.Tag
+	16, // 24: kirby.common.v1.SimpleSnapshot.created_at:type_name -> google.protobuf.Timestamp
+	16, // 25: kirby.common.v1.SimpleSnapshot.updated_at:type_name -> google.protobuf.Timestamp
+	16, // 26: kirby.common.v1.ProjectApiKey.created_at:type_name -> google.protobuf.Timestamp
+	16, // 27: kirby.common.v1.ProjectApiKey.last_used_at:type_name -> google.protobuf.Timestamp
+	16, // 28: kirby.common.v1.ProjectApiKey.revoked_at:type_name -> google.protobuf.Timestamp
+	0,  // 29: kirby.common.v1.Field.Type.base_type:type_name -> kirby.common.v1.Field.BaseType
+	30, // [30:30] is the sub-list for method output_type
+	30, // [30:30] is the sub-list for method input_type
+	30, // [30:30] is the sub-list for extension type_name
+	30, // [30:30] is the sub-list for extension extendee
+	0,  // [0:30] is the sub-list for field type_name
 }
 
 func init() { file_common_entity_proto_init() }
@@ -2122,8 +1888,8 @@ func file_common_entity_proto_init() {
 	}
 	file_common_annotation_proto_init()
 	file_common_types_proto_init()
-	file_common_entity_proto_msgTypes[13].OneofWrappers = []any{}
-	file_common_entity_proto_msgTypes[15].OneofWrappers = []any{
+	file_common_entity_proto_msgTypes[10].OneofWrappers = []any{}
+	file_common_entity_proto_msgTypes[12].OneofWrappers = []any{
 		(*Field_Type_BaseType)(nil),
 		(*Field_Type_StructureKey)(nil),
 		(*Field_Type_EnumKey)(nil),
@@ -2134,7 +1900,7 @@ func file_common_entity_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_common_entity_proto_rawDesc), len(file_common_entity_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   16,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

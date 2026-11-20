@@ -12,6 +12,7 @@ import (
 	_ "google.golang.org/genproto/googleapis/api/annotations"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -105,7 +106,7 @@ type PresignAssetReply struct {
 	ObjectKey     string                 `protobuf:"bytes,1,opt,name=object_key,json=objectKey,proto3" json:"object_key,omitempty"`
 	UploadUrl     string                 `protobuf:"bytes,2,opt,name=upload_url,json=uploadUrl,proto3" json:"upload_url,omitempty"`
 	Headers       map[string]string      `protobuf:"bytes,3,rep,name=headers,proto3" json:"headers,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	ExpiresAt     string                 `protobuf:"bytes,4,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
 	UploadMethod  string                 `protobuf:"bytes,5,opt,name=upload_method,json=uploadMethod,proto3" json:"upload_method,omitempty"`
 	FormFields    map[string]string      `protobuf:"bytes,6,rep,name=form_fields,json=formFields,proto3" json:"form_fields,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields protoimpl.UnknownFields
@@ -163,11 +164,11 @@ func (x *PresignAssetReply) GetHeaders() map[string]string {
 	return nil
 }
 
-func (x *PresignAssetReply) GetExpiresAt() string {
+func (x *PresignAssetReply) GetExpiresAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.ExpiresAt
 	}
-	return ""
+	return nil
 }
 
 func (x *PresignAssetReply) GetUploadMethod() string {
@@ -292,7 +293,7 @@ var File_admin_asset_proto protoreflect.FileDescriptor
 
 const file_admin_asset_proto_rawDesc = "" +
 	"\n" +
-	"\x11admin/asset.proto\x12\x0ekirby.admin.v1\x1a\x1cgoogle/api/annotations.proto\x1a\x13common/entity.proto\x1a\x17validate/validate.proto\"\xe1\x01\n" +
+	"\x11admin/asset.proto\x12\x0ekirby.admin.v1\x1a\x1cgoogle/api/annotations.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x13common/entity.proto\x1a\x17validate/validate.proto\"\xe1\x01\n" +
 	"\x13PresignAssetRequest\x12.\n" +
 	"\x0eenvironment_id\x18\x01 \x01(\x03B\a\xfaB\x04\"\x02 \x00R\renvironmentId\x12&\n" +
 	"\n" +
@@ -301,15 +302,15 @@ const file_admin_asset_proto_rawDesc = "" +
 	"\xfaB\ar\x05\x10\x01\x18\xff\x01R\bfilename\x12-\n" +
 	"\fcontent_type\x18\x04 \x01(\tB\n" +
 	"\xfaB\ar\x05\x10\x01\x18\xff\x01R\vcontentType\x12\x1b\n" +
-	"\x04size\x18\x05 \x01(\x04B\a\xfaB\x042\x02 \x00R\x04size\"\xae\x03\n" +
+	"\x04size\x18\x05 \x01(\x04B\a\xfaB\x042\x02 \x00R\x04size\"\xca\x03\n" +
 	"\x11PresignAssetReply\x12\x1d\n" +
 	"\n" +
 	"object_key\x18\x01 \x01(\tR\tobjectKey\x12\x1d\n" +
 	"\n" +
 	"upload_url\x18\x02 \x01(\tR\tuploadUrl\x12H\n" +
-	"\aheaders\x18\x03 \x03(\v2..kirby.admin.v1.PresignAssetReply.HeadersEntryR\aheaders\x12\x1d\n" +
+	"\aheaders\x18\x03 \x03(\v2..kirby.admin.v1.PresignAssetReply.HeadersEntryR\aheaders\x129\n" +
 	"\n" +
-	"expires_at\x18\x04 \x01(\tR\texpiresAt\x12#\n" +
+	"expires_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12#\n" +
 	"\rupload_method\x18\x05 \x01(\tR\fuploadMethod\x12R\n" +
 	"\vform_fields\x18\x06 \x03(\v21.kirby.admin.v1.PresignAssetReply.FormFieldsEntryR\n" +
 	"formFields\x1a:\n" +
@@ -346,27 +347,29 @@ func file_admin_asset_proto_rawDescGZIP() []byte {
 
 var file_admin_asset_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_admin_asset_proto_goTypes = []any{
-	(*PresignAssetRequest)(nil),  // 0: kirby.admin.v1.PresignAssetRequest
-	(*PresignAssetReply)(nil),    // 1: kirby.admin.v1.PresignAssetReply
-	(*CompleteAssetRequest)(nil), // 2: kirby.admin.v1.CompleteAssetRequest
-	(*CompleteAssetReply)(nil),   // 3: kirby.admin.v1.CompleteAssetReply
-	nil,                          // 4: kirby.admin.v1.PresignAssetReply.HeadersEntry
-	nil,                          // 5: kirby.admin.v1.PresignAssetReply.FormFieldsEntry
-	(*common.Asset)(nil),         // 6: kirby.common.v1.Asset
+	(*PresignAssetRequest)(nil),   // 0: kirby.admin.v1.PresignAssetRequest
+	(*PresignAssetReply)(nil),     // 1: kirby.admin.v1.PresignAssetReply
+	(*CompleteAssetRequest)(nil),  // 2: kirby.admin.v1.CompleteAssetRequest
+	(*CompleteAssetReply)(nil),    // 3: kirby.admin.v1.CompleteAssetReply
+	nil,                           // 4: kirby.admin.v1.PresignAssetReply.HeadersEntry
+	nil,                           // 5: kirby.admin.v1.PresignAssetReply.FormFieldsEntry
+	(*timestamppb.Timestamp)(nil), // 6: google.protobuf.Timestamp
+	(*common.Asset)(nil),          // 7: kirby.common.v1.Asset
 }
 var file_admin_asset_proto_depIdxs = []int32{
 	4, // 0: kirby.admin.v1.PresignAssetReply.headers:type_name -> kirby.admin.v1.PresignAssetReply.HeadersEntry
-	5, // 1: kirby.admin.v1.PresignAssetReply.form_fields:type_name -> kirby.admin.v1.PresignAssetReply.FormFieldsEntry
-	6, // 2: kirby.admin.v1.CompleteAssetReply.asset:type_name -> kirby.common.v1.Asset
-	0, // 3: kirby.admin.v1.AssetService.PresignAsset:input_type -> kirby.admin.v1.PresignAssetRequest
-	2, // 4: kirby.admin.v1.AssetService.CompleteAsset:input_type -> kirby.admin.v1.CompleteAssetRequest
-	1, // 5: kirby.admin.v1.AssetService.PresignAsset:output_type -> kirby.admin.v1.PresignAssetReply
-	3, // 6: kirby.admin.v1.AssetService.CompleteAsset:output_type -> kirby.admin.v1.CompleteAssetReply
-	5, // [5:7] is the sub-list for method output_type
-	3, // [3:5] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	6, // 1: kirby.admin.v1.PresignAssetReply.expires_at:type_name -> google.protobuf.Timestamp
+	5, // 2: kirby.admin.v1.PresignAssetReply.form_fields:type_name -> kirby.admin.v1.PresignAssetReply.FormFieldsEntry
+	7, // 3: kirby.admin.v1.CompleteAssetReply.asset:type_name -> kirby.common.v1.Asset
+	0, // 4: kirby.admin.v1.AssetService.PresignAsset:input_type -> kirby.admin.v1.PresignAssetRequest
+	2, // 5: kirby.admin.v1.AssetService.CompleteAsset:input_type -> kirby.admin.v1.CompleteAssetRequest
+	1, // 6: kirby.admin.v1.AssetService.PresignAsset:output_type -> kirby.admin.v1.PresignAssetReply
+	3, // 7: kirby.admin.v1.AssetService.CompleteAsset:output_type -> kirby.admin.v1.CompleteAssetReply
+	6, // [6:8] is the sub-list for method output_type
+	4, // [4:6] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_admin_asset_proto_init() }

@@ -29,7 +29,8 @@ describe('installation API', () => {
   it('creates the administrator anonymously without swallowing conflicts', async () => {
     const administrator = {
       username: 'owner',
-      display_name: '管理员',
+      nickname: '管理员',
+ email: 'owner@example.com',
       password: 'long-initial-password',
     }
     const conflict = new Error('already initialized')

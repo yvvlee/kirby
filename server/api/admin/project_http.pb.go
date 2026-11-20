@@ -10,6 +10,7 @@ import (
 	context "context"
 	http "github.com/go-kratos/kratos/v2/transport/http"
 	binding "github.com/go-kratos/kratos/v2/transport/http/binding"
+	emptypb "google.golang.org/protobuf/types/known/emptypb"
 )
 
 // This is a compile-time assertion to ensure that this generated file
@@ -20,12 +21,14 @@ var _ = binding.EncodeURL
 const _ = http.SupportPackageIsVersion1
 
 const OperationProjectServiceCreateProject = "/kirby.admin.v1.ProjectService/CreateProject"
+const OperationProjectServiceDeleteProject = "/kirby.admin.v1.ProjectService/DeleteProject"
 const OperationProjectServiceListProject = "/kirby.admin.v1.ProjectService/ListProject"
 const OperationProjectServiceProjectDetail = "/kirby.admin.v1.ProjectService/ProjectDetail"
 const OperationProjectServiceUpdateProject = "/kirby.admin.v1.ProjectService/UpdateProject"
 
 type ProjectServiceHTTPServer interface {
 	CreateProject(context.Context, *CreateProjectRequest) (*ProjectReply, error)
+	DeleteProject(context.Context, *ProjectIDRequest) (*emptypb.Empty, error)
 	ListProject(context.Context, *ListProjectRequest) (*ListProjectReply, error)
 	ProjectDetail(context.Context, *ProjectIDRequest) (*ProjectReply, error)
 	UpdateProject(context.Context, *UpdateProjectRequest) (*ProjectReply, error)
@@ -33,10 +36,33 @@ type ProjectServiceHTTPServer interface {
 
 func RegisterProjectServiceHTTPServer(s *http.Server, srv ProjectServiceHTTPServer) {
 	r := s.Route("/")
+	r.DELETE("/admin/projects/{id}", _ProjectService_DeleteProject0_HTTP_Handler(srv))
 	r.POST("/admin/projects", _ProjectService_CreateProject0_HTTP_Handler(srv))
 	r.PUT("/admin/projects/{id}", _ProjectService_UpdateProject0_HTTP_Handler(srv))
 	r.GET("/admin/projects", _ProjectService_ListProject0_HTTP_Handler(srv))
 	r.GET("/admin/projects/{id}", _ProjectService_ProjectDetail0_HTTP_Handler(srv))
+}
+
+func _ProjectService_DeleteProject0_HTTP_Handler(srv ProjectServiceHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in ProjectIDRequest
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindVars(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationProjectServiceDeleteProject)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.DeleteProject(ctx, req.(*ProjectIDRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*emptypb.Empty)
+		return ctx.Result(200, reply)
+	}
 }
 
 func _ProjectService_CreateProject0_HTTP_Handler(srv ProjectServiceHTTPServer) func(ctx http.Context) error {
@@ -129,6 +155,7 @@ func _ProjectService_ProjectDetail0_HTTP_Handler(srv ProjectServiceHTTPServer) f
 
 type ProjectServiceHTTPClient interface {
 	CreateProject(ctx context.Context, req *CreateProjectRequest, opts ...http.CallOption) (rsp *ProjectReply, err error)
+	DeleteProject(ctx context.Context, req *ProjectIDRequest, opts ...http.CallOption) (rsp *emptypb.Empty, err error)
 	ListProject(ctx context.Context, req *ListProjectRequest, opts ...http.CallOption) (rsp *ListProjectReply, err error)
 	ProjectDetail(ctx context.Context, req *ProjectIDRequest, opts ...http.CallOption) (rsp *ProjectReply, err error)
 	UpdateProject(ctx context.Context, req *UpdateProjectRequest, opts ...http.CallOption) (rsp *ProjectReply, err error)
@@ -149,6 +176,19 @@ func (c *ProjectServiceHTTPClientImpl) CreateProject(ctx context.Context, in *Cr
 	opts = append(opts, http.Operation(OperationProjectServiceCreateProject))
 	opts = append(opts, http.PathTemplate(pattern))
 	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *ProjectServiceHTTPClientImpl) DeleteProject(ctx context.Context, in *ProjectIDRequest, opts ...http.CallOption) (*emptypb.Empty, error) {
+	var out emptypb.Empty
+	pattern := "/admin/projects/{id}"
+	path := binding.EncodeURL(pattern, in, true)
+	opts = append(opts, http.Operation(OperationProjectServiceDeleteProject))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "DELETE", path, nil, &out, opts...)
 	if err != nil {
 		return nil, err
 	}

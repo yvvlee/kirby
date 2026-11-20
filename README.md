@@ -1,19 +1,19 @@
 # Kirby
 
 Kirby is a standalone configuration platform. One deployment manages multiple
-environments. Administrators use one login, while roles and permissions are
-assigned separately in each environment.
+projects, each containing independent environments. Users have one login and
+a fixed role in each project. Each environment grants permissions to those roles.
 
 The repository contains:
 
 - a React 19 and TypeScript administration application;
-- an HTTP management API protected by administrator JWTs;
-- HTTP and gRPC runtime APIs protected by project-level API keys;
+- an HTTP management API protected by user JWTs;
+- HTTP and gRPC runtime APIs protected by environment-bound API keys;
 - a stateless Go backend backed by MySQL or PostgreSQL, Redis, and S3-compatible storage.
 
 Kirby does not use Nacos. It does not include approval, reward, or legacy data
-migration features. The server initializes model tables and built-in
-permissions and roles from embedded SQL on the first startup. JWT signing keys
+migration features. The server initializes model tables and system settings from embedded SQL on
+the first startup. Self-registration is disabled by default. JWT signing keys
 and the API-key pepper are generated in the database and loaded into memory at
 startup. No signing keys or browser-origin allowlist need to be configured.
 New installations have no default administrator or password; create the first
@@ -70,16 +70,16 @@ The credentials below are only for local development:
 mode: single
 http:
   address: "127.0.0.1:8080"
-  timeout: 2m
+  timeout: 120000
 grpc:
   address: "127.0.0.1:9090"
-  timeout: 10s
+  timeout: 10000
 database:
   driver: mysql
   dsn: "kirby:kirby-local-password@tcp(127.0.0.1:3306)/kirby?charset=utf8mb4&parseTime=true&loc=UTC"
   max_open_conns: 20
   max_idle_conns: 5
-  conn_max_lifetime: 5m
+  conn_max_lifetime: 300000
 cache:
   driver: redis
   redis:
@@ -90,8 +90,8 @@ cache:
     key_prefix: "kirby-local:"
 jwt:
   issuer: kirby-local
-  access_ttl: 15m
-  refresh_ttl: 168h
+  access_ttl: 900000
+  refresh_ttl: 604800000
 object_storage:
   driver: local
   local: {directory: "../.local/objects"}
@@ -126,7 +126,7 @@ KIRBY_DEV_API_TARGET=http://127.0.0.1:8080 npm run dev
 ```
 
 Open `http://localhost:15173/setup` from a controlled network or ingress. Enter
-a username, display name, and a password of at least 12 bytes. After
+a username, nickname, email, and a password of 8–32 visible ASCII bytes using at least two of letters, digits, and symbols. After
 creating the system administrator, continue to `/login`. Setup stays closed
 once completed, even if every system administrator is later deleted.
 
@@ -138,10 +138,10 @@ For automation or account recovery, create an administrator with the CLI:
 ```sh
 cd server
 go run . create-admin --config ../.local/config.yaml \
-  --username admin --display-name Administrator
+  --username admin --nickname Administrator --email admin@example.com
 ```
 
-The command prompts twice for a password of at least 12 bytes. The first
+The command prompts twice for a password of 8–32 visible ASCII bytes using at least two of letters, digits, and symbols. The first
 CLI-created administrator also closes the web setup page.
 
 For a disposable automated run against the same existing containers, use:
@@ -161,21 +161,21 @@ shown once. Replace the deliberately invalid placeholder in these examples.
 HTTP:
 
 ```sh
-curl -H 'X-Kirby-API-Key: kirby_pk_INVALID.EXAMPLE_ONLY' \
-  'http://127.0.0.1:8080/v1/config?project=demo&key=Greeting'
+curl -H 'X-Kirby-API-Key: YOUR_API_KEY' \
+  'http://127.0.0.1:8080/api/v1/config?key=Greeting'
 ```
 
 gRPC:
 
 ```sh
 grpcurl -plaintext \
-  -H 'x-kirby-api-key: kirby_pk_INVALID.EXAMPLE_ONLY' \
-  -d '{"project":"demo","key":"Greeting"}' \
+  -H 'x-kirby-api-key: YOUR_API_KEY' \
+  -d '{"key":"Greeting"}' \
   127.0.0.1:9090 kirby.runtime.v1.Api/Config
 ```
 
-The key is bound to one project. A key cannot read another project even when
-the request changes the `project` parameter.
+The API key determines both the project and environment. Requests only specify
+the configuration key and cannot select another project or environment.
 
 ## Documentation
 
@@ -186,6 +186,7 @@ the request changes the `project` parameter.
 - [Project API keys](docs/api-key.md)
 - [Snapshot import and export](docs/import-export.md)
 - [Development](docs/development.md)
+- [Simplified Chinese and English](docs/internationalization.md)
 - [Operations](docs/operations.md)
 - [Releasing](docs/releasing.md)
 - [Security design](docs/security.md)
@@ -199,3 +200,5 @@ dependencies.
 
 Kirby is released under the MIT License. Dependency notices and software bills
 of materials are in `NOTICE`, `docs/third-party-licenses.md`, and `dist/sbom`.
+
+Project environments own independent configuration data and API keys. Runtime requests select the environment through the API key. See [project and environment isolation](docs/environment-isolation.md).

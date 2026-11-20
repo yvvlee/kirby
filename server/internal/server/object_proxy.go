@@ -28,7 +28,7 @@ func newObjectStorageProxy(cfg conf.S3Config, logger *infra.Logger) (http.Handle
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	proxy.ErrorHandler = func(writer http.ResponseWriter, request *http.Request, _ error) {
 		logger.Errorw("msg", "object storage proxy request failed", "request_id", request.Header.Get(requestIDHeader), "method", request.Method, "path", request.URL.Path)
-		http.Error(writer, "object storage is unavailable", http.StatusBadGateway)
+		writeLocalizedHTTPError(writer, request, http.StatusBadGateway, "object storage is unavailable")
 	}
 	return proxy, prefix, nil
 }

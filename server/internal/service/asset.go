@@ -5,12 +5,14 @@ import (
 	"errors"
 
 	kratoshttp "github.com/go-kratos/kratos/v2/transport/http"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	adminv1 "github.com/yvvlee/kirby/server/api/admin"
 	commonv1 "github.com/yvvlee/kirby/server/api/common"
 	errorsv1 "github.com/yvvlee/kirby/server/api/errors"
 	authsession "github.com/yvvlee/kirby/server/internal/auth/session"
 	"github.com/yvvlee/kirby/server/internal/conf"
+	"github.com/yvvlee/kirby/server/internal/entity"
 	"github.com/yvvlee/kirby/server/internal/logic"
 )
 
@@ -42,7 +44,7 @@ func NewAssetService(cfg *conf.Config, logicLayer *logic.AssetLogic) (*AssetServ
 // Returns: a signed upload ticket.
 // Throws: an API error when authorization, validation, or storage fails.
 func (service *AssetService) PresignAsset(ctx context.Context, request *adminv1.PresignAssetRequest) (*adminv1.PresignAssetReply, error) {
-	ticket, err := service.assetLogic.Presign(ctx, logic.PresignInput{
+	ticket, err := service.assetLogic.Presign(ctx, &entity.PresignAssetParam{
 		EnvironmentID: request.GetEnvironmentId(),
 		ProjectID:     request.GetProjectId(),
 		Filename:      request.GetFilename(),
@@ -56,7 +58,7 @@ func (service *AssetService) PresignAsset(ctx context.Context, request *adminv1.
 		ObjectKey:    ticket.Key,
 		UploadUrl:    ticket.URL,
 		Headers:      ticket.Headers,
-		ExpiresAt:    ticket.ExpiresAt.Format("2006-01-02T15:04:05Z07:00"),
+		ExpiresAt:    timestamppb.New(ticket.ExpiresAt),
 		UploadMethod: ticket.Method,
 		FormFields:   ticket.FormFields,
 	}, nil

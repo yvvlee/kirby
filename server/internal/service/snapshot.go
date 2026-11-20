@@ -2,30 +2,26 @@ package service
 
 import (
 	"context"
-	"fmt"
 
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	adminv1 "github.com/yvvlee/kirby/server/api/admin"
 	commonv1 "github.com/yvvlee/kirby/server/api/common"
-	"github.com/yvvlee/kirby/server/internal/converter"
 	"github.com/yvvlee/kirby/server/internal/entity"
 	"github.com/yvvlee/kirby/server/internal/logic"
-	"github.com/yvvlee/kirby/server/internal/model"
 	"github.com/yvvlee/kirby/server/internal/permission"
 	"github.com/yvvlee/kirby/server/internal/repository"
-	"github.com/yvvlee/kirby/server/internal/util/safeint"
 )
 
 type snapshotLogic interface {
-	Create(ctx context.Context, actor permission.Actor, environmentID int64, input logic.SnapshotCreateInput) (*model.Snapshot, error)
+	Create(ctx context.Context, param *entity.CreateSnapshotParam) (*commonv1.Snapshot, error)
 	Preview(ctx context.Context, actor permission.Actor, environmentID, configID int64) (string, error)
 	Delete(ctx context.Context, actor permission.Actor, environmentID, snapshotID int64) error
-	Get(ctx context.Context, actor permission.Actor, environmentID, snapshotID int64) (*model.Snapshot, error)
-	Load(ctx context.Context, actor permission.Actor, environmentID, configID, snapshotID int64) (*model.Snapshot, error)
-	Current(ctx context.Context, actor permission.Actor, environmentID, configID int64) (*model.Snapshot, error)
-	Released(ctx context.Context, actor permission.Actor, environmentID, configID int64) (*model.Snapshot, error)
-	List(ctx context.Context, actor permission.Actor, environmentID int64, input logic.SnapshotListInput) (repository.PageResult[model.Snapshot], error)
+	Get(ctx context.Context, actor permission.Actor, environmentID, snapshotID int64) (*commonv1.Snapshot, error)
+	Load(ctx context.Context, param *entity.LoadSnapshotParam) (*commonv1.Snapshot, error)
+	Current(ctx context.Context, actor permission.Actor, environmentID, configID int64) (*commonv1.Snapshot, error)
+	Released(ctx context.Context, actor permission.Actor, environmentID, configID int64) (*commonv1.Snapshot, error)
+	List(ctx context.Context, param *entity.ListSnapshotParam) (repository.PageResult[*commonv1.SimpleSnapshot], error)
 }
 type SnapshotService struct{ snapshotLogic snapshotLogic }
 
@@ -50,13 +46,18 @@ func (s *SnapshotService) CreateSnapshot(ctx context.Context, request *adminv1.C
 	if err != nil {
 		return nil, apiError(err)
 	}
-	item, err := s.snapshotLogic.Create(ctx, actor, request.EnvironmentId, logic.SnapshotCreateInput{
-		ProjectID:   request.ProjectId,
-		ConfigID:    request.ConfigId,
-		Description: request.Description,
-		Tags:        request.Tags,
+	item, err := s.snapshotLogic.Create(ctx, &entity.CreateSnapshotParam{
+		Actor:         actor,
+		EnvironmentID: request.EnvironmentId,
+		ProjectID:     request.ProjectId,
+		ConfigID:      request.ConfigId,
+		Description:   request.Description,
+		Tags:          request.Tags,
 	})
-	return snapshotReply(item, err)
+	if err != nil {
+		return nil, apiError(err)
+	}
+	return &adminv1.SnapshotReply{Snapshot: item}, nil
 }
 
 // PreviewCreatingSnapshot maps the authenticated API request to the application operation.
@@ -103,7 +104,10 @@ func (s *SnapshotService) GetSnapshot(ctx context.Context, request *adminv1.Snap
 		return nil, apiError(err)
 	}
 	item, err := s.snapshotLogic.Get(ctx, actor, request.EnvironmentId, request.Id)
-	return snapshotReply(item, err)
+	if err != nil {
+		return nil, apiError(err)
+	}
+	return &adminv1.SnapshotReply{Snapshot: item}, nil
 }
 
 // LoadSnapshot maps the authenticated API request to the application operation.
@@ -116,8 +120,16 @@ func (s *SnapshotService) LoadSnapshot(ctx context.Context, request *adminv1.Loa
 	if err != nil {
 		return nil, apiError(err)
 	}
-	item, err := s.snapshotLogic.Load(ctx, actor, request.EnvironmentId, request.ConfigId, request.Id)
-	return snapshotReply(item, err)
+	item, err := s.snapshotLogic.Load(ctx, &entity.LoadSnapshotParam{
+		Actor:         actor,
+		EnvironmentID: request.EnvironmentId,
+		ConfigID:      request.ConfigId,
+		SnapshotID:    request.Id,
+	})
+	if err != nil {
+		return nil, apiError(err)
+	}
+	return &adminv1.SnapshotReply{Snapshot: item}, nil
 }
 
 // CurrentSnapshot maps the authenticated API request to the application operation.
@@ -131,7 +143,10 @@ func (s *SnapshotService) CurrentSnapshot(ctx context.Context, request *adminv1.
 		return nil, apiError(err)
 	}
 	item, err := s.snapshotLogic.Current(ctx, actor, request.EnvironmentId, request.ConfigId)
-	return snapshotReply(item, err)
+	if err != nil {
+		return nil, apiError(err)
+	}
+	return &adminv1.SnapshotReply{Snapshot: item}, nil
 }
 
 // ReleasedSnapshot maps the authenticated API request to the application operation.
@@ -145,7 +160,10 @@ func (s *SnapshotService) ReleasedSnapshot(ctx context.Context, request *adminv1
 		return nil, apiError(err)
 	}
 	item, err := s.snapshotLogic.Released(ctx, actor, request.EnvironmentId, request.ConfigId)
-	return snapshotReply(item, err)
+	if err != nil {
+		return nil, apiError(err)
+	}
+	return &adminv1.SnapshotReply{Snapshot: item}, nil
 }
 
 // ListSnapshot maps the authenticated API request to the application operation.
@@ -167,18 +185,13 @@ func (s *SnapshotService) ListSnapshot(ctx context.Context, request *adminv1.Lis
 			limit = *request.Page.Limit
 		}
 	}
-	offsetValue := (uint64(pageNumber) - 1) * uint64(limit)
-	offset, err := safeint.IntFromUint64(offsetValue)
-	if err != nil {
-		return nil, apiError(entity.Invalid("invalid page offset"))
-	}
-	pageLimit, err := safeint.IntFromUint32(limit)
-	if err != nil {
-		return nil, apiError(entity.Invalid("invalid page limit"))
-	}
-	page, err := s.snapshotLogic.List(ctx, actor, request.EnvironmentId, logic.SnapshotListInput{
-		ProjectID: request.ProjectId,
-		ConfigID:  request.ConfigId,
+	offset := int((uint64(pageNumber) - 1) * uint64(limit))
+	pageLimit := int(limit)
+	page, err := s.snapshotLogic.List(ctx, &entity.ListSnapshotParam{
+		Actor:         actor,
+		EnvironmentID: request.EnvironmentId,
+		ProjectID:     request.ProjectId,
+		ConfigID:      request.ConfigId,
 		Page: repository.PageRequest{
 			Offset: offset,
 			Limit:  pageLimit,
@@ -187,39 +200,14 @@ func (s *SnapshotService) ListSnapshot(ctx context.Context, request *adminv1.Lis
 	if err != nil {
 		return nil, apiError(err)
 	}
-	items := make([]*commonv1.SimpleSnapshot, 0, len(page.Items))
-	for index := range page.Items {
-		converted, err := converter.SimpleSnapshotToProto(&page.Items[index])
-		if err != nil {
-			return nil, apiError(err)
-		}
-		items = append(items, converted)
-	}
-	responseLimit, err := safeint.Uint32FromInt(page.Limit)
-	if err != nil {
-		return nil, apiError(fmt.Errorf("invalid snapshot page limit"))
-	}
-	total, err := safeint.Uint64FromInt64(page.Total)
-	if err != nil {
-		return nil, apiError(fmt.Errorf("invalid snapshot page total"))
-	}
+	responseLimit := uint32(page.Limit)
+	total := uint64(page.Total)
 	return &adminv1.ListSnapshotReply{
 		Page: &commonv1.Pagination{
 			Page:  pageNumber,
 			Limit: responseLimit,
 			Total: total,
 		},
-		List: items,
+		List: page.Items,
 	}, nil
-}
-
-func snapshotReply(item *model.Snapshot, err error) (*adminv1.SnapshotReply, error) {
-	if err != nil {
-		return nil, apiError(err)
-	}
-	converted, err := converter.SnapshotToProto(item)
-	if err != nil {
-		return nil, apiError(err)
-	}
-	return &adminv1.SnapshotReply{Snapshot: converted}, nil
 }

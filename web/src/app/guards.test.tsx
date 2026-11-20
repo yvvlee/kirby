@@ -100,6 +100,26 @@ describe('route guards', () => {
     expect(screen.getByText('没有权限')).toBeInTheDocument()
   })
 
+  it('rejects a system administrator without project membership', () => {
+    render(
+      <AuthContext.Provider value={authValue({ systemAdmin: true })}>
+        <EnvironmentContext.Provider value={environmentValue()}>
+          <MemoryRouter initialEntries={['/projects']}>
+            <Routes>
+              <Route path="/403" element={<span>没有权限</span>} />
+              <Route
+                path="/projects"
+                element={<PermissionGate permission="project:read"><span>项目</span></PermissionGate>}
+              />
+            </Routes>
+          </MemoryRouter>
+        </EnvironmentContext.Provider>
+      </AuthContext.Provider>,
+    )
+
+    expect(screen.getByText('没有权限')).toBeInTheDocument()
+  })
+
   it('allows a declared backend permission', () => {
     render(
       <AuthContext.Provider value={authValue()}>

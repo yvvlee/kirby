@@ -9,55 +9,44 @@ import (
 	"github.com/yvvlee/kirby/server/internal/model"
 )
 
-// Scope builders keep ownership and soft-delete predicates together. Selecting
-// only the primary alias prevents joined columns from overwriting model fields.
+// Scope builders keep ownership predicates together. Selecting only the
+// primary alias prevents joined columns from overwriting model fields.
 func configScope(engine *lorm.Engine) *lorm.SelectStmt[*model.Config] {
 	return engine.Query[*model.Config]().Select("c.*").From("configs AS c").
-		InnerJoin("projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL").
-		InnerJoin("environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL").
-		Where(builder.IsNull("c.deleted_at"))
+		InnerJoin("projects AS p ON p.id = c.project_id").
+		InnerJoin("environments AS e ON e.project_id = p.id AND e.id = c.environment_id")
 }
 
 func structureScope(engine *lorm.Engine) *lorm.SelectStmt[*model.Structure] {
-	return structureScopeIncludingDeleted(engine).Where(builder.IsNull("s.deleted_at"))
-}
-
-func structureScopeIncludingDeleted(engine *lorm.Engine) *lorm.SelectStmt[*model.Structure] {
 	return engine.Query[*model.Structure]().Select("s.*").From("structures AS s").
-		InnerJoin("configs AS c ON c.id = s.config_id AND c.deleted_at IS NULL").
-		InnerJoin("projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL").
-		InnerJoin("environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL")
+		InnerJoin("configs AS c ON c.id = s.config_id").
+		InnerJoin("projects AS p ON p.id = c.project_id").
+		InnerJoin("environments AS e ON e.project_id = p.id AND e.id = c.environment_id")
 }
 
 func enumScope(engine *lorm.Engine) *lorm.SelectStmt[*model.ConfigEnum] {
-	return enumScopeIncludingDeleted(engine).Where(builder.IsNull("e.deleted_at"))
-}
-
-func enumScopeIncludingDeleted(engine *lorm.Engine) *lorm.SelectStmt[*model.ConfigEnum] {
 	return engine.Query[*model.ConfigEnum]().Select("e.*").From("config_enums AS e").
-		InnerJoin("configs AS c ON c.id = e.config_id AND c.deleted_at IS NULL").
-		InnerJoin("projects AS p ON p.id = c.project_id AND p.deleted_at IS NULL").
-		InnerJoin("environments AS env ON env.project_id = p.id AND env.deleted_at IS NULL")
+		InnerJoin("configs AS c ON c.id = e.config_id").
+		InnerJoin("projects AS p ON p.id = c.project_id").
+		InnerJoin("environments AS env ON env.project_id = p.id AND env.id = c.environment_id")
 }
 
 func snapshotScope(engine *lorm.Engine) *lorm.SelectStmt[*model.Snapshot] {
 	return engine.Query[*model.Snapshot]().Select("s.*").From("snapshots AS s").
-		InnerJoin("configs AS c ON c.id = s.config_id AND c.project_id = s.project_id AND c.deleted_at IS NULL").
-		InnerJoin("projects AS p ON p.id = s.project_id AND p.deleted_at IS NULL").
-		InnerJoin("environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL").
-		Where(builder.IsNull("s.deleted_at"))
+		InnerJoin("configs AS c ON c.id = s.config_id AND c.project_id = s.project_id").
+		InnerJoin("projects AS p ON p.id = s.project_id").
+		InnerJoin("environments AS e ON e.project_id = p.id AND e.id = c.environment_id")
 }
 
 func projectScope(engine *lorm.Engine) *lorm.SelectStmt[*model.Project] {
 	return engine.Query[*model.Project]().Select("p.*").From("projects AS p").
-		InnerJoin("environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL").
-		Where(builder.IsNull("p.deleted_at"))
+		InnerJoin("environments AS e ON e.project_id = p.id")
 }
 
 func apiKeyScope(engine *lorm.Engine) *lorm.SelectStmt[*model.ProjectAPIKey] {
 	return engine.Query[*model.ProjectAPIKey]().Select("k.*").From("project_api_keys AS k").
-		InnerJoin("projects AS p ON p.id = k.project_id AND p.deleted_at IS NULL").
-		InnerJoin("environments AS e ON e.project_id = p.id AND e.deleted_at IS NULL")
+		InnerJoin("projects AS p ON p.id = k.project_id").
+		InnerJoin("environments AS e ON e.project_id = p.id AND e.id = k.environment_id")
 }
 
 func lockScopedProject(ctx context.Context, engine *lorm.Engine, environmentID, projectID int64) error {

@@ -1,3 +1,4 @@
+import { localizedError } from '@/i18n/errors'
 import type {
   ModelField,
   SchemaNode,
@@ -25,10 +26,9 @@ const BASE_TYPES = new Set([
 
 function assertBaseType(baseType: string): void {
   if (!BASE_TYPES.has(baseType)) {
-    throw new Error(`不支持的基本类型: ${baseType}`)
+    throw localizedError('不支持的基本类型: {{type}}', { type: baseType })
   }
 }
-
 function getBaseTypeDefault(baseType: string): unknown {
   assertBaseType(baseType)
   if (baseType === 'Int' || baseType === 'Decimal') {
@@ -84,7 +84,7 @@ function isValidBaseType(baseType: string, value: unknown): boolean {
     case 'File':
       return typeof value === 'string'
     default:
-      throw new Error(`不支持的基本类型: ${baseType}`)
+      throw localizedError('不支持的基本类型: {{type}}', { type: baseType })
   }
 }
 
@@ -94,7 +94,7 @@ function validateResources(resources: SchemaResources): SchemaResources {
     !Array.isArray(resources.models) ||
     !Array.isArray(resources.enums)
   ) {
-    throw new TypeError('normalizeData 需要显式传入 { models, enums }')
+    throw localizedError('normalizeData 需要显式传入 { models, enums }', {}, TypeError)
   }
   return resources
 }
@@ -125,11 +125,11 @@ function getChildren(
   }
   const model = resources.models.find((item) => item.key === structureKey)
   if (!model) {
-    throw new Error(`找不到模型: ${structureKey}`)
+    throw localizedError('找不到模型: {{key}}', { key: structureKey })
   }
   const fields = model.fields ?? model.children
   if (!Array.isArray(fields)) {
-    throw new TypeError(`模型 ${structureKey} 缺少 fields`)
+    throw localizedError('模型 {{key}} 缺少 fields', { key: structureKey }, TypeError)
   }
   return fields.map(fieldToNode)
 }
@@ -148,9 +148,7 @@ function normalizeObject(
   structureKey: string,
 ): Record<string, unknown> {
   if (modelPath.includes(structureKey)) {
-    throw new Error(
-      `检测到递归模型: ${[...modelPath, structureKey].join(' -> ')}`,
-    )
+    throw localizedError('检测到递归模型: {{path}}', { path: [...modelPath, structureKey].join(' -> ') })
   }
   const source = asRecord(data)
   const result: Record<string, unknown> = {}
@@ -188,7 +186,7 @@ function normalizeValue(
 
   if (enumKey) {
     if (!resources.enums.some((item) => item.key === enumKey)) {
-      throw new Error(`找不到枚举: ${enumKey}`)
+      throw localizedError('找不到枚举: {{key}}', { key: enumKey })
     }
     if (node.value.isArray) {
       return Array.isArray(data)
@@ -226,7 +224,7 @@ export function normalizeData(
     return normalizeValue(node, undefined, checkedResources, [])
   }
   if (typeof data !== 'string') {
-    throw new TypeError('normalizeData 的 data 必须是 JSON 字符串')
+    throw localizedError('normalizeData 的 data 必须是 JSON 字符串', {}, TypeError)
   }
 
   let parsed: unknown
@@ -234,10 +232,13 @@ export function normalizeData(
     parsed = JSON.parse(data) as unknown
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error)
-    throw new SyntaxError(
-      `配置项 ${node.value.key} 的值不是合法 JSON: ${message}`,
-      { cause: error },
+    const localized = localizedError(
+      '配置项 {{key}} 的值不是合法 JSON: {{message}}',
+      { key: node.value.key, message },
+      SyntaxError,
     )
+    Object.defineProperty(localized, 'cause', { value: error })
+    throw localized
   }
   return normalizeValue(node, parsed, checkedResources, [])
 }

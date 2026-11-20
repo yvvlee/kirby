@@ -23,7 +23,7 @@ func TestDatabaseLogsRetainFailuresWithoutCredentialArguments(t *testing.T) {
 	defer logger.Close()
 	cfg := conf.DatabaseConfig{
 		Driver: conf.DatabaseDriverMySQL,
-		DSN:    conf.NewSecret(t.Name()),
+		DSN:    t.Name(),
 	}
 	engine, err := connectEngine(context.Background(), cfg, "sqlmock", NewDBLogger(logger))
 	require.NoError(t, err)

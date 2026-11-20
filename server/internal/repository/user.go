@@ -24,7 +24,7 @@ const managedUserListLimit = 1000
 
 type ManagedUserUpdate struct {
 	UserID      int64
-	DisplayName string
+	Nickname    string
 	SystemAdmin bool
 	Version     int64
 	ActorID     int64
@@ -39,16 +39,18 @@ type ManagedUserStatusUpdate struct {
 
 // UserRepository 读写本地管理员身份。
 type UserRepository interface {
+	FindByIdentifier(ctx context.Context, identifier string) (*model.User, error)
+	CreateRegisteredUser(ctx context.Context, user *model.User) error
 	ListManagedUsers(ctx context.Context) ([]model.User, error)
-	CreateManagedUser(ctx context.Context, user *model.User, audit *model.AuditLog) error
+	CreateManagedUser(ctx context.Context, user *model.User, audit *model.AuditLog) (rowsAffected int64, err error)
 	UpdateManagedUser(ctx context.Context, update ManagedUserUpdate, audit *model.AuditLog) (*model.User, error)
-	UpdateManagedPassword(ctx context.Context, userID int64, passwordHash string, actorID int64, audit *model.AuditLog) error
+	UpdateManagedPassword(ctx context.Context, userID int64, passwordHash string, actorID int64, audit *model.AuditLog) (rowsAffected int64, err error)
 	UpdateManagedStatus(ctx context.Context, update ManagedUserStatusUpdate, audit *model.AuditLog) (*model.User, error)
 	FindByUsername(ctx context.Context, username string) (*model.User, error)
 	GetByID(ctx context.Context, userID int64) (*model.User, error)
-	UpdatePasswordHash(ctx context.Context, userID int64, previousHash, nextHash string) error
+	UpdatePasswordHash(ctx context.Context, userID int64, previousHash, nextHash string) (rowsAffected int64, err error)
 	ListEnvironments(ctx context.Context, user *model.User) ([]model.Environment, error)
-	CreateOrPromoteSystemAdmin(ctx context.Context, username, displayName, passwordHash string) (*model.User, bool, error)
+	CreateOrPromoteSystemAdmin(ctx context.Context, username, nickname, passwordHash, email string) (*model.User, bool, error)
 }
 
 type UserRepositoryImpl struct {
@@ -75,7 +77,7 @@ func NewUserRepository(storage *infra.Storage) *UserRepositoryImpl {
 // Throws: none; failures are returned as errors.
 func (r *UserRepositoryImpl) ListManagedUsers(ctx context.Context) ([]model.User, error) {
 	fields := new(model.User).LormCols()
-	users, err := r.Engine.Query[*model.User]().Where(builder.IsNull(fields.DeletedAt())).
+	users, err := r.Engine.Query[*model.User]().
 		Asc(fields.ID()).Limit(managedUserListLimit + 1).Find(ctx)
 	if err != nil {
 		return nil, WrapDatabaseError(err)
@@ -89,15 +91,29 @@ func (r *UserRepositoryImpl) ListManagedUsers(ctx context.Context) ([]model.User
 // CreateManagedUser creates an enabled account and records its mandatory audit in the same transaction.
 //
 // Parameters: ctx carries the transaction; user supplies account fields; audit records the actor and action.
-// Returns: nil after both writes succeed, or a duplicate-username, database, or audit error.
+// Returns: rowsAffected from the account insert after both writes succeed, or a duplicate-username, database, or audit error.
 // Throws: none; failures are returned as errors.
-func (r *UserRepositoryImpl) CreateManagedUser(ctx context.Context, user *model.User, audit *model.AuditLog) error {
-	user.PrepareInsert()
+func (r *UserRepositoryImpl) CreateManagedUser(ctx context.Context, user *model.User, audit *model.AuditLog) (rowsAffected int64, err error) {
+	user.Enabled = true
+	rowsAffected, err = r.Insert(ctx, user)
+	if err != nil {
+		err = classifyKeyWriteError("user", err)
+		return
+	}
+	err = r.recordAudit(ctx, user.ID, audit)
+	return
+}
+
+// CreateRegisteredUser persists a public account without granting administrator authority.
+// Parameters: ctx carries cancellation and identity; remaining inputs identify the requested operation.
+// Returns: the operation result or an error when authorization or persistence fails.
+// Throws: none; errors are returned.
+func (r *UserRepositoryImpl) CreateRegisteredUser(ctx context.Context, user *model.User) error {
 	user.Enabled = true
 	if _, err := r.Insert(ctx, user); err != nil {
 		return classifyKeyWriteError("user", err)
 	}
-	return r.recordAudit(ctx, user.ID, audit)
+	return nil
 }
 
 // UpdateManagedUser updates a matching user version without removing the final enabled administrator.
@@ -119,9 +135,9 @@ func (r *UserRepositoryImpl) UpdateManagedUser(ctx context.Context, update Manag
 			return nil, err
 		}
 	}
-	now := time.Now().UTC()
+	now := time.Now()
 	if err := r.updateManagedUser(ctx, update.UserID, map[string]any{
-		fields.DisplayName():   update.DisplayName,
+		fields.Nickname():      update.Nickname,
 		fields.IsSystemAdmin(): update.SystemAdmin,
 		fields.UpdatedBy():     update.ActorID,
 		fields.UpdatedAt():     now,
@@ -129,7 +145,7 @@ func (r *UserRepositoryImpl) UpdateManagedUser(ctx context.Context, update Manag
 	}, update.Version); err != nil {
 		return nil, err
 	}
-	user.DisplayName = update.DisplayName
+	user.Nickname = update.Nickname
 	user.IsSystemAdmin = update.SystemAdmin
 	user.UpdatedBy = update.ActorID
 	user.UpdatedAt = now
@@ -143,17 +159,16 @@ func (r *UserRepositoryImpl) UpdateManagedUser(ctx context.Context, update Manag
 // UpdateManagedPassword changes a password and revokes all refresh sessions atomically.
 //
 // Parameters: ctx carries the transaction; userID identifies the account; passwordHash is the prepared hash; actorID identifies the editor; audit records the change.
-// Returns: nil after the password, session revocations, and audit succeed, or a missing-user or persistence error.
+// Returns: rowsAffected from the guarded password write after session revocations and the audit succeed, or a missing-user or persistence error.
 // Throws: none; failures are returned as errors.
-func (r *UserRepositoryImpl) UpdateManagedPassword(ctx context.Context, userID int64, passwordHash string, actorID int64, audit *model.AuditLog) error {
+func (r *UserRepositoryImpl) UpdateManagedPassword(ctx context.Context, userID int64, passwordHash string, actorID int64, audit *model.AuditLog) (rowsAffected int64, err error) {
 	fields := new(model.User).LormCols()
 	user, err := lockManagedUser(ctx, r.Engine, userID)
 	if err != nil {
-		return err
+		return
 	}
-	now := time.Now().UTC()
-	affected, err := r.Engine.Update[*model.User]().ID(userID).
-		Where(builder.IsNull(new(model.User).LormCols().DeletedAt())).
+	now := time.Now()
+	rowsAffected, err = r.Engine.Update[*model.User]().ID(userID).
 		Set(fields.Version(), builder.Expr("version + 1")).
 		SetMap(map[string]any{
 			fields.PasswordHash():       passwordHash,
@@ -162,15 +177,18 @@ func (r *UserRepositoryImpl) UpdateManagedPassword(ctx context.Context, userID i
 			fields.UpdatedAt():          now,
 		}).Exec(ctx)
 	if err != nil {
-		return WrapDatabaseError(err)
+		err = WrapDatabaseError(err)
+		return
 	}
-	if affected != 1 {
-		return ErrUserVersionConflict
+	if rowsAffected != 1 {
+		err = ErrUserVersionConflict
+		return
 	}
-	if err := revokeUserSessions(ctx, r.Engine, user.ID, now); err != nil {
-		return err
+	if err = revokeUserSessions(ctx, r.Engine, user.ID, now); err != nil {
+		return
 	}
-	return r.recordAudit(ctx, userID, audit)
+	err = r.recordAudit(ctx, userID, audit)
+	return
 }
 
 // UpdateManagedStatus changes a matching user version and revokes sessions when disabling the account.
@@ -192,7 +210,7 @@ func (r *UserRepositoryImpl) UpdateManagedStatus(ctx context.Context, update Man
 			return nil, err
 		}
 	}
-	now := time.Now().UTC()
+	now := time.Now()
 	if err := r.updateManagedUser(ctx, update.UserID, map[string]any{
 		fields.Enabled():   update.Enabled,
 		fields.UpdatedBy(): update.ActorID,
@@ -202,7 +220,7 @@ func (r *UserRepositoryImpl) UpdateManagedStatus(ctx context.Context, update Man
 		return nil, err
 	}
 	if !update.Enabled {
-		if err := revokeUserSessions(ctx, r.Engine, user.ID, time.Now().UTC()); err != nil {
+		if err := revokeUserSessions(ctx, r.Engine, user.ID, time.Now()); err != nil {
 			return nil, err
 		}
 	}
@@ -219,7 +237,6 @@ func (r *UserRepositoryImpl) UpdateManagedStatus(ctx context.Context, update Man
 func (r *UserRepositoryImpl) updateManagedUser(ctx context.Context, userID int64, values map[string]any, expectedVersion int64) error {
 	fields := new(model.User).LormCols()
 	affected, err := r.Engine.Update[*model.User]().ID(userID).
-		Where(builder.IsNull(new(model.User).LormCols().DeletedAt())).
 		Where(builder.Eq{fields.Version(): expectedVersion}).
 		SetMap(values).Exec(ctx)
 	if err != nil {
@@ -249,7 +266,7 @@ func revokeUserSessions(ctx context.Context, engine *lorm.Engine, userID int64, 
 
 func lockManagedUser(ctx context.Context, engine *lorm.Engine, userID int64) (*model.User, error) {
 	user, found, err := engine.Query[*model.User]().ID(userID).
-		Where(builder.IsNull(new(model.User).LormCols().DeletedAt())).Suffix("FOR UPDATE").Get(ctx)
+		Suffix("FOR UPDATE").Get(ctx)
 	if err != nil {
 		return nil, WrapDatabaseError(err)
 	}
@@ -261,12 +278,9 @@ func lockManagedUser(ctx context.Context, engine *lorm.Engine, userID int64) (*m
 
 func ensureLastSystemAdmin(ctx context.Context, engine *lorm.Engine, removingID int64) error {
 	fields := new(model.User).LormCols()
-	admins, err := engine.Query[*model.User]().Where(builder.And{
-		builder.Eq{
-			fields.Enabled():       true,
-			fields.IsSystemAdmin(): true,
-		},
-		builder.IsNull(fields.DeletedAt()),
+	admins, err := engine.Query[*model.User]().Where(builder.Eq{
+		fields.Enabled():       true,
+		fields.IsSystemAdmin(): true,
 	}).Asc(fields.ID()).Limit(2).Suffix("FOR UPDATE").Find(ctx)
 	if err != nil {
 		return WrapDatabaseError(err)
@@ -274,18 +288,15 @@ func ensureLastSystemAdmin(ctx context.Context, engine *lorm.Engine, removingID 
 	return ensureSystemAdminSurvives(modelValues(admins), removingID)
 }
 
-// FindByUsername excludes deleted accounts from credential lookup.
+// FindByUsername loads the account for credential lookup.
 //
 // Parameters: ctx controls the read; username is the normalized login name.
-// Returns: the live account, ErrUserNotFound, or a database error.
+// Returns: the account, ErrUserNotFound, or a database error.
 // Throws: none; failures are returned as errors.
 func (r *UserRepositoryImpl) FindByUsername(ctx context.Context, username string) (*model.User, error) {
 	fields := new(model.User).LormCols()
-	user, found, err := r.Engine.Query[*model.User]().Where(builder.And{
-		builder.Eq{
-			fields.Username(): username,
-		},
-		builder.IsNull(fields.DeletedAt()),
+	user, found, err := r.Engine.Query[*model.User]().Where(builder.Eq{
+		fields.Username(): username,
 	}).Get(ctx)
 	if err != nil {
 		return nil, WrapDatabaseError(err)
@@ -296,14 +307,33 @@ func (r *UserRepositoryImpl) FindByUsername(ctx context.Context, username string
 	return user, nil
 }
 
-// GetByID excludes deleted accounts so successful callers receive a usable record.
+// FindByIdentifier loads an account by its username or email.
+// FindByIdentifier resolves username or normalized email to the same account.
+// Parameters: ctx carries cancellation and identity; remaining inputs identify the requested operation.
+// Returns: the operation result or an error when authorization or persistence fails.
+// Throws: none; errors are returned.
+func (r *UserRepositoryImpl) FindByIdentifier(ctx context.Context, identifier string) (*model.User, error) {
+	fields := new(model.User).LormCols()
+	user, found, err := r.Engine.Query[*model.User]().Where(builder.Or{
+		builder.Eq{fields.Username(): identifier},
+		builder.Eq{fields.Email(): identifier},
+	}).Get(ctx)
+	if err != nil {
+		return nil, WrapDatabaseError(err)
+	}
+	if !found {
+		return nil, ErrUserNotFound
+	}
+	return user, nil
+}
+
+// GetByID loads a usable account record.
 //
 // Parameters: ctx controls the read; userID identifies the account.
-// Returns: the live account, ErrUserNotFound, or a database error.
+// Returns: the account, ErrUserNotFound, or a database error.
 // Throws: none; failures are returned as errors.
 func (r *UserRepositoryImpl) GetByID(ctx context.Context, userID int64) (*model.User, error) {
-	user, found, err := r.Engine.Query[*model.User]().ID(userID).
-		Where(builder.IsNull(new(model.User).LormCols().DeletedAt())).Get(ctx)
+	user, found, err := r.Engine.Query[*model.User]().ID(userID).Get(ctx)
 	if err != nil {
 		return nil, WrapDatabaseError(err)
 	}
@@ -316,12 +346,11 @@ func (r *UserRepositoryImpl) GetByID(ctx context.Context, userID int64) (*model.
 // UpdatePasswordHash guards a password-hash upgrade against concurrent account changes.
 //
 // Parameters: ctx controls the write; userID identifies the account; previousHash is the expected hash; nextHash is the replacement.
-// Returns: nil after one enabled account changes, ErrUserVersionConflict, or a database error.
+// Returns: rowsAffected after one enabled account changes, ErrUserVersionConflict, or a database error.
 // Throws: none; failures are returned as errors.
-func (r *UserRepositoryImpl) UpdatePasswordHash(ctx context.Context, userID int64, previousHash, nextHash string) error {
+func (r *UserRepositoryImpl) UpdatePasswordHash(ctx context.Context, userID int64, previousHash, nextHash string) (rowsAffected int64, err error) {
 	fields := new(model.User).LormCols()
-	affected, err := r.Engine.Update[*model.User]().ID(userID).
-		Where(builder.IsNull(new(model.User).LormCols().DeletedAt())).
+	rowsAffected, err = r.Engine.Update[*model.User]().ID(userID).
 		Where(builder.Eq{
 			fields.PasswordHash(): previousHash,
 			fields.Enabled():      true,
@@ -329,15 +358,17 @@ func (r *UserRepositoryImpl) UpdatePasswordHash(ctx context.Context, userID int6
 		Set(fields.Version(), builder.Expr("version + 1")).
 		SetMap(map[string]any{
 			fields.PasswordHash(): nextHash,
-			fields.UpdatedAt():    time.Now().UTC(),
+			fields.UpdatedAt():    time.Now(),
 		}).Exec(ctx)
 	if err != nil {
-		return WrapDatabaseError(err)
+		err = WrapDatabaseError(err)
+		return
 	}
-	if affected != 1 {
-		return ErrUserVersionConflict
+	if rowsAffected != 1 {
+		err = ErrUserVersionConflict
+		return
 	}
-	return nil
+	return
 }
 
 // ListEnvironments returns enabled environments visible to the current account.
@@ -347,16 +378,10 @@ func (r *UserRepositoryImpl) UpdatePasswordHash(ctx context.Context, userID int6
 // Throws: none; failures are returned as errors.
 func (r *UserRepositoryImpl) ListEnvironments(ctx context.Context, user *model.User) ([]model.Environment, error) {
 	query := r.Engine.Query[*model.Environment]().From("environments e").Select("e.*").
-		Where(builder.And{
-			builder.Eq{
-				"e.enabled": true,
-			},
-			builder.IsNull("e.deleted_at"),
+		Where(builder.Eq{
+			"e.enabled": true,
 		}).Asc("e.id")
-	if !user.IsSystemAdmin {
-		query.InnerJoin("user_environment_roles uer ON uer.environment_id = e.id").
-			Where(builder.Eq{"uer.user_id": user.ID}).Distinct()
-	}
+	query.InnerJoin("project_members pm ON pm.project_id = e.project_id").Where(builder.Eq{"pm.user_id": user.ID})
 	environments, err := query.Find(ctx)
 	if err != nil {
 		return nil, WrapDatabaseError(err)
@@ -364,54 +389,54 @@ func (r *UserRepositoryImpl) ListEnvironments(ctx context.Context, user *model.U
 	return modelValues(environments), nil
 }
 
-// CreateOrPromoteSystemAdmin creates or restores a CLI administrator and revokes sessions when restoring an existing account.
+// CreateOrPromoteSystemAdmin creates or promotes a CLI administrator and revokes sessions when promoting an existing account.
 //
-// Parameters: ctx carries the provisioning transaction; username selects the account; displayName and passwordHash replace its credentials.
+// Parameters: ctx carries the provisioning transaction; username selects the account; nickname and passwordHash replace its credentials.
 // Returns: the persisted administrator, whether it was newly inserted, and any write or session-revocation error.
 // Throws: none; failures are returned as errors.
-func (r *UserRepositoryImpl) CreateOrPromoteSystemAdmin(ctx context.Context, username, displayName, passwordHash string) (*model.User, bool, error) {
+func (r *UserRepositoryImpl) CreateOrPromoteSystemAdmin(ctx context.Context, username, nickname, passwordHash, email string) (*model.User, bool, error) {
 	user, found, err := r.Engine.Query[*model.User]().
 		Where(builder.Eq{new(model.User).LormCols().Username(): username}).Suffix("FOR UPDATE").Get(ctx)
 	if err != nil {
 		return nil, false, WrapDatabaseError(err)
 	}
 	if !found {
-		created, err := r.createSystemAdmin(ctx, username, displayName, passwordHash)
+		created, err := r.createSystemAdmin(ctx, username, nickname, passwordHash, email)
 		return created, true, err
 	}
-	if err := r.promoteSystemAdmin(ctx, user, displayName, passwordHash); err != nil {
+	if err := r.promoteSystemAdmin(ctx, user, nickname, passwordHash, email); err != nil {
 		return nil, false, err
 	}
 	promoted, err := r.GetByID(ctx, user.ID)
 	return promoted, false, err
 }
 
-func (r *UserRepositoryImpl) createSystemAdmin(ctx context.Context, username, displayName, passwordHash string) (*model.User, error) {
+func (r *UserRepositoryImpl) createSystemAdmin(ctx context.Context, username, nickname, passwordHash, email string) (*model.User, error) {
 	user := &model.User{
 		Username:           username,
-		DisplayName:        displayName,
+		Email:              email,
+		Nickname:           nickname,
 		PasswordHash:       passwordHash,
 		Enabled:            true,
 		IsSystemAdmin:      true,
 		MustChangePassword: false,
 	}
-	user.PrepareInsert()
 	if _, err := r.Insert(ctx, user); err != nil {
 		return nil, classifyKeyWriteError("user", err)
 	}
 	return user, nil
 }
 
-func (r *UserRepositoryImpl) promoteSystemAdmin(ctx context.Context, user *model.User, displayName, passwordHash string) error {
+func (r *UserRepositoryImpl) promoteSystemAdmin(ctx context.Context, user *model.User, nickname, passwordHash, email string) error {
 	fields := new(model.User).LormCols()
-	now := time.Now().UTC()
+	now := time.Now()
 	affected, err := r.Engine.Update[*model.User]().ID(user.ID).SetMap(map[string]any{
-		fields.DisplayName():        displayName,
+		fields.Nickname():           nickname,
+		fields.Email():              email,
 		fields.PasswordHash():       passwordHash,
 		fields.Enabled():            true,
 		fields.IsSystemAdmin():      true,
 		fields.MustChangePassword(): false,
-		fields.DeletedAt():          nil,
 		fields.UpdatedAt():          now,
 		fields.Version():            user.Version + 1,
 	}).Exec(ctx)
@@ -427,7 +452,7 @@ func (r *UserRepositoryImpl) promoteSystemAdmin(ctx context.Context, user *model
 func ensureSystemAdminSurvives(admins []model.User, removingID int64) error {
 	remaining := 0
 	for _, admin := range admins {
-		if admin.ID != removingID && admin.Enabled && admin.IsSystemAdmin && admin.DeletedAt == nil {
+		if admin.ID != removingID && admin.Enabled && admin.IsSystemAdmin {
 			remaining++
 		}
 	}
@@ -439,7 +464,8 @@ func ensureSystemAdminSurvives(admins []model.User, removingID int64) error {
 
 func (r *UserRepositoryImpl) recordAudit(ctx context.Context, userID int64, audit *model.AuditLog) error {
 	audit.ResourceID = strconv.FormatInt(userID, 10)
-	return r.audits.RecordSystem(ctx, audit)
+	_, err := r.audits.RecordSystem(ctx, audit)
+	return err
 }
 
 var _ UserRepository = (*UserRepositoryImpl)(nil)

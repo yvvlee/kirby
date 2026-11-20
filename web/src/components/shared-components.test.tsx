@@ -1,9 +1,10 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import { StrictMode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
 const monaco = vi.hoisted(() => {
   const subscription = { dispose: vi.fn() }
+  const contentListener = vi.fn()
   const model = {
     dispose: vi.fn(),
     setValue: vi.fn(),
@@ -12,7 +13,10 @@ const monaco = vi.hoisted(() => {
     dispose: vi.fn(),
     getModel: vi.fn(() => model),
     getValue: vi.fn(() => 'initial'),
-    onDidChangeModelContent: vi.fn(() => subscription),
+    onDidChangeModelContent: vi.fn((listener?: () => void) => {
+      if (listener) contentListener.mockImplementation(listener)
+      return subscription
+    }),
     setValue: vi.fn(),
     updateOptions: vi.fn(),
   }
@@ -20,15 +24,28 @@ const monaco = vi.hoisted(() => {
     dispose: vi.fn(),
     setModel: vi.fn(),
   }
+  const create = vi.fn<
+    (container: HTMLElement, options: unknown) => typeof editorInstance
+  >(() => editorInstance)
+  const createDiffEditor = vi.fn(() => diffInstance)
+  const createModel = vi.fn(() => ({ ...model, dispose: vi.fn(), setValue: vi.fn() }))
   return {
     subscription,
     model,
     editorInstance,
     diffInstance,
-    create: vi.fn(() => editorInstance),
-    createDiffEditor: vi.fn(() => diffInstance),
-    createModel: vi.fn(() => ({ ...model, dispose: vi.fn(), setValue: vi.fn() })),
+    create,
+    createDiffEditor,
+    createModel,
     setModelLanguage: vi.fn(),
+    api: {
+      editor: {
+        create,
+        createDiffEditor,
+        createModel,
+      },
+    },
+    contentListener,
   }
 })
 
@@ -41,6 +58,9 @@ vi.mock('monaco-editor/editor/editor.api', () => ({
   },
 }))
 vi.mock('monaco-editor/language/json/monaco.contribution', () => ({}))
+vi.mock('./MonacoEditor/monaco-runtime', () => ({
+  loadMonaco: vi.fn(() => Promise.resolve(monaco.api)),
+}))
 vi.mock('./MonacoEditor/monaco-environment', () => ({
   configureMonacoWorkers: vi.fn(),
 }))
@@ -51,9 +71,12 @@ import DiffEditor from './DiffEditor/DiffEditor'
 import EnvironmentTag from './EnvironmentTag/EnvironmentTag'
 import { environmentTagStyle } from './EnvironmentTag/environment-tag-style'
 import MonacoEditor from './MonacoEditor/MonacoEditor'
+import LanguageSwitcher from '@/i18n/LanguageSwitcher'
+import { setLocale } from '@/i18n'
+import { loadMonaco } from './MonacoEditor/monaco-runtime'
 
 describe('shared editor lifecycle', () => {
-  it('disposes Monaco instances and subscriptions in Strict Mode', () => {
+  it('disposes Monaco instances and subscriptions in Strict Mode', async () => {
     const rendered = render(
       <StrictMode>
         <MonacoEditor value="initial" />
@@ -61,16 +84,67 @@ describe('shared editor lifecycle', () => {
       </StrictMode>,
     )
 
+    await waitFor(() => expect(monaco.create).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(monaco.createDiffEditor).toHaveBeenCalledTimes(1))
+
     rendered.unmount()
 
-    expect(monaco.create).toHaveBeenCalledTimes(2)
-    expect(monaco.createDiffEditor).toHaveBeenCalledTimes(2)
-    expect(monaco.subscription.dispose).toHaveBeenCalledTimes(2)
-    expect(monaco.editorInstance.dispose).toHaveBeenCalledTimes(2)
-    expect(monaco.diffInstance.dispose).toHaveBeenCalledTimes(2)
+    expect(monaco.create).toHaveBeenCalledTimes(1)
+    expect(monaco.createDiffEditor).toHaveBeenCalledTimes(1)
+    expect(monaco.subscription.dispose).toHaveBeenCalledTimes(1)
+    expect(monaco.editorInstance.dispose).toHaveBeenCalledTimes(1)
+    expect(monaco.diffInstance.dispose).toHaveBeenCalledTimes(1)
     const createdModels = monaco.createModel.mock.results.map((result) => result.value)
-    expect(createdModels).toHaveLength(4)
+    expect(createdModels).toHaveLength(2)
     createdModels.forEach((model) => expect(model.dispose).toHaveBeenCalled())
+  })
+
+  it('recreates Monaco in the selected locale without losing current input', async () => {
+    setLocale('zh-CN')
+    const rendered = render(
+      <>
+        <LanguageSwitcher />
+        <MonacoEditor value="initial" onChange={() => undefined} />
+      </>,
+    )
+    await waitFor(() => expect(monaco.create).toHaveBeenCalled())
+
+    monaco.editorInstance.getValue.mockReturnValue('edited text')
+    monaco.contentListener()
+    setLocale('en-US')
+
+    await waitFor(() => expect(monaco.create.mock.calls.at(-1)?.[1]).toMatchObject({
+      value: 'edited text',
+    }))
+    rendered.unmount()
+    setLocale('zh-CN')
+  })
+
+  it('ignores stale locale loads after a rapid switch and keeps edited text', async () => {
+    setLocale('zh-CN')
+    let resolveInitial: (value: unknown) => void = () => undefined
+    const initialLoad = new Promise<unknown>((resolve) => {
+      resolveInitial = resolve
+    })
+    vi.mocked(loadMonaco).mockImplementationOnce(
+      () => initialLoad as ReturnType<typeof loadMonaco>,
+    )
+
+    const rendered = render(<MonacoEditor value="initial" onChange={() => undefined} />)
+    setLocale('en-US')
+    await waitFor(() => expect(monaco.create).toHaveBeenCalled())
+    monaco.editorInstance.getValue.mockReturnValue('edited before locale settled')
+    monaco.contentListener()
+    setLocale('zh-CN')
+    await waitFor(() => expect(monaco.create.mock.calls.at(-1)?.[1]).toMatchObject({
+      value: 'edited before locale settled',
+    }))
+
+    const callsBeforeStaleLoad = monaco.create.mock.calls.length
+    resolveInitial(monaco.api)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(monaco.create).toHaveBeenCalledTimes(callsBeforeStaleLoad)
+    rendered.unmount()
   })
 })
 

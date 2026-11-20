@@ -28,8 +28,6 @@ func (m *Environment) LormFieldPtr(name string) any {
 		return &m.Meta.UpdatedAt
 	case "version":
 		return &m.Meta.Version
-	case "deleted_at":
-		return &m.Meta.DeletedAt
 	case "project_id":
 		return &m.ProjectID
 	case "key":
@@ -53,7 +51,6 @@ func (m *Environment) LormScan(row lorm.RowScanner) error {
 		&m.Meta.CreatedAt,
 		&m.Meta.UpdatedAt,
 		&m.Meta.Version,
-		&m.Meta.DeletedAt,
 		&m.ProjectID,
 		&m.Key,
 		&m.Name,
@@ -76,11 +73,6 @@ func (m *Environment) LormFieldValue(name string) any {
 		return m.Meta.UpdatedAt
 	case "version":
 		return m.Meta.Version
-	case "deleted_at":
-		if m.Meta.DeletedAt == nil {
-			return nil
-		}
-		return m.Meta.DeletedAt
 	case "project_id":
 		return m.ProjectID
 	case "key":
@@ -103,7 +95,6 @@ var _lorm_file_identity_2de96e48_Environment_insert_columns = []string{
 	"created_at",
 	"updated_at",
 	"version",
-	"deleted_at",
 	"project_id",
 	"key",
 	"name",
@@ -117,7 +108,6 @@ var _lorm_file_identity_2de96e48_Environment_insert_columns_without_auto_increme
 	"created_at",
 	"updated_at",
 	"version",
-	"deleted_at",
 	"project_id",
 	"key",
 	"name",
@@ -150,7 +140,6 @@ func (m *Environment) LormBeforeInsert(now lorm.HookTime) lorm.InsertPlan {
 	plan.Values = append(plan.Values, m.Meta.CreatedAt)
 	plan.Values = append(plan.Values, m.Meta.UpdatedAt)
 	plan.Values = append(plan.Values, m.Meta.Version)
-	plan.Values = append(plan.Values, m.Meta.DeletedAt)
 	plan.Values = append(plan.Values, m.ProjectID)
 	plan.Values = append(plan.Values, m.Key)
 	plan.Values = append(plan.Values, m.Name)
@@ -173,7 +162,7 @@ func (m *Environment) LormAfterInsert(result lorm.InsertResult) error {
 
 func (m *Environment) LormBeforeUpdate(now lorm.HookTime) (lorm.UpdatePlan, error) {
 	plan := lorm.UpdatePlan{
-		Set:       make([]lorm.ColumnValue, 0, 12),
+		Set:       make([]lorm.ColumnValue, 0, 11),
 		Where:     make([]lorm.ColumnValue, 0),
 		Increment: make([]string, 0, 1),
 	}
@@ -184,7 +173,6 @@ func (m *Environment) LormBeforeUpdate(now lorm.HookTime) (lorm.UpdatePlan, erro
 	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "updated_at", Value: now})
 	plan.Where = append(plan.Where, lorm.ColumnValue{Column: "version", Value: m.Meta.Version})
 	plan.Increment = append(plan.Increment, "version")
-	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "deleted_at", Value: m.Meta.DeletedAt})
 	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "project_id", Value: m.ProjectID})
 	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "key", Value: m.Key})
 	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "name", Value: m.Name})
@@ -260,12 +248,6 @@ func (f *Environment_Fields) Version() string {
 	}
 	return f.alias + ".version"
 }
-func (f *Environment_Fields) DeletedAt() string {
-	if f.alias == "" {
-		return "deleted_at"
-	}
-	return f.alias + ".deleted_at"
-}
 func (f *Environment_Fields) ProjectID() string {
 	if f.alias == "" {
 		return "project_id"
@@ -305,12 +287,236 @@ func (f *Environment_Fields) All() []string {
 		f.CreatedAt(),
 		f.UpdatedAt(),
 		f.Version(),
-		f.DeletedAt(),
 		f.ProjectID(),
 		f.Key(),
 		f.Name(),
 		f.Description(),
 		f.Enabled(),
+	}
+}
+
+func (m *ApplicationSettings) TableName() string {
+	return "application_settings"
+}
+
+func (m *ApplicationSettings) New() lorm.Model {
+	return new(ApplicationSettings)
+}
+
+func (m *ApplicationSettings) LormFieldPtr(name string) any {
+	switch name {
+	case "id":
+		return &m.Meta.ID
+	case "created_by":
+		return &m.Meta.CreatedBy
+	case "updated_by":
+		return &m.Meta.UpdatedBy
+	case "created_at":
+		return &m.Meta.CreatedAt
+	case "updated_at":
+		return &m.Meta.UpdatedAt
+	case "version":
+		return &m.Meta.Version
+	case "allow_self_registration":
+		return &m.AllowSelfRegistration
+	default:
+		return nil
+	}
+}
+
+func (m *ApplicationSettings) LormScan(row lorm.RowScanner) error {
+	return row.Scan(
+		&m.Meta.ID,
+		&m.Meta.CreatedBy,
+		&m.Meta.UpdatedBy,
+		&m.Meta.CreatedAt,
+		&m.Meta.UpdatedAt,
+		&m.Meta.Version,
+		&m.AllowSelfRegistration,
+	)
+}
+
+func (m *ApplicationSettings) LormFieldValue(name string) any {
+	switch name {
+	case "id":
+		return m.Meta.ID
+	case "created_by":
+		return m.Meta.CreatedBy
+	case "updated_by":
+		return m.Meta.UpdatedBy
+	case "created_at":
+		return m.Meta.CreatedAt
+	case "updated_at":
+		return m.Meta.UpdatedAt
+	case "version":
+		return m.Meta.Version
+	case "allow_self_registration":
+		return m.AllowSelfRegistration
+	default:
+		return nil
+	}
+}
+
+var _lorm_file_identity_2de96e48_ApplicationSettings_insert_columns = []string{
+	"id",
+	"created_by",
+	"updated_by",
+	"created_at",
+	"updated_at",
+	"version",
+	"allow_self_registration",
+}
+
+var _lorm_file_identity_2de96e48_ApplicationSettings_insert_columns_without_auto_increment = []string{
+	"created_by",
+	"updated_by",
+	"created_at",
+	"updated_at",
+	"version",
+	"allow_self_registration",
+}
+
+func (m *ApplicationSettings) LormBeforeInsert(now lorm.HookTime) lorm.InsertPlan {
+	if m.Meta.CreatedAt.IsZero() {
+		m.Meta.CreatedAt = now
+	}
+	if m.Meta.UpdatedAt.IsZero() {
+		m.Meta.UpdatedAt = now
+	}
+
+	plan := lorm.InsertPlan{}
+	plan.AutoIncrementColumn = "id"
+	plan.AutoIncrementZero = m.Meta.ID == 0
+	if plan.AutoIncrementZero {
+		plan.Columns = _lorm_file_identity_2de96e48_ApplicationSettings_insert_columns_without_auto_increment
+	} else {
+		plan.Columns = _lorm_file_identity_2de96e48_ApplicationSettings_insert_columns
+	}
+	plan.Values = make([]any, 0, len(plan.Columns))
+	if !plan.AutoIncrementZero {
+		plan.Values = append(plan.Values, m.Meta.ID)
+	}
+	plan.Values = append(plan.Values, m.Meta.CreatedBy)
+	plan.Values = append(plan.Values, m.Meta.UpdatedBy)
+	plan.Values = append(plan.Values, m.Meta.CreatedAt)
+	plan.Values = append(plan.Values, m.Meta.UpdatedAt)
+	plan.Values = append(plan.Values, m.Meta.Version)
+	plan.Values = append(plan.Values, m.AllowSelfRegistration)
+	return plan
+}
+
+func (m *ApplicationSettings) LormAfterInsert(result lorm.InsertResult) error {
+	if !result.HasGeneratedID {
+		return nil
+	}
+	value, err := lorm.ConvertGeneratedSignedID[int64](result.GeneratedID, 64, "ApplicationSettings.Meta.ID")
+	if err != nil {
+		return err
+	}
+	m.Meta.ID = value
+	return nil
+}
+
+func (m *ApplicationSettings) LormBeforeUpdate(now lorm.HookTime) (lorm.UpdatePlan, error) {
+	plan := lorm.UpdatePlan{
+		Set:       make([]lorm.ColumnValue, 0, 7),
+		Where:     make([]lorm.ColumnValue, 0),
+		Increment: make([]string, 0, 1),
+	}
+	plan.PrimaryKeyCount++
+	plan.Where = append(plan.Where, lorm.ColumnValue{Column: "id", Value: m.Meta.ID})
+	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "created_by", Value: m.Meta.CreatedBy})
+	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "updated_by", Value: m.Meta.UpdatedBy})
+	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "updated_at", Value: now})
+	plan.Where = append(plan.Where, lorm.ColumnValue{Column: "version", Value: m.Meta.Version})
+	plan.Increment = append(plan.Increment, "version")
+	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "allow_self_registration", Value: m.AllowSelfRegistration})
+	return plan, nil
+}
+
+func (m *ApplicationSettings) LormAfterUpdate(now lorm.HookTime, rowsAffected int64) {
+	if rowsAffected <= 0 {
+		return
+	}
+	{
+		m.Meta.UpdatedAt = now
+	}
+	m.Meta.Version++
+}
+
+var _lorm_file_identity_2de96e48_ApplicationSettings_model_descriptor = _lorm_file_identity_2de96e48_model_descriptor_map["ApplicationSettings"]
+
+func (m *ApplicationSettings) LormModelDescriptor() *lorm.ModelDescriptor {
+	return _lorm_file_identity_2de96e48_ApplicationSettings_model_descriptor
+}
+
+func (m *ApplicationSettings) LormCols() *ApplicationSettings_Fields {
+	return default_ApplicationSettings_Fields
+}
+
+var default_ApplicationSettings_Fields = new(ApplicationSettings_Fields)
+
+type ApplicationSettings_Fields struct {
+	alias string
+}
+
+func (f *ApplicationSettings_Fields) WithAlias(alias string) *ApplicationSettings_Fields {
+	o := new(ApplicationSettings_Fields)
+	o.alias = alias
+	return o
+}
+func (f *ApplicationSettings_Fields) ID() string {
+	if f.alias == "" {
+		return "id"
+	}
+	return f.alias + ".id"
+}
+func (f *ApplicationSettings_Fields) CreatedBy() string {
+	if f.alias == "" {
+		return "created_by"
+	}
+	return f.alias + ".created_by"
+}
+func (f *ApplicationSettings_Fields) UpdatedBy() string {
+	if f.alias == "" {
+		return "updated_by"
+	}
+	return f.alias + ".updated_by"
+}
+func (f *ApplicationSettings_Fields) CreatedAt() string {
+	if f.alias == "" {
+		return "created_at"
+	}
+	return f.alias + ".created_at"
+}
+func (f *ApplicationSettings_Fields) UpdatedAt() string {
+	if f.alias == "" {
+		return "updated_at"
+	}
+	return f.alias + ".updated_at"
+}
+func (f *ApplicationSettings_Fields) Version() string {
+	if f.alias == "" {
+		return "version"
+	}
+	return f.alias + ".version"
+}
+func (f *ApplicationSettings_Fields) AllowSelfRegistration() string {
+	if f.alias == "" {
+		return "allow_self_registration"
+	}
+	return f.alias + ".allow_self_registration"
+}
+
+func (f *ApplicationSettings_Fields) All() []string {
+	return []string{
+		f.ID(),
+		f.CreatedBy(),
+		f.UpdatedBy(),
+		f.CreatedAt(),
+		f.UpdatedAt(),
+		f.Version(),
+		f.AllowSelfRegistration(),
 	}
 }
 
@@ -336,12 +542,12 @@ func (m *User) LormFieldPtr(name string) any {
 		return &m.Meta.UpdatedAt
 	case "version":
 		return &m.Meta.Version
-	case "deleted_at":
-		return &m.Meta.DeletedAt
 	case "username":
 		return &m.Username
-	case "display_name":
-		return &m.DisplayName
+	case "email":
+		return &m.Email
+	case "nickname":
+		return &m.Nickname
 	case "password_hash":
 		return &m.PasswordHash
 	case "enabled":
@@ -365,9 +571,9 @@ func (m *User) LormScan(row lorm.RowScanner) error {
 		&m.Meta.CreatedAt,
 		&m.Meta.UpdatedAt,
 		&m.Meta.Version,
-		&m.Meta.DeletedAt,
 		&m.Username,
-		&m.DisplayName,
+		&m.Email,
+		&m.Nickname,
 		&m.PasswordHash,
 		&m.Enabled,
 		&m.IsSystemAdmin,
@@ -390,15 +596,12 @@ func (m *User) LormFieldValue(name string) any {
 		return m.Meta.UpdatedAt
 	case "version":
 		return m.Meta.Version
-	case "deleted_at":
-		if m.Meta.DeletedAt == nil {
-			return nil
-		}
-		return m.Meta.DeletedAt
 	case "username":
 		return m.Username
-	case "display_name":
-		return m.DisplayName
+	case "email":
+		return m.Email
+	case "nickname":
+		return m.Nickname
 	case "password_hash":
 		return m.PasswordHash
 	case "enabled":
@@ -424,9 +627,9 @@ var _lorm_file_identity_2de96e48_User_insert_columns = []string{
 	"created_at",
 	"updated_at",
 	"version",
-	"deleted_at",
 	"username",
-	"display_name",
+	"email",
+	"nickname",
 	"password_hash",
 	"enabled",
 	"is_system_admin",
@@ -440,9 +643,9 @@ var _lorm_file_identity_2de96e48_User_insert_columns_without_auto_increment = []
 	"created_at",
 	"updated_at",
 	"version",
-	"deleted_at",
 	"username",
-	"display_name",
+	"email",
+	"nickname",
 	"password_hash",
 	"enabled",
 	"is_system_admin",
@@ -475,9 +678,9 @@ func (m *User) LormBeforeInsert(now lorm.HookTime) lorm.InsertPlan {
 	plan.Values = append(plan.Values, m.Meta.CreatedAt)
 	plan.Values = append(plan.Values, m.Meta.UpdatedAt)
 	plan.Values = append(plan.Values, m.Meta.Version)
-	plan.Values = append(plan.Values, m.Meta.DeletedAt)
 	plan.Values = append(plan.Values, m.Username)
-	plan.Values = append(plan.Values, m.DisplayName)
+	plan.Values = append(plan.Values, m.Email)
+	plan.Values = append(plan.Values, m.Nickname)
 	plan.Values = append(plan.Values, m.PasswordHash)
 	plan.Values = append(plan.Values, m.Enabled)
 	plan.Values = append(plan.Values, m.IsSystemAdmin)
@@ -511,9 +714,9 @@ func (m *User) LormBeforeUpdate(now lorm.HookTime) (lorm.UpdatePlan, error) {
 	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "updated_at", Value: now})
 	plan.Where = append(plan.Where, lorm.ColumnValue{Column: "version", Value: m.Meta.Version})
 	plan.Increment = append(plan.Increment, "version")
-	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "deleted_at", Value: m.Meta.DeletedAt})
 	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "username", Value: m.Username})
-	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "display_name", Value: m.DisplayName})
+	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "email", Value: m.Email})
+	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "nickname", Value: m.Nickname})
 	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "password_hash", Value: m.PasswordHash})
 	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "enabled", Value: m.Enabled})
 	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "is_system_admin", Value: m.IsSystemAdmin})
@@ -589,23 +792,23 @@ func (f *User_Fields) Version() string {
 	}
 	return f.alias + ".version"
 }
-func (f *User_Fields) DeletedAt() string {
-	if f.alias == "" {
-		return "deleted_at"
-	}
-	return f.alias + ".deleted_at"
-}
 func (f *User_Fields) Username() string {
 	if f.alias == "" {
 		return "username"
 	}
 	return f.alias + ".username"
 }
-func (f *User_Fields) DisplayName() string {
+func (f *User_Fields) Email() string {
 	if f.alias == "" {
-		return "display_name"
+		return "email"
 	}
-	return f.alias + ".display_name"
+	return f.alias + ".email"
+}
+func (f *User_Fields) Nickname() string {
+	if f.alias == "" {
+		return "nickname"
+	}
+	return f.alias + ".nickname"
 }
 func (f *User_Fields) PasswordHash() string {
 	if f.alias == "" {
@@ -646,943 +849,14 @@ func (f *User_Fields) All() []string {
 		f.CreatedAt(),
 		f.UpdatedAt(),
 		f.Version(),
-		f.DeletedAt(),
 		f.Username(),
-		f.DisplayName(),
+		f.Email(),
+		f.Nickname(),
 		f.PasswordHash(),
 		f.Enabled(),
 		f.IsSystemAdmin(),
 		f.MustChangePassword(),
 		f.LastLoginAt(),
-	}
-}
-
-func (m *Role) TableName() string {
-	return "roles"
-}
-
-func (m *Role) New() lorm.Model {
-	return new(Role)
-}
-
-func (m *Role) LormFieldPtr(name string) any {
-	switch name {
-	case "id":
-		return &m.Meta.ID
-	case "created_by":
-		return &m.Meta.CreatedBy
-	case "updated_by":
-		return &m.Meta.UpdatedBy
-	case "created_at":
-		return &m.Meta.CreatedAt
-	case "updated_at":
-		return &m.Meta.UpdatedAt
-	case "version":
-		return &m.Meta.Version
-	case "deleted_at":
-		return &m.Meta.DeletedAt
-	case "key":
-		return &m.Key
-	case "name":
-		return &m.Name
-	case "description":
-		return &m.Description
-	case "builtin":
-		return &m.Builtin
-	default:
-		return nil
-	}
-}
-
-func (m *Role) LormScan(row lorm.RowScanner) error {
-	return row.Scan(
-		&m.Meta.ID,
-		&m.Meta.CreatedBy,
-		&m.Meta.UpdatedBy,
-		&m.Meta.CreatedAt,
-		&m.Meta.UpdatedAt,
-		&m.Meta.Version,
-		&m.Meta.DeletedAt,
-		&m.Key,
-		&m.Name,
-		&m.Description,
-		&m.Builtin,
-	)
-}
-
-func (m *Role) LormFieldValue(name string) any {
-	switch name {
-	case "id":
-		return m.Meta.ID
-	case "created_by":
-		return m.Meta.CreatedBy
-	case "updated_by":
-		return m.Meta.UpdatedBy
-	case "created_at":
-		return m.Meta.CreatedAt
-	case "updated_at":
-		return m.Meta.UpdatedAt
-	case "version":
-		return m.Meta.Version
-	case "deleted_at":
-		if m.Meta.DeletedAt == nil {
-			return nil
-		}
-		return m.Meta.DeletedAt
-	case "key":
-		return m.Key
-	case "name":
-		return m.Name
-	case "description":
-		return m.Description
-	case "builtin":
-		return m.Builtin
-	default:
-		return nil
-	}
-}
-
-var _lorm_file_identity_2de96e48_Role_insert_columns = []string{
-	"id",
-	"created_by",
-	"updated_by",
-	"created_at",
-	"updated_at",
-	"version",
-	"deleted_at",
-	"key",
-	"name",
-	"description",
-	"builtin",
-}
-
-var _lorm_file_identity_2de96e48_Role_insert_columns_without_auto_increment = []string{
-	"created_by",
-	"updated_by",
-	"created_at",
-	"updated_at",
-	"version",
-	"deleted_at",
-	"key",
-	"name",
-	"description",
-	"builtin",
-}
-
-func (m *Role) LormBeforeInsert(now lorm.HookTime) lorm.InsertPlan {
-	if m.Meta.CreatedAt.IsZero() {
-		m.Meta.CreatedAt = now
-	}
-	if m.Meta.UpdatedAt.IsZero() {
-		m.Meta.UpdatedAt = now
-	}
-
-	plan := lorm.InsertPlan{}
-	plan.AutoIncrementColumn = "id"
-	plan.AutoIncrementZero = m.Meta.ID == 0
-	if plan.AutoIncrementZero {
-		plan.Columns = _lorm_file_identity_2de96e48_Role_insert_columns_without_auto_increment
-	} else {
-		plan.Columns = _lorm_file_identity_2de96e48_Role_insert_columns
-	}
-	plan.Values = make([]any, 0, len(plan.Columns))
-	if !plan.AutoIncrementZero {
-		plan.Values = append(plan.Values, m.Meta.ID)
-	}
-	plan.Values = append(plan.Values, m.Meta.CreatedBy)
-	plan.Values = append(plan.Values, m.Meta.UpdatedBy)
-	plan.Values = append(plan.Values, m.Meta.CreatedAt)
-	plan.Values = append(plan.Values, m.Meta.UpdatedAt)
-	plan.Values = append(plan.Values, m.Meta.Version)
-	plan.Values = append(plan.Values, m.Meta.DeletedAt)
-	plan.Values = append(plan.Values, m.Key)
-	plan.Values = append(plan.Values, m.Name)
-	plan.Values = append(plan.Values, m.Description)
-	plan.Values = append(plan.Values, m.Builtin)
-	return plan
-}
-
-func (m *Role) LormAfterInsert(result lorm.InsertResult) error {
-	if !result.HasGeneratedID {
-		return nil
-	}
-	value, err := lorm.ConvertGeneratedSignedID[int64](result.GeneratedID, 64, "Role.Meta.ID")
-	if err != nil {
-		return err
-	}
-	m.Meta.ID = value
-	return nil
-}
-
-func (m *Role) LormBeforeUpdate(now lorm.HookTime) (lorm.UpdatePlan, error) {
-	plan := lorm.UpdatePlan{
-		Set:       make([]lorm.ColumnValue, 0, 11),
-		Where:     make([]lorm.ColumnValue, 0),
-		Increment: make([]string, 0, 1),
-	}
-	plan.PrimaryKeyCount++
-	plan.Where = append(plan.Where, lorm.ColumnValue{Column: "id", Value: m.Meta.ID})
-	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "created_by", Value: m.Meta.CreatedBy})
-	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "updated_by", Value: m.Meta.UpdatedBy})
-	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "updated_at", Value: now})
-	plan.Where = append(plan.Where, lorm.ColumnValue{Column: "version", Value: m.Meta.Version})
-	plan.Increment = append(plan.Increment, "version")
-	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "deleted_at", Value: m.Meta.DeletedAt})
-	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "key", Value: m.Key})
-	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "name", Value: m.Name})
-	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "description", Value: m.Description})
-	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "builtin", Value: m.Builtin})
-	return plan, nil
-}
-
-func (m *Role) LormAfterUpdate(now lorm.HookTime, rowsAffected int64) {
-	if rowsAffected <= 0 {
-		return
-	}
-	{
-		m.Meta.UpdatedAt = now
-	}
-	m.Meta.Version++
-}
-
-var _lorm_file_identity_2de96e48_Role_model_descriptor = _lorm_file_identity_2de96e48_model_descriptor_map["Role"]
-
-func (m *Role) LormModelDescriptor() *lorm.ModelDescriptor {
-	return _lorm_file_identity_2de96e48_Role_model_descriptor
-}
-
-func (m *Role) LormCols() *Role_Fields {
-	return default_Role_Fields
-}
-
-var default_Role_Fields = new(Role_Fields)
-
-type Role_Fields struct {
-	alias string
-}
-
-func (f *Role_Fields) WithAlias(alias string) *Role_Fields {
-	o := new(Role_Fields)
-	o.alias = alias
-	return o
-}
-func (f *Role_Fields) ID() string {
-	if f.alias == "" {
-		return "id"
-	}
-	return f.alias + ".id"
-}
-func (f *Role_Fields) CreatedBy() string {
-	if f.alias == "" {
-		return "created_by"
-	}
-	return f.alias + ".created_by"
-}
-func (f *Role_Fields) UpdatedBy() string {
-	if f.alias == "" {
-		return "updated_by"
-	}
-	return f.alias + ".updated_by"
-}
-func (f *Role_Fields) CreatedAt() string {
-	if f.alias == "" {
-		return "created_at"
-	}
-	return f.alias + ".created_at"
-}
-func (f *Role_Fields) UpdatedAt() string {
-	if f.alias == "" {
-		return "updated_at"
-	}
-	return f.alias + ".updated_at"
-}
-func (f *Role_Fields) Version() string {
-	if f.alias == "" {
-		return "version"
-	}
-	return f.alias + ".version"
-}
-func (f *Role_Fields) DeletedAt() string {
-	if f.alias == "" {
-		return "deleted_at"
-	}
-	return f.alias + ".deleted_at"
-}
-func (f *Role_Fields) Key() string {
-	if f.alias == "" {
-		return "key"
-	}
-	return f.alias + ".key"
-}
-func (f *Role_Fields) Name() string {
-	if f.alias == "" {
-		return "name"
-	}
-	return f.alias + ".name"
-}
-func (f *Role_Fields) Description() string {
-	if f.alias == "" {
-		return "description"
-	}
-	return f.alias + ".description"
-}
-func (f *Role_Fields) Builtin() string {
-	if f.alias == "" {
-		return "builtin"
-	}
-	return f.alias + ".builtin"
-}
-
-func (f *Role_Fields) All() []string {
-	return []string{
-		f.ID(),
-		f.CreatedBy(),
-		f.UpdatedBy(),
-		f.CreatedAt(),
-		f.UpdatedAt(),
-		f.Version(),
-		f.DeletedAt(),
-		f.Key(),
-		f.Name(),
-		f.Description(),
-		f.Builtin(),
-	}
-}
-
-func (m *Permission) TableName() string {
-	return "permissions"
-}
-
-func (m *Permission) New() lorm.Model {
-	return new(Permission)
-}
-
-func (m *Permission) LormFieldPtr(name string) any {
-	switch name {
-	case "id":
-		return &m.RecordMeta.ID
-	case "created_at":
-		return &m.RecordMeta.CreatedAt
-	case "updated_at":
-		return &m.RecordMeta.UpdatedAt
-	case "key":
-		return &m.Key
-	case "name":
-		return &m.Name
-	case "description":
-		return &m.Description
-	default:
-		return nil
-	}
-}
-
-func (m *Permission) LormScan(row lorm.RowScanner) error {
-	return row.Scan(
-		&m.RecordMeta.ID,
-		&m.RecordMeta.CreatedAt,
-		&m.RecordMeta.UpdatedAt,
-		&m.Key,
-		&m.Name,
-		&m.Description,
-	)
-}
-
-func (m *Permission) LormFieldValue(name string) any {
-	switch name {
-	case "id":
-		return m.RecordMeta.ID
-	case "created_at":
-		return m.RecordMeta.CreatedAt
-	case "updated_at":
-		return m.RecordMeta.UpdatedAt
-	case "key":
-		return m.Key
-	case "name":
-		return m.Name
-	case "description":
-		return m.Description
-	default:
-		return nil
-	}
-}
-
-var _lorm_file_identity_2de96e48_Permission_insert_columns = []string{
-	"id",
-	"created_at",
-	"updated_at",
-	"key",
-	"name",
-	"description",
-}
-
-var _lorm_file_identity_2de96e48_Permission_insert_columns_without_auto_increment = []string{
-	"created_at",
-	"updated_at",
-	"key",
-	"name",
-	"description",
-}
-
-func (m *Permission) LormBeforeInsert(now lorm.HookTime) lorm.InsertPlan {
-	if m.RecordMeta.CreatedAt.IsZero() {
-		m.RecordMeta.CreatedAt = now
-	}
-	if m.RecordMeta.UpdatedAt.IsZero() {
-		m.RecordMeta.UpdatedAt = now
-	}
-
-	plan := lorm.InsertPlan{}
-	plan.AutoIncrementColumn = "id"
-	plan.AutoIncrementZero = m.RecordMeta.ID == 0
-	if plan.AutoIncrementZero {
-		plan.Columns = _lorm_file_identity_2de96e48_Permission_insert_columns_without_auto_increment
-	} else {
-		plan.Columns = _lorm_file_identity_2de96e48_Permission_insert_columns
-	}
-	plan.Values = make([]any, 0, len(plan.Columns))
-	if !plan.AutoIncrementZero {
-		plan.Values = append(plan.Values, m.RecordMeta.ID)
-	}
-	plan.Values = append(plan.Values, m.RecordMeta.CreatedAt)
-	plan.Values = append(plan.Values, m.RecordMeta.UpdatedAt)
-	plan.Values = append(plan.Values, m.Key)
-	plan.Values = append(plan.Values, m.Name)
-	plan.Values = append(plan.Values, m.Description)
-	return plan
-}
-
-func (m *Permission) LormAfterInsert(result lorm.InsertResult) error {
-	if !result.HasGeneratedID {
-		return nil
-	}
-	value, err := lorm.ConvertGeneratedSignedID[int64](result.GeneratedID, 64, "Permission.RecordMeta.ID")
-	if err != nil {
-		return err
-	}
-	m.RecordMeta.ID = value
-	return nil
-}
-
-func (m *Permission) LormBeforeUpdate(now lorm.HookTime) (lorm.UpdatePlan, error) {
-	plan := lorm.UpdatePlan{
-		Set:       make([]lorm.ColumnValue, 0, 6),
-		Where:     make([]lorm.ColumnValue, 0),
-		Increment: make([]string, 0, 1),
-	}
-	plan.PrimaryKeyCount++
-	plan.Where = append(plan.Where, lorm.ColumnValue{Column: "id", Value: m.RecordMeta.ID})
-	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "updated_at", Value: now})
-	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "key", Value: m.Key})
-	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "name", Value: m.Name})
-	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "description", Value: m.Description})
-	return plan, nil
-}
-
-func (m *Permission) LormAfterUpdate(now lorm.HookTime, rowsAffected int64) {
-	if rowsAffected <= 0 {
-		return
-	}
-	{
-		m.RecordMeta.UpdatedAt = now
-	}
-}
-
-var _lorm_file_identity_2de96e48_Permission_model_descriptor = _lorm_file_identity_2de96e48_model_descriptor_map["Permission"]
-
-func (m *Permission) LormModelDescriptor() *lorm.ModelDescriptor {
-	return _lorm_file_identity_2de96e48_Permission_model_descriptor
-}
-
-func (m *Permission) LormCols() *Permission_Fields {
-	return default_Permission_Fields
-}
-
-var default_Permission_Fields = new(Permission_Fields)
-
-type Permission_Fields struct {
-	alias string
-}
-
-func (f *Permission_Fields) WithAlias(alias string) *Permission_Fields {
-	o := new(Permission_Fields)
-	o.alias = alias
-	return o
-}
-func (f *Permission_Fields) ID() string {
-	if f.alias == "" {
-		return "id"
-	}
-	return f.alias + ".id"
-}
-func (f *Permission_Fields) CreatedAt() string {
-	if f.alias == "" {
-		return "created_at"
-	}
-	return f.alias + ".created_at"
-}
-func (f *Permission_Fields) UpdatedAt() string {
-	if f.alias == "" {
-		return "updated_at"
-	}
-	return f.alias + ".updated_at"
-}
-func (f *Permission_Fields) Key() string {
-	if f.alias == "" {
-		return "key"
-	}
-	return f.alias + ".key"
-}
-func (f *Permission_Fields) Name() string {
-	if f.alias == "" {
-		return "name"
-	}
-	return f.alias + ".name"
-}
-func (f *Permission_Fields) Description() string {
-	if f.alias == "" {
-		return "description"
-	}
-	return f.alias + ".description"
-}
-
-func (f *Permission_Fields) All() []string {
-	return []string{
-		f.ID(),
-		f.CreatedAt(),
-		f.UpdatedAt(),
-		f.Key(),
-		f.Name(),
-		f.Description(),
-	}
-}
-
-func (m *UserEnvironmentRole) TableName() string {
-	return "user_environment_roles"
-}
-
-func (m *UserEnvironmentRole) New() lorm.Model {
-	return new(UserEnvironmentRole)
-}
-
-func (m *UserEnvironmentRole) LormFieldPtr(name string) any {
-	switch name {
-	case "id":
-		return &m.RecordMeta.ID
-	case "created_at":
-		return &m.RecordMeta.CreatedAt
-	case "updated_at":
-		return &m.RecordMeta.UpdatedAt
-	case "user_id":
-		return &m.UserID
-	case "environment_id":
-		return &m.EnvironmentID
-	case "role_id":
-		return &m.RoleID
-	case "created_by":
-		return &m.CreatedBy
-	default:
-		return nil
-	}
-}
-
-func (m *UserEnvironmentRole) LormScan(row lorm.RowScanner) error {
-	return row.Scan(
-		&m.RecordMeta.ID,
-		&m.RecordMeta.CreatedAt,
-		&m.RecordMeta.UpdatedAt,
-		&m.UserID,
-		&m.EnvironmentID,
-		&m.RoleID,
-		&m.CreatedBy,
-	)
-}
-
-func (m *UserEnvironmentRole) LormFieldValue(name string) any {
-	switch name {
-	case "id":
-		return m.RecordMeta.ID
-	case "created_at":
-		return m.RecordMeta.CreatedAt
-	case "updated_at":
-		return m.RecordMeta.UpdatedAt
-	case "user_id":
-		return m.UserID
-	case "environment_id":
-		return m.EnvironmentID
-	case "role_id":
-		return m.RoleID
-	case "created_by":
-		return m.CreatedBy
-	default:
-		return nil
-	}
-}
-
-var _lorm_file_identity_2de96e48_UserEnvironmentRole_insert_columns = []string{
-	"id",
-	"created_at",
-	"updated_at",
-	"user_id",
-	"environment_id",
-	"role_id",
-	"created_by",
-}
-
-var _lorm_file_identity_2de96e48_UserEnvironmentRole_insert_columns_without_auto_increment = []string{
-	"created_at",
-	"updated_at",
-	"user_id",
-	"environment_id",
-	"role_id",
-	"created_by",
-}
-
-func (m *UserEnvironmentRole) LormBeforeInsert(now lorm.HookTime) lorm.InsertPlan {
-	if m.RecordMeta.CreatedAt.IsZero() {
-		m.RecordMeta.CreatedAt = now
-	}
-	if m.RecordMeta.UpdatedAt.IsZero() {
-		m.RecordMeta.UpdatedAt = now
-	}
-
-	plan := lorm.InsertPlan{}
-	plan.AutoIncrementColumn = "id"
-	plan.AutoIncrementZero = m.RecordMeta.ID == 0
-	if plan.AutoIncrementZero {
-		plan.Columns = _lorm_file_identity_2de96e48_UserEnvironmentRole_insert_columns_without_auto_increment
-	} else {
-		plan.Columns = _lorm_file_identity_2de96e48_UserEnvironmentRole_insert_columns
-	}
-	plan.Values = make([]any, 0, len(plan.Columns))
-	if !plan.AutoIncrementZero {
-		plan.Values = append(plan.Values, m.RecordMeta.ID)
-	}
-	plan.Values = append(plan.Values, m.RecordMeta.CreatedAt)
-	plan.Values = append(plan.Values, m.RecordMeta.UpdatedAt)
-	plan.Values = append(plan.Values, m.UserID)
-	plan.Values = append(plan.Values, m.EnvironmentID)
-	plan.Values = append(plan.Values, m.RoleID)
-	plan.Values = append(plan.Values, m.CreatedBy)
-	return plan
-}
-
-func (m *UserEnvironmentRole) LormAfterInsert(result lorm.InsertResult) error {
-	if !result.HasGeneratedID {
-		return nil
-	}
-	value, err := lorm.ConvertGeneratedSignedID[int64](result.GeneratedID, 64, "UserEnvironmentRole.RecordMeta.ID")
-	if err != nil {
-		return err
-	}
-	m.RecordMeta.ID = value
-	return nil
-}
-
-func (m *UserEnvironmentRole) LormBeforeUpdate(now lorm.HookTime) (lorm.UpdatePlan, error) {
-	plan := lorm.UpdatePlan{
-		Set:       make([]lorm.ColumnValue, 0, 7),
-		Where:     make([]lorm.ColumnValue, 0),
-		Increment: make([]string, 0, 1),
-	}
-	plan.PrimaryKeyCount++
-	plan.Where = append(plan.Where, lorm.ColumnValue{Column: "id", Value: m.RecordMeta.ID})
-	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "updated_at", Value: now})
-	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "user_id", Value: m.UserID})
-	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "environment_id", Value: m.EnvironmentID})
-	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "role_id", Value: m.RoleID})
-	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "created_by", Value: m.CreatedBy})
-	return plan, nil
-}
-
-func (m *UserEnvironmentRole) LormAfterUpdate(now lorm.HookTime, rowsAffected int64) {
-	if rowsAffected <= 0 {
-		return
-	}
-	{
-		m.RecordMeta.UpdatedAt = now
-	}
-}
-
-var _lorm_file_identity_2de96e48_UserEnvironmentRole_model_descriptor = _lorm_file_identity_2de96e48_model_descriptor_map["UserEnvironmentRole"]
-
-func (m *UserEnvironmentRole) LormModelDescriptor() *lorm.ModelDescriptor {
-	return _lorm_file_identity_2de96e48_UserEnvironmentRole_model_descriptor
-}
-
-func (m *UserEnvironmentRole) LormCols() *UserEnvironmentRole_Fields {
-	return default_UserEnvironmentRole_Fields
-}
-
-var default_UserEnvironmentRole_Fields = new(UserEnvironmentRole_Fields)
-
-type UserEnvironmentRole_Fields struct {
-	alias string
-}
-
-func (f *UserEnvironmentRole_Fields) WithAlias(alias string) *UserEnvironmentRole_Fields {
-	o := new(UserEnvironmentRole_Fields)
-	o.alias = alias
-	return o
-}
-func (f *UserEnvironmentRole_Fields) ID() string {
-	if f.alias == "" {
-		return "id"
-	}
-	return f.alias + ".id"
-}
-func (f *UserEnvironmentRole_Fields) CreatedAt() string {
-	if f.alias == "" {
-		return "created_at"
-	}
-	return f.alias + ".created_at"
-}
-func (f *UserEnvironmentRole_Fields) UpdatedAt() string {
-	if f.alias == "" {
-		return "updated_at"
-	}
-	return f.alias + ".updated_at"
-}
-func (f *UserEnvironmentRole_Fields) UserID() string {
-	if f.alias == "" {
-		return "user_id"
-	}
-	return f.alias + ".user_id"
-}
-func (f *UserEnvironmentRole_Fields) EnvironmentID() string {
-	if f.alias == "" {
-		return "environment_id"
-	}
-	return f.alias + ".environment_id"
-}
-func (f *UserEnvironmentRole_Fields) RoleID() string {
-	if f.alias == "" {
-		return "role_id"
-	}
-	return f.alias + ".role_id"
-}
-func (f *UserEnvironmentRole_Fields) CreatedBy() string {
-	if f.alias == "" {
-		return "created_by"
-	}
-	return f.alias + ".created_by"
-}
-
-func (f *UserEnvironmentRole_Fields) All() []string {
-	return []string{
-		f.ID(),
-		f.CreatedAt(),
-		f.UpdatedAt(),
-		f.UserID(),
-		f.EnvironmentID(),
-		f.RoleID(),
-		f.CreatedBy(),
-	}
-}
-
-func (m *RolePermission) TableName() string {
-	return "role_permissions"
-}
-
-func (m *RolePermission) New() lorm.Model {
-	return new(RolePermission)
-}
-
-func (m *RolePermission) LormFieldPtr(name string) any {
-	switch name {
-	case "id":
-		return &m.RecordMeta.ID
-	case "created_at":
-		return &m.RecordMeta.CreatedAt
-	case "updated_at":
-		return &m.RecordMeta.UpdatedAt
-	case "role_id":
-		return &m.RoleID
-	case "permission_id":
-		return &m.PermissionID
-	case "created_by":
-		return &m.CreatedBy
-	default:
-		return nil
-	}
-}
-
-func (m *RolePermission) LormScan(row lorm.RowScanner) error {
-	return row.Scan(
-		&m.RecordMeta.ID,
-		&m.RecordMeta.CreatedAt,
-		&m.RecordMeta.UpdatedAt,
-		&m.RoleID,
-		&m.PermissionID,
-		&m.CreatedBy,
-	)
-}
-
-func (m *RolePermission) LormFieldValue(name string) any {
-	switch name {
-	case "id":
-		return m.RecordMeta.ID
-	case "created_at":
-		return m.RecordMeta.CreatedAt
-	case "updated_at":
-		return m.RecordMeta.UpdatedAt
-	case "role_id":
-		return m.RoleID
-	case "permission_id":
-		return m.PermissionID
-	case "created_by":
-		return m.CreatedBy
-	default:
-		return nil
-	}
-}
-
-var _lorm_file_identity_2de96e48_RolePermission_insert_columns = []string{
-	"id",
-	"created_at",
-	"updated_at",
-	"role_id",
-	"permission_id",
-	"created_by",
-}
-
-var _lorm_file_identity_2de96e48_RolePermission_insert_columns_without_auto_increment = []string{
-	"created_at",
-	"updated_at",
-	"role_id",
-	"permission_id",
-	"created_by",
-}
-
-func (m *RolePermission) LormBeforeInsert(now lorm.HookTime) lorm.InsertPlan {
-	if m.RecordMeta.CreatedAt.IsZero() {
-		m.RecordMeta.CreatedAt = now
-	}
-	if m.RecordMeta.UpdatedAt.IsZero() {
-		m.RecordMeta.UpdatedAt = now
-	}
-
-	plan := lorm.InsertPlan{}
-	plan.AutoIncrementColumn = "id"
-	plan.AutoIncrementZero = m.RecordMeta.ID == 0
-	if plan.AutoIncrementZero {
-		plan.Columns = _lorm_file_identity_2de96e48_RolePermission_insert_columns_without_auto_increment
-	} else {
-		plan.Columns = _lorm_file_identity_2de96e48_RolePermission_insert_columns
-	}
-	plan.Values = make([]any, 0, len(plan.Columns))
-	if !plan.AutoIncrementZero {
-		plan.Values = append(plan.Values, m.RecordMeta.ID)
-	}
-	plan.Values = append(plan.Values, m.RecordMeta.CreatedAt)
-	plan.Values = append(plan.Values, m.RecordMeta.UpdatedAt)
-	plan.Values = append(plan.Values, m.RoleID)
-	plan.Values = append(plan.Values, m.PermissionID)
-	plan.Values = append(plan.Values, m.CreatedBy)
-	return plan
-}
-
-func (m *RolePermission) LormAfterInsert(result lorm.InsertResult) error {
-	if !result.HasGeneratedID {
-		return nil
-	}
-	value, err := lorm.ConvertGeneratedSignedID[int64](result.GeneratedID, 64, "RolePermission.RecordMeta.ID")
-	if err != nil {
-		return err
-	}
-	m.RecordMeta.ID = value
-	return nil
-}
-
-func (m *RolePermission) LormBeforeUpdate(now lorm.HookTime) (lorm.UpdatePlan, error) {
-	plan := lorm.UpdatePlan{
-		Set:       make([]lorm.ColumnValue, 0, 6),
-		Where:     make([]lorm.ColumnValue, 0),
-		Increment: make([]string, 0, 1),
-	}
-	plan.PrimaryKeyCount++
-	plan.Where = append(plan.Where, lorm.ColumnValue{Column: "id", Value: m.RecordMeta.ID})
-	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "updated_at", Value: now})
-	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "role_id", Value: m.RoleID})
-	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "permission_id", Value: m.PermissionID})
-	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "created_by", Value: m.CreatedBy})
-	return plan, nil
-}
-
-func (m *RolePermission) LormAfterUpdate(now lorm.HookTime, rowsAffected int64) {
-	if rowsAffected <= 0 {
-		return
-	}
-	{
-		m.RecordMeta.UpdatedAt = now
-	}
-}
-
-var _lorm_file_identity_2de96e48_RolePermission_model_descriptor = _lorm_file_identity_2de96e48_model_descriptor_map["RolePermission"]
-
-func (m *RolePermission) LormModelDescriptor() *lorm.ModelDescriptor {
-	return _lorm_file_identity_2de96e48_RolePermission_model_descriptor
-}
-
-func (m *RolePermission) LormCols() *RolePermission_Fields {
-	return default_RolePermission_Fields
-}
-
-var default_RolePermission_Fields = new(RolePermission_Fields)
-
-type RolePermission_Fields struct {
-	alias string
-}
-
-func (f *RolePermission_Fields) WithAlias(alias string) *RolePermission_Fields {
-	o := new(RolePermission_Fields)
-	o.alias = alias
-	return o
-}
-func (f *RolePermission_Fields) ID() string {
-	if f.alias == "" {
-		return "id"
-	}
-	return f.alias + ".id"
-}
-func (f *RolePermission_Fields) CreatedAt() string {
-	if f.alias == "" {
-		return "created_at"
-	}
-	return f.alias + ".created_at"
-}
-func (f *RolePermission_Fields) UpdatedAt() string {
-	if f.alias == "" {
-		return "updated_at"
-	}
-	return f.alias + ".updated_at"
-}
-func (f *RolePermission_Fields) RoleID() string {
-	if f.alias == "" {
-		return "role_id"
-	}
-	return f.alias + ".role_id"
-}
-func (f *RolePermission_Fields) PermissionID() string {
-	if f.alias == "" {
-		return "permission_id"
-	}
-	return f.alias + ".permission_id"
-}
-func (f *RolePermission_Fields) CreatedBy() string {
-	if f.alias == "" {
-		return "created_by"
-	}
-	return f.alias + ".created_by"
-}
-
-func (f *RolePermission_Fields) All() []string {
-	return []string{
-		f.ID(),
-		f.CreatedAt(),
-		f.UpdatedAt(),
-		f.RoleID(),
-		f.PermissionID(),
-		f.CreatedBy(),
 	}
 }
 
@@ -1866,7 +1140,7 @@ func (f *RefreshToken_Fields) All() []string {
 	}
 }
 
-const _lorm_file_identity_2de96e48_raw = `{"Path":"identity.go","LormImportAlias":"lorm","Package":"model","Imports":[{"Path":"\"time\"","Alias":""},{"Path":"\"github.com/yvvlee/lorm\"","Alias":""}],"Structs":[{"Name":"Environment","TableName":"environments","Fields":[{"Name":"ID","FullName":"Meta.ID","DBField":"id","Type":"int64","Flag":3},{"Name":"CreatedBy","FullName":"Meta.CreatedBy","DBField":"created_by","Type":"int64","Flag":0},{"Name":"UpdatedBy","FullName":"Meta.UpdatedBy","DBField":"updated_by","Type":"int64","Flag":0},{"Name":"CreatedAt","FullName":"Meta.CreatedAt","DBField":"created_at","Type":"time.Time","Flag":8},{"Name":"UpdatedAt","FullName":"Meta.UpdatedAt","DBField":"updated_at","Type":"time.Time","Flag":16},{"Name":"Version","FullName":"Meta.Version","DBField":"version","Type":"int64","Flag":32},{"Name":"DeletedAt","FullName":"Meta.DeletedAt","DBField":"deleted_at","Type":"*time.Time","Flag":0},{"Name":"ProjectID","FullName":"ProjectID","DBField":"project_id","Type":"int64","Flag":0},{"Name":"Key","FullName":"Key","DBField":"key","Type":"string","Flag":0},{"Name":"Name","FullName":"Name","DBField":"name","Type":"string","Flag":0},{"Name":"Description","FullName":"Description","DBField":"description","Type":"string","Flag":0},{"Name":"Enabled","FullName":"Enabled","DBField":"enabled","Type":"bool","Flag":0}],"PrimaryKeys":["id"]},{"Name":"User","TableName":"users","Fields":[{"Name":"ID","FullName":"Meta.ID","DBField":"id","Type":"int64","Flag":3},{"Name":"CreatedBy","FullName":"Meta.CreatedBy","DBField":"created_by","Type":"int64","Flag":0},{"Name":"UpdatedBy","FullName":"Meta.UpdatedBy","DBField":"updated_by","Type":"int64","Flag":0},{"Name":"CreatedAt","FullName":"Meta.CreatedAt","DBField":"created_at","Type":"time.Time","Flag":8},{"Name":"UpdatedAt","FullName":"Meta.UpdatedAt","DBField":"updated_at","Type":"time.Time","Flag":16},{"Name":"Version","FullName":"Meta.Version","DBField":"version","Type":"int64","Flag":32},{"Name":"DeletedAt","FullName":"Meta.DeletedAt","DBField":"deleted_at","Type":"*time.Time","Flag":0},{"Name":"Username","FullName":"Username","DBField":"username","Type":"string","Flag":0},{"Name":"DisplayName","FullName":"DisplayName","DBField":"display_name","Type":"string","Flag":0},{"Name":"PasswordHash","FullName":"PasswordHash","DBField":"password_hash","Type":"string","Flag":0},{"Name":"Enabled","FullName":"Enabled","DBField":"enabled","Type":"bool","Flag":0},{"Name":"IsSystemAdmin","FullName":"IsSystemAdmin","DBField":"is_system_admin","Type":"bool","Flag":0},{"Name":"MustChangePassword","FullName":"MustChangePassword","DBField":"must_change_password","Type":"bool","Flag":0},{"Name":"LastLoginAt","FullName":"LastLoginAt","DBField":"last_login_at","Type":"*time.Time","Flag":0}],"PrimaryKeys":["id"]},{"Name":"Role","TableName":"roles","Fields":[{"Name":"ID","FullName":"Meta.ID","DBField":"id","Type":"int64","Flag":3},{"Name":"CreatedBy","FullName":"Meta.CreatedBy","DBField":"created_by","Type":"int64","Flag":0},{"Name":"UpdatedBy","FullName":"Meta.UpdatedBy","DBField":"updated_by","Type":"int64","Flag":0},{"Name":"CreatedAt","FullName":"Meta.CreatedAt","DBField":"created_at","Type":"time.Time","Flag":8},{"Name":"UpdatedAt","FullName":"Meta.UpdatedAt","DBField":"updated_at","Type":"time.Time","Flag":16},{"Name":"Version","FullName":"Meta.Version","DBField":"version","Type":"int64","Flag":32},{"Name":"DeletedAt","FullName":"Meta.DeletedAt","DBField":"deleted_at","Type":"*time.Time","Flag":0},{"Name":"Key","FullName":"Key","DBField":"key","Type":"string","Flag":0},{"Name":"Name","FullName":"Name","DBField":"name","Type":"string","Flag":0},{"Name":"Description","FullName":"Description","DBField":"description","Type":"string","Flag":0},{"Name":"Builtin","FullName":"Builtin","DBField":"builtin","Type":"bool","Flag":0}],"PrimaryKeys":["id"]},{"Name":"Permission","TableName":"permissions","Fields":[{"Name":"ID","FullName":"RecordMeta.ID","DBField":"id","Type":"int64","Flag":3},{"Name":"CreatedAt","FullName":"RecordMeta.CreatedAt","DBField":"created_at","Type":"time.Time","Flag":8},{"Name":"UpdatedAt","FullName":"RecordMeta.UpdatedAt","DBField":"updated_at","Type":"time.Time","Flag":16},{"Name":"Key","FullName":"Key","DBField":"key","Type":"string","Flag":0},{"Name":"Name","FullName":"Name","DBField":"name","Type":"string","Flag":0},{"Name":"Description","FullName":"Description","DBField":"description","Type":"string","Flag":0}],"PrimaryKeys":["id"]},{"Name":"UserEnvironmentRole","TableName":"user_environment_roles","Fields":[{"Name":"ID","FullName":"RecordMeta.ID","DBField":"id","Type":"int64","Flag":3},{"Name":"CreatedAt","FullName":"RecordMeta.CreatedAt","DBField":"created_at","Type":"time.Time","Flag":8},{"Name":"UpdatedAt","FullName":"RecordMeta.UpdatedAt","DBField":"updated_at","Type":"time.Time","Flag":16},{"Name":"UserID","FullName":"UserID","DBField":"user_id","Type":"int64","Flag":0},{"Name":"EnvironmentID","FullName":"EnvironmentID","DBField":"environment_id","Type":"int64","Flag":0},{"Name":"RoleID","FullName":"RoleID","DBField":"role_id","Type":"int64","Flag":0},{"Name":"CreatedBy","FullName":"CreatedBy","DBField":"created_by","Type":"int64","Flag":0}],"PrimaryKeys":["id"]},{"Name":"RolePermission","TableName":"role_permissions","Fields":[{"Name":"ID","FullName":"RecordMeta.ID","DBField":"id","Type":"int64","Flag":3},{"Name":"CreatedAt","FullName":"RecordMeta.CreatedAt","DBField":"created_at","Type":"time.Time","Flag":8},{"Name":"UpdatedAt","FullName":"RecordMeta.UpdatedAt","DBField":"updated_at","Type":"time.Time","Flag":16},{"Name":"RoleID","FullName":"RoleID","DBField":"role_id","Type":"int64","Flag":0},{"Name":"PermissionID","FullName":"PermissionID","DBField":"permission_id","Type":"int64","Flag":0},{"Name":"CreatedBy","FullName":"CreatedBy","DBField":"created_by","Type":"int64","Flag":0}],"PrimaryKeys":["id"]},{"Name":"RefreshToken","TableName":"refresh_tokens","Fields":[{"Name":"ID","FullName":"RecordMeta.ID","DBField":"id","Type":"int64","Flag":3},{"Name":"CreatedAt","FullName":"RecordMeta.CreatedAt","DBField":"created_at","Type":"time.Time","Flag":8},{"Name":"UpdatedAt","FullName":"RecordMeta.UpdatedAt","DBField":"updated_at","Type":"time.Time","Flag":16},{"Name":"UserID","FullName":"UserID","DBField":"user_id","Type":"int64","Flag":0},{"Name":"SessionID","FullName":"SessionID","DBField":"session_id","Type":"string","Flag":0},{"Name":"TokenHash","FullName":"TokenHash","DBField":"token_hash","Type":"[]byte","Flag":0},{"Name":"ExpiresAt","FullName":"ExpiresAt","DBField":"expires_at","Type":"time.Time","Flag":0},{"Name":"LastUsedAt","FullName":"LastUsedAt","DBField":"last_used_at","Type":"*time.Time","Flag":0},{"Name":"RevokedAt","FullName":"RevokedAt","DBField":"revoked_at","Type":"*time.Time","Flag":0},{"Name":"ReplacedByID","FullName":"ReplacedByID","DBField":"replaced_by_id","Type":"*int64","Flag":0}],"PrimaryKeys":["id"]}]}`
+const _lorm_file_identity_2de96e48_raw = `{"Path":"identity.go","LormImportAlias":"lorm","Package":"model","Imports":[{"Path":"\"time\"","Alias":""},{"Path":"\"github.com/yvvlee/lorm\"","Alias":""}],"Structs":[{"Name":"Environment","TableName":"environments","Fields":[{"Name":"ID","FullName":"Meta.ID","DBField":"id","Type":"int64","Flag":3},{"Name":"CreatedBy","FullName":"Meta.CreatedBy","DBField":"created_by","Type":"int64","Flag":0},{"Name":"UpdatedBy","FullName":"Meta.UpdatedBy","DBField":"updated_by","Type":"int64","Flag":0},{"Name":"CreatedAt","FullName":"Meta.CreatedAt","DBField":"created_at","Type":"time.Time","Flag":8},{"Name":"UpdatedAt","FullName":"Meta.UpdatedAt","DBField":"updated_at","Type":"time.Time","Flag":16},{"Name":"Version","FullName":"Meta.Version","DBField":"version","Type":"int64","Flag":32},{"Name":"ProjectID","FullName":"ProjectID","DBField":"project_id","Type":"int64","Flag":0},{"Name":"Key","FullName":"Key","DBField":"key","Type":"string","Flag":0},{"Name":"Name","FullName":"Name","DBField":"name","Type":"string","Flag":0},{"Name":"Description","FullName":"Description","DBField":"description","Type":"string","Flag":0},{"Name":"Enabled","FullName":"Enabled","DBField":"enabled","Type":"bool","Flag":0}],"PrimaryKeys":["id"]},{"Name":"ApplicationSettings","TableName":"application_settings","Fields":[{"Name":"ID","FullName":"Meta.ID","DBField":"id","Type":"int64","Flag":3},{"Name":"CreatedBy","FullName":"Meta.CreatedBy","DBField":"created_by","Type":"int64","Flag":0},{"Name":"UpdatedBy","FullName":"Meta.UpdatedBy","DBField":"updated_by","Type":"int64","Flag":0},{"Name":"CreatedAt","FullName":"Meta.CreatedAt","DBField":"created_at","Type":"time.Time","Flag":8},{"Name":"UpdatedAt","FullName":"Meta.UpdatedAt","DBField":"updated_at","Type":"time.Time","Flag":16},{"Name":"Version","FullName":"Meta.Version","DBField":"version","Type":"int64","Flag":32},{"Name":"AllowSelfRegistration","FullName":"AllowSelfRegistration","DBField":"allow_self_registration","Type":"bool","Flag":0}],"PrimaryKeys":["id"]},{"Name":"User","TableName":"users","Fields":[{"Name":"ID","FullName":"Meta.ID","DBField":"id","Type":"int64","Flag":3},{"Name":"CreatedBy","FullName":"Meta.CreatedBy","DBField":"created_by","Type":"int64","Flag":0},{"Name":"UpdatedBy","FullName":"Meta.UpdatedBy","DBField":"updated_by","Type":"int64","Flag":0},{"Name":"CreatedAt","FullName":"Meta.CreatedAt","DBField":"created_at","Type":"time.Time","Flag":8},{"Name":"UpdatedAt","FullName":"Meta.UpdatedAt","DBField":"updated_at","Type":"time.Time","Flag":16},{"Name":"Version","FullName":"Meta.Version","DBField":"version","Type":"int64","Flag":32},{"Name":"Username","FullName":"Username","DBField":"username","Type":"string","Flag":0},{"Name":"Email","FullName":"Email","DBField":"email","Type":"string","Flag":0},{"Name":"Nickname","FullName":"Nickname","DBField":"nickname","Type":"string","Flag":0},{"Name":"PasswordHash","FullName":"PasswordHash","DBField":"password_hash","Type":"string","Flag":0},{"Name":"Enabled","FullName":"Enabled","DBField":"enabled","Type":"bool","Flag":0},{"Name":"IsSystemAdmin","FullName":"IsSystemAdmin","DBField":"is_system_admin","Type":"bool","Flag":0},{"Name":"MustChangePassword","FullName":"MustChangePassword","DBField":"must_change_password","Type":"bool","Flag":0},{"Name":"LastLoginAt","FullName":"LastLoginAt","DBField":"last_login_at","Type":"*time.Time","Flag":0}],"PrimaryKeys":["id"]},{"Name":"RefreshToken","TableName":"refresh_tokens","Fields":[{"Name":"ID","FullName":"RecordMeta.ID","DBField":"id","Type":"int64","Flag":3},{"Name":"CreatedAt","FullName":"RecordMeta.CreatedAt","DBField":"created_at","Type":"time.Time","Flag":8},{"Name":"UpdatedAt","FullName":"RecordMeta.UpdatedAt","DBField":"updated_at","Type":"time.Time","Flag":16},{"Name":"UserID","FullName":"UserID","DBField":"user_id","Type":"int64","Flag":0},{"Name":"SessionID","FullName":"SessionID","DBField":"session_id","Type":"string","Flag":0},{"Name":"TokenHash","FullName":"TokenHash","DBField":"token_hash","Type":"[]byte","Flag":0},{"Name":"ExpiresAt","FullName":"ExpiresAt","DBField":"expires_at","Type":"time.Time","Flag":0},{"Name":"LastUsedAt","FullName":"LastUsedAt","DBField":"last_used_at","Type":"*time.Time","Flag":0},{"Name":"RevokedAt","FullName":"RevokedAt","DBField":"revoked_at","Type":"*time.Time","Flag":0},{"Name":"ReplacedByID","FullName":"ReplacedByID","DBField":"replaced_by_id","Type":"*int64","Flag":0}],"PrimaryKeys":["id"]}]}`
 
 var _lorm_file_identity_2de96e48_model_descriptor_map = func() map[string]*lorm.ModelDescriptor {
 	var file lorm.FileDescriptor

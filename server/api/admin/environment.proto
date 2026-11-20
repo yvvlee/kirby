@@ -3,7 +3,7 @@ syntax = "proto3";
 package kirby.admin.v1;
 
 import "google/api/annotations.proto";
-import "google/protobuf/empty.proto";
+
 import "common/entity.proto";
 import "validate/validate.proto";
 
@@ -21,15 +21,6 @@ service EnvironmentService {
   }
   rpc MyPermissions(EnvironmentIDRequest) returns (MyPermissionsReply) {
     option (google.api.http) = {get: "/admin/environments/{environment_id}/my-permissions"};
-  }
-  rpc ListEnvironmentUsers(EnvironmentIDRequest) returns (ListEnvironmentUsersReply) {
-    option (google.api.http) = {get: "/admin/environments/{environment_id}/users"};
-  }
-  rpc UpdateEnvironmentUserRoles(UpdateEnvironmentUserRolesRequest) returns (google.protobuf.Empty) {
-    option (google.api.http) = {
-      put: "/admin/environments/{environment_id}/users/{user_id}/roles"
-      body: "*"
-    };
   }
 }
 
@@ -69,16 +60,4 @@ message ListEnvironmentsReply {
 
 message MyPermissionsReply {
   repeated string permissions = 1;
-}
-
-message ListEnvironmentUsersReply {
-  repeated kirby.common.v1.EnvironmentMember list = 1;
-}
-
-message UpdateEnvironmentUserRolesRequest {
-  int64 environment_id = 1 [(validate.rules).int64 = {gt: 0}];
-  int64 user_id = 2 [(validate.rules).int64 = {gt: 0}];
-  repeated int64 role_ids = 3 [(validate.rules).repeated = {
-    unique: true, items: {int64: {gt: 0}}
-  }];
 }

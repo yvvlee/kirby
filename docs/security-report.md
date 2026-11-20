@@ -33,13 +33,12 @@ suppressions in `internal/util/safeint` and two cookie Secure suppressions in
 public origin and supports local HTTP development. Both areas have boundary
 tests. No broad business-directory suppression was added.
 
-Database checks cover lorm CRUD, optimistic locking, soft-delete restoration,
-NULL JSON, environment scope, rollback, explicit UTC timestamps, concurrent
-initialization, and PostgreSQL seed sequences. The sequence repair is tested
-for repeated execution and for preserving sequences already ahead of row IDs.
+Database checks cover lorm CRUD, optimistic locking, physical deletes,
+NULL JSON, environment scope, rollback, timestamp handling, concurrent
+initialization, and environment-bound runtime credentials.
 Initial-administrator login and refresh are additionally exercised against
-MySQL. Tests use disposable databases; the existing-database repair SQL was not
-run against an operator's database.
+MySQL. Tests use disposable databases. This project does not provide legacy
+database repair or migration scripts.
 
 To repeat the security and license gates from the repository root:
 

@@ -12,15 +12,11 @@ import (
 	"github.com/yvvlee/kirby/server/internal/infra/cache"
 	"github.com/yvvlee/kirby/server/internal/model"
 	"github.com/yvvlee/kirby/server/internal/repository"
-	"github.com/yvvlee/kirby/server/internal/util/safeint"
 )
 
 const contentTTL = 24 * time.Hour
 
-var (
-	ErrUnauthenticated = errors.New("runtime API key authentication failed")
-	ErrProjectMismatch = errors.New("runtime API key does not belong to requested project")
-)
+var ErrUnauthenticated = errors.New("runtime API key authentication failed")
 
 type RuntimeResult struct {
 	Content string
@@ -42,11 +38,11 @@ func NewContentCache(store cache.Store) *ContentCache {
 
 // DeletePublishedConfigVersion removes the stale cache generation after a committed write.
 //
-// Parameters: ctx carries cancellation and transaction state; projectID selects the project; configKey selects the configuration key; runtimeVersion selects the immutable runtime cache generation.
+// Parameters: ctx carries cancellation and transaction state; configID selects the environment-owned configuration; configKey selects its key; runtimeVersion selects the immutable runtime cache generation.
 // Returns: the cache deletion error, or nil when the generation was removed.
 // Throws: none.
-func (c *ContentCache) DeletePublishedConfigVersion(ctx context.Context, projectID int64, configKey string, runtimeVersion int64) error {
-	return c.store.Delete(ctx, contentCacheKey(projectID, configKey, runtimeVersion))
+func (c *ContentCache) DeletePublishedConfigVersion(ctx context.Context, configID int64, configKey string, runtimeVersion int64) error {
+	return c.store.Delete(ctx, contentCacheKey(configID, configKey, runtimeVersion))
 }
 
 type RuntimeLogic struct {
@@ -54,7 +50,6 @@ type RuntimeLogic struct {
 	credentials  *credential.Manager
 	transactions TransactionRunner
 	cache        *ContentCache
-	now          func() time.Time
 }
 
 // NewRuntimeLogic creates RuntimeLogic with its configuration dependencies.
@@ -73,85 +68,76 @@ func NewRuntimeLogic(
 		credentials:  credentials,
 		transactions: transactions,
 		cache:        contentCache,
-		now:          time.Now,
 	}
 }
 
 type runtimeRead struct {
-	publicID       string
+	secretHash     []byte
 	fullCredential string
-	projectKey     string
 	configKey      string
 }
 
 // Read authenticates the API key before reading the published configuration.
 //
-// Parameters: ctx carries cancellation and transaction state; fullCredential contains the presented API credential; requestedProject is the project key requested by the client; configKey selects the configuration key.
-// Returns: the published value and runtime generation, or a credential, project-scope, cache, decoding, or repository error.
+// Parameters: ctx carries cancellation and transaction state; fullCredential contains the presented API credential; configKey selects the configuration key.
+// Returns: the published value and runtime generation, or a credential, cache, decoding, or repository error.
 // Throws: none.
-func (l *RuntimeLogic) Read(ctx context.Context, fullCredential, requestedProject, configKey string) (*RuntimeResult, error) {
-	publicID, err := l.credentials.PublicID(fullCredential)
+func (l *RuntimeLogic) Read(ctx context.Context, fullCredential, configKey string) (*RuntimeResult, error) {
+	secretHash, err := l.credentials.LookupHash(fullCredential)
 	if err != nil {
 		return nil, ErrUnauthenticated
 	}
 	request := runtimeRead{
-		publicID:       publicID,
+		secretHash:     secretHash,
 		fullCredential: fullCredential,
-		projectKey:     requestedProject,
 		configKey:      configKey,
 	}
 	var result *RuntimeResult
 	err = l.transactions.TX(ctx, func(txctx context.Context) error {
-		project, err := l.authenticate(txctx, request)
+		key, err := l.authenticate(txctx, request)
 		if err != nil {
 			return err
 		}
-		result, err = l.readConfig(txctx, project.ID, request.configKey)
+		result, err = l.readConfig(txctx, key.EnvironmentID, key.ProjectID, request.configKey)
 		return err
 	})
 	if err != nil {
 		return nil, err
 	}
-	if err := l.repository.MarkUsed(ctx, publicID, l.now().UTC()); err != nil {
+	if _, err := l.repository.MarkUsed(ctx, secretHash, time.Now().UTC()); err != nil {
 		return nil, err
 	}
 	return result, nil
 }
 
-func (l *RuntimeLogic) authenticate(ctx context.Context, request runtimeRead) (*model.Project, error) {
-	key, err := l.repository.LockRuntimeCredential(ctx, request.publicID)
+func (l *RuntimeLogic) authenticate(ctx context.Context, request runtimeRead) (*model.ProjectAPIKey, error) {
+	key, err := l.repository.LockRuntimeCredential(ctx, request.secretHash)
 	if errors.Is(err, repository.ErrNotFound) {
 		return nil, ErrUnauthenticated
 	}
 	if err != nil {
 		return nil, err
 	}
-	if !l.credentials.Verify(request.fullCredential, key.PublicID, key.SecretHash) || key.RevokedAt != nil {
+	if !l.credentials.Verify(request.fullCredential, key.SecretHash) || key.RevokedAt != nil {
 		return nil, ErrUnauthenticated
 	}
-	project, err := l.repository.FindRuntimeProject(ctx, key.ProjectID)
+	_, err = l.repository.FindRuntimeProject(ctx, key.EnvironmentID, key.ProjectID)
 	if errors.Is(err, repository.ErrNotFound) {
 		return nil, ErrUnauthenticated
 	}
 	if err != nil {
 		return nil, err
 	}
-	if project.Key != request.projectKey {
-		return nil, ErrProjectMismatch
-	}
-	return project, nil
+	return key, nil
 }
 
-func (l *RuntimeLogic) readConfig(ctx context.Context, projectID int64, configKey string) (*RuntimeResult, error) {
-	config, err := l.repository.FindRuntimeConfig(ctx, projectID, configKey)
+func (l *RuntimeLogic) readConfig(ctx context.Context, environmentID, projectID int64, configKey string) (*RuntimeResult, error) {
+	config, err := l.repository.FindRuntimeConfig(ctx, environmentID, projectID, configKey)
 	if err != nil {
 		return nil, err
 	}
-	version, err := safeint.Uint64FromInt64(config.RuntimeVersion)
-	if err != nil {
-		return nil, fmt.Errorf("runtime config version is invalid: %w", err)
-	}
-	key := contentCacheKey(projectID, config.Key, config.RuntimeVersion)
+	version := uint64(config.RuntimeVersion)
+	key := contentCacheKey(config.ID, config.Key, config.RuntimeVersion)
 	content, err := l.cache.store.Get(ctx, key)
 	if err == nil {
 		return &RuntimeResult{
@@ -190,6 +176,6 @@ func (l *RuntimeLogic) releasedContent(ctx context.Context, config *model.Config
 	return decoded.Config.GetValue(), nil
 }
 
-func contentCacheKey(projectID int64, configKey string, runtimeVersion int64) string {
-	return "runtime:config:" + strconv.FormatInt(projectID, 10) + ":" + configKey + ":" + strconv.FormatInt(runtimeVersion, 10)
+func contentCacheKey(configID int64, configKey string, runtimeVersion int64) string {
+	return "runtime:scoped-config:" + strconv.FormatInt(configID, 10) + ":" + configKey + ":" + strconv.FormatInt(runtimeVersion, 10)
 }

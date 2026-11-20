@@ -51,7 +51,7 @@ func TestReadPasswordFileRejectsBroadPermissions(t *testing.T) {
 }
 
 func TestValidateAdminPassword(t *testing.T) {
-	if err := validateAdminPassword([]byte("a secure password")); err != nil {
+	if err := validateAdminPassword([]byte("secure-password")); err != nil {
 		t.Fatal(err)
 	}
 	for _, invalid := range [][]byte{[]byte("short"), []byte("line one\nline two"), append(bytes.Repeat([]byte("x"), maxPasswordBytes), 'x')} {

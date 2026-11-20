@@ -10,7 +10,6 @@ import (
 	context "context"
 	http "github.com/go-kratos/kratos/v2/transport/http"
 	binding "github.com/go-kratos/kratos/v2/transport/http/binding"
-	emptypb "google.golang.org/protobuf/types/known/emptypb"
 )
 
 // This is a compile-time assertion to ensure that this generated file
@@ -21,19 +20,15 @@ var _ = binding.EncodeURL
 const _ = http.SupportPackageIsVersion1
 
 const OperationEnvironmentServiceCreateEnvironment = "/kirby.admin.v1.EnvironmentService/CreateEnvironment"
-const OperationEnvironmentServiceListEnvironmentUsers = "/kirby.admin.v1.EnvironmentService/ListEnvironmentUsers"
 const OperationEnvironmentServiceListEnvironments = "/kirby.admin.v1.EnvironmentService/ListEnvironments"
 const OperationEnvironmentServiceMyPermissions = "/kirby.admin.v1.EnvironmentService/MyPermissions"
 const OperationEnvironmentServiceUpdateEnvironment = "/kirby.admin.v1.EnvironmentService/UpdateEnvironment"
-const OperationEnvironmentServiceUpdateEnvironmentUserRoles = "/kirby.admin.v1.EnvironmentService/UpdateEnvironmentUserRoles"
 
 type EnvironmentServiceHTTPServer interface {
 	CreateEnvironment(context.Context, *CreateEnvironmentRequest) (*EnvironmentReply, error)
-	ListEnvironmentUsers(context.Context, *EnvironmentIDRequest) (*ListEnvironmentUsersReply, error)
 	ListEnvironments(context.Context, *ListEnvironmentsRequest) (*ListEnvironmentsReply, error)
 	MyPermissions(context.Context, *EnvironmentIDRequest) (*MyPermissionsReply, error)
 	UpdateEnvironment(context.Context, *UpdateEnvironmentRequest) (*EnvironmentReply, error)
-	UpdateEnvironmentUserRoles(context.Context, *UpdateEnvironmentUserRolesRequest) (*emptypb.Empty, error)
 }
 
 func RegisterEnvironmentServiceHTTPServer(s *http.Server, srv EnvironmentServiceHTTPServer) {
@@ -42,8 +37,6 @@ func RegisterEnvironmentServiceHTTPServer(s *http.Server, srv EnvironmentService
 	r.POST("/admin/projects/{project_id}/environments", _EnvironmentService_CreateEnvironment0_HTTP_Handler(srv))
 	r.PUT("/admin/projects/{project_id}/environments/{environment_id}", _EnvironmentService_UpdateEnvironment0_HTTP_Handler(srv))
 	r.GET("/admin/environments/{environment_id}/my-permissions", _EnvironmentService_MyPermissions0_HTTP_Handler(srv))
-	r.GET("/admin/environments/{environment_id}/users", _EnvironmentService_ListEnvironmentUsers0_HTTP_Handler(srv))
-	r.PUT("/admin/environments/{environment_id}/users/{user_id}/roles", _EnvironmentService_UpdateEnvironmentUserRoles0_HTTP_Handler(srv))
 }
 
 func _EnvironmentService_ListEnvironments0_HTTP_Handler(srv EnvironmentServiceHTTPServer) func(ctx http.Context) error {
@@ -137,60 +130,11 @@ func _EnvironmentService_MyPermissions0_HTTP_Handler(srv EnvironmentServiceHTTPS
 	}
 }
 
-func _EnvironmentService_ListEnvironmentUsers0_HTTP_Handler(srv EnvironmentServiceHTTPServer) func(ctx http.Context) error {
-	return func(ctx http.Context) error {
-		var in EnvironmentIDRequest
-		if err := ctx.BindQuery(&in); err != nil {
-			return err
-		}
-		if err := ctx.BindVars(&in); err != nil {
-			return err
-		}
-		http.SetOperation(ctx, OperationEnvironmentServiceListEnvironmentUsers)
-		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
-			return srv.ListEnvironmentUsers(ctx, req.(*EnvironmentIDRequest))
-		})
-		out, err := h(ctx, &in)
-		if err != nil {
-			return err
-		}
-		reply := out.(*ListEnvironmentUsersReply)
-		return ctx.Result(200, reply)
-	}
-}
-
-func _EnvironmentService_UpdateEnvironmentUserRoles0_HTTP_Handler(srv EnvironmentServiceHTTPServer) func(ctx http.Context) error {
-	return func(ctx http.Context) error {
-		var in UpdateEnvironmentUserRolesRequest
-		if err := ctx.Bind(&in); err != nil {
-			return err
-		}
-		if err := ctx.BindQuery(&in); err != nil {
-			return err
-		}
-		if err := ctx.BindVars(&in); err != nil {
-			return err
-		}
-		http.SetOperation(ctx, OperationEnvironmentServiceUpdateEnvironmentUserRoles)
-		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
-			return srv.UpdateEnvironmentUserRoles(ctx, req.(*UpdateEnvironmentUserRolesRequest))
-		})
-		out, err := h(ctx, &in)
-		if err != nil {
-			return err
-		}
-		reply := out.(*emptypb.Empty)
-		return ctx.Result(200, reply)
-	}
-}
-
 type EnvironmentServiceHTTPClient interface {
 	CreateEnvironment(ctx context.Context, req *CreateEnvironmentRequest, opts ...http.CallOption) (rsp *EnvironmentReply, err error)
-	ListEnvironmentUsers(ctx context.Context, req *EnvironmentIDRequest, opts ...http.CallOption) (rsp *ListEnvironmentUsersReply, err error)
 	ListEnvironments(ctx context.Context, req *ListEnvironmentsRequest, opts ...http.CallOption) (rsp *ListEnvironmentsReply, err error)
 	MyPermissions(ctx context.Context, req *EnvironmentIDRequest, opts ...http.CallOption) (rsp *MyPermissionsReply, err error)
 	UpdateEnvironment(ctx context.Context, req *UpdateEnvironmentRequest, opts ...http.CallOption) (rsp *EnvironmentReply, err error)
-	UpdateEnvironmentUserRoles(ctx context.Context, req *UpdateEnvironmentUserRolesRequest, opts ...http.CallOption) (rsp *emptypb.Empty, err error)
 }
 
 type EnvironmentServiceHTTPClientImpl struct {
@@ -208,19 +152,6 @@ func (c *EnvironmentServiceHTTPClientImpl) CreateEnvironment(ctx context.Context
 	opts = append(opts, http.Operation(OperationEnvironmentServiceCreateEnvironment))
 	opts = append(opts, http.PathTemplate(pattern))
 	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return &out, nil
-}
-
-func (c *EnvironmentServiceHTTPClientImpl) ListEnvironmentUsers(ctx context.Context, in *EnvironmentIDRequest, opts ...http.CallOption) (*ListEnvironmentUsersReply, error) {
-	var out ListEnvironmentUsersReply
-	pattern := "/admin/environments/{environment_id}/users"
-	path := binding.EncodeURL(pattern, in, true)
-	opts = append(opts, http.Operation(OperationEnvironmentServiceListEnvironmentUsers))
-	opts = append(opts, http.PathTemplate(pattern))
-	err := c.cc.Invoke(ctx, "GET", path, nil, &out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -258,19 +189,6 @@ func (c *EnvironmentServiceHTTPClientImpl) UpdateEnvironment(ctx context.Context
 	pattern := "/admin/projects/{project_id}/environments/{environment_id}"
 	path := binding.EncodeURL(pattern, in, false)
 	opts = append(opts, http.Operation(OperationEnvironmentServiceUpdateEnvironment))
-	opts = append(opts, http.PathTemplate(pattern))
-	err := c.cc.Invoke(ctx, "PUT", path, in, &out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return &out, nil
-}
-
-func (c *EnvironmentServiceHTTPClientImpl) UpdateEnvironmentUserRoles(ctx context.Context, in *UpdateEnvironmentUserRolesRequest, opts ...http.CallOption) (*emptypb.Empty, error) {
-	var out emptypb.Empty
-	pattern := "/admin/environments/{environment_id}/users/{user_id}/roles"
-	path := binding.EncodeURL(pattern, in, false)
-	opts = append(opts, http.Operation(OperationEnvironmentServiceUpdateEnvironmentUserRoles))
 	opts = append(opts, http.PathTemplate(pattern))
 	err := c.cc.Invoke(ctx, "PUT", path, in, &out, opts...)
 	if err != nil {

@@ -1,10 +1,8 @@
 import { useEffect, useRef } from 'react'
-import * as monaco from 'monaco-editor/editor/editor.api'
-import 'monaco-editor/language/json/monaco.contribution'
+import type * as Monaco from 'monaco-editor/editor/editor.api'
 
-import { configureMonacoWorkers } from './monaco-environment'
-
-configureMonacoWorkers()
+import { useTranslation } from '@/i18n'
+import { loadMonaco } from './monaco-runtime'
 
 type Props = {
   value?: string
@@ -20,49 +18,55 @@ export default function MonacoEditor({
   onChange,
 }: Props) {
   const container = useRef<HTMLDivElement | null>(null)
-  const editor = useRef<monaco.editor.IStandaloneCodeEditor | null>(null)
+  const editor = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null)
   const onChangeRef = useRef(onChange)
-  const initialValue = useRef(value)
-  const initialLanguage = useRef(language)
-  const initialDisabled = useRef(disabled)
+  const currentValue = useRef(value)
+  const disabledRef = useRef(disabled)
+  const { locale } = useTranslation()
+  disabledRef.current = disabled
 
   useEffect(() => {
     onChangeRef.current = onChange
   }, [onChange])
 
   useEffect(() => {
+    let active = true
+    let disposeSubscription: (() => void) | null = null
     if (!container.current) throw new Error('MonacoEditor container is missing')
-    const instance = monaco.editor.create(container.current, {
-      value: initialValue.current,
-      language: initialLanguage.current,
-      automaticLayout: true,
-      minimap: { enabled: false },
-      readOnly: initialDisabled.current,
-    })
-    editor.current = instance
-    const subscription = instance.onDidChangeModelContent(() => {
-      onChangeRef.current?.(instance.getValue())
+    void loadMonaco(locale).then((monaco) => {
+      if (!active || !container.current) return
+      const instance = monaco.editor.create(container.current, {
+        value: currentValue.current,
+        language,
+        automaticLayout: true,
+        minimap: { enabled: false },
+        readOnly: disabledRef.current,
+      })
+      editor.current = instance
+      const subscription = instance.onDidChangeModelContent(() => {
+        const nextValue = instance.getValue()
+        currentValue.current = nextValue
+        onChangeRef.current?.(nextValue)
+      })
+      disposeSubscription = () => subscription.dispose()
     })
     return () => {
-      subscription.dispose()
-      instance.dispose()
+      active = false
+      disposeSubscription?.()
+      editor.current?.dispose()
       editor.current = null
     }
-  }, [])
+  }, [language, locale])
 
   useEffect(() => {
     const instance = editor.current
+    currentValue.current = value
     if (instance && instance.getValue() !== value) instance.setValue(value)
   }, [value])
 
   useEffect(() => {
     editor.current?.updateOptions({ readOnly: disabled })
   }, [disabled])
-
-  useEffect(() => {
-    const model = editor.current?.getModel()
-    if (model) monaco.editor.setModelLanguage(model, language)
-  }, [language])
 
   return <div ref={container} className="monaco-editor-container" />
 }

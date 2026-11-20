@@ -5,7 +5,6 @@ import (
 
 	commonv1 "github.com/yvvlee/kirby/server/api/common"
 	"github.com/yvvlee/kirby/server/internal/model"
-	"github.com/yvvlee/kirby/server/internal/util/timeutil"
 )
 
 // SnapshotToProto converts persisted data to an API message without hiding conversion errors.
@@ -37,8 +36,8 @@ func SnapshotToProto(item *model.Snapshot) (*commonv1.Snapshot, error) {
 		IsUsing:     item.IsUsing,
 		CreatedBy:   formatActor(item.CreatedBy),
 		UpdatedBy:   formatActor(item.UpdatedBy),
-		CreatedAt:   timeutil.FormatRFC3339(item.CreatedAt),
-		UpdatedAt:   timeutil.FormatRFC3339(item.UpdatedAt),
+		CreatedAt:   timestamp(item.CreatedAt),
+		UpdatedAt:   timestamp(item.UpdatedAt),
 		Version:     version,
 	}, nil
 }

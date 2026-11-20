@@ -28,22 +28,23 @@ service UserService {
 }
 
 message CreateUserRequest {
-  string username = 1 [(validate.rules).string = {min_len: 1, max_len: 128}];
-  string display_name = 2 [(validate.rules).string = {min_len: 1, max_len: 128}];
-  string password = 3 [(validate.rules).string = {min_len: 12, max_len: 1024}];
+  string username = 1 [(validate.rules).string = {min_len: 1, max_len: 128, pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]*$"}];
+  string nickname = 2 [(validate.rules).string = {min_len: 1, max_len: 128}];
+  string password = 3 [(validate.rules).string = {min_bytes: 8, max_bytes: 32, pattern: "^[!-~]+$"}];
   bool is_system_admin = 4;
+  string email = 5 [(validate.rules).string = {email: true, min_len: 3, max_len: 320}];
 }
 
 message UpdateUserRequest {
   int64 user_id = 1 [(validate.rules).int64 = {gt: 0}];
-  string display_name = 2 [(validate.rules).string = {min_len: 1, max_len: 128}];
+  string nickname = 2 [(validate.rules).string = {min_len: 1, max_len: 128}];
   bool is_system_admin = 3;
   uint32 version = 55;
 }
 
 message UpdateUserPasswordRequest {
   int64 user_id = 1 [(validate.rules).int64 = {gt: 0}];
-  string password = 2 [(validate.rules).string = {min_len: 12, max_len: 1024}];
+  string password = 2 [(validate.rules).string = {min_bytes: 8, max_bytes: 32, pattern: "^[!-~]+$"}];
 }
 
 message UpdateUserStatusRequest {

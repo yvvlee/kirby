@@ -1,4 +1,6 @@
+import { localizedError } from '@/i18n/errors'
 import { wrapSchema } from './wrapper'
+import { t } from '@/i18n'
 import type {
   JsonSchema,
   ModelField,
@@ -7,21 +9,29 @@ import type {
   SchemaValueConfig,
 } from './types'
 
-export const baseTypeOptions = Object.freeze([
-  { label: '字符串', value: '{"baseType":"String"}' },
-  { label: '整数', value: '{"baseType":"Int"}' },
-  { label: '小数', value: '{"baseType":"Decimal"}' },
-  { label: '布尔', value: '{"baseType":"Boolean"}' },
-  { label: '日期', value: '{"baseType":"Date"}' },
-  { label: '时间', value: '{"baseType":"Time"}' },
-  { label: '日期时间', value: '{"baseType":"Datetime"}' },
-  { label: '日期范围', value: '{"baseType":"DateRange"}' },
-  { label: '时间范围', value: '{"baseType":"TimeRange"}' },
-  { label: '日期时间范围', value: '{"baseType":"DatetimeRange"}' },
-  { label: '图片', value: '{"baseType":"Image"}' },
-  { label: '视频', value: '{"baseType":"Video"}' },
-  { label: '文件', value: '{"baseType":"File"}' },
-])
+/**
+ * Builds translated editor type options at call time so locale changes are reflected.
+ * Parameters: none.
+ * Returns: options for every supported base type.
+ * Throws: none.
+ */
+export function getBaseTypeOptions() {
+  return [
+    { label: t('字符串'), value: '{"baseType":"String"}' },
+    { label: t('整数'), value: '{"baseType":"Int"}' },
+    { label: t('小数'), value: '{"baseType":"Decimal"}' },
+    { label: t('布尔'), value: '{"baseType":"Boolean"}' },
+    { label: t('日期'), value: '{"baseType":"Date"}' },
+    { label: t('时间'), value: '{"baseType":"Time"}' },
+    { label: t('日期时间'), value: '{"baseType":"Datetime"}' },
+    { label: t('日期范围'), value: '{"baseType":"DateRange"}' },
+    { label: t('时间范围'), value: '{"baseType":"TimeRange"}' },
+    { label: t('日期时间范围'), value: '{"baseType":"DatetimeRange"}' },
+    { label: t('图片'), value: '{"baseType":"Image"}' },
+    { label: t('视频'), value: '{"baseType":"Video"}' },
+    { label: t('文件'), value: '{"baseType":"File"}' },
+  ]
+}
 
 const RANGE_TYPES = new Set(['DateRange', 'TimeRange', 'DatetimeRange'])
 const FILE_TYPES = new Set(['Image', 'Video', 'File'])
@@ -34,7 +44,7 @@ function validateResources(
     !Array.isArray(resources.models) ||
     !Array.isArray(resources.enums)
   ) {
-    throw new TypeError('createSchema 需要显式传入 { models, enums }')
+    throw localizedError('createSchema 需要显式传入 { models, enums }', {}, TypeError)
   }
   return resources
 }
@@ -65,11 +75,11 @@ function getStructureChildren(
   }
   const model = resources.models.find((item) => item.key === structureKey)
   if (!model) {
-    throw new Error(`找不到模型: ${structureKey}`)
+    throw localizedError('找不到模型: {{key}}', { key: structureKey })
   }
   const fields = model.fields ?? model.children
   if (!Array.isArray(fields)) {
-    throw new TypeError(`模型 ${structureKey} 缺少 fields`)
+    throw localizedError('模型 {{key}} 缺少 fields', { key: structureKey }, TypeError)
   }
   return fields.map(fieldToNode)
 }
@@ -106,7 +116,10 @@ export function createBaseTypeSchema(
     title,
     'x-decorator-props': withTooltip(description),
   }
-  const componentProps: Record<string, unknown> = { size: 'small' }
+  const componentProps: Record<string, unknown> = {
+    size: 'small',
+    autoComplete: 'off',
+  }
 
   switch (baseType) {
     case 'Int':
@@ -196,7 +209,7 @@ export function createBaseTypeSchema(
       schema['x-component-props'] = componentProps
       break
     default:
-      throw new Error(`不支持的基本类型: ${baseType}`)
+      throw localizedError('不支持的基本类型: {{type}}', { type: baseType })
   }
 
   if (needDecorator) {
@@ -240,7 +253,7 @@ function createObjectArraySchema(
     properties: {
       add: {
         type: 'void',
-        title: '添加条目',
+        title: t('添加条目'),
         'x-component': 'ArrayCards.Addition',
       },
     },
@@ -281,7 +294,7 @@ function createBaseArraySchema(
     properties: {
       add: {
         type: 'void',
-        title: '添加条目',
+        title: t('添加条目'),
         'x-component': 'ArrayItems.Addition',
         'x-component-props': { style: { marginTop: 10 } },
       },
@@ -299,9 +312,7 @@ function createNodeSchema(
 
   if (structureKey) {
     if (modelPath.includes(structureKey)) {
-      throw new Error(
-        `检测到递归模型: ${[...modelPath, structureKey].join(' -> ')}`,
-      )
+      throw localizedError('检测到递归模型: {{path}}', { path: [...modelPath, structureKey].join(' -> ') })
     }
     const children = getStructureChildren(node, structureKey, resources)
     const properties = createObjectProperties(children, resources, [
@@ -324,7 +335,7 @@ function createNodeSchema(
   if (enumKey) {
     const enumConfig = resources.enums.find((item) => item.key === enumKey)
     if (!enumConfig) {
-      throw new Error(`找不到枚举: ${enumKey}`)
+      throw localizedError('找不到枚举: {{key}}', { key: enumKey })
     }
     const options = (enumConfig.values ?? []).map((item) => ({
       label: item.label,
@@ -342,7 +353,7 @@ function createNodeSchema(
           properties: {
             add: {
               type: 'void',
-              title: '添加条目',
+              title: t('添加条目'),
               'x-component': 'ArrayItems.Addition',
             },
           },
@@ -359,7 +370,7 @@ function createNodeSchema(
   }
 
   if (!baseType) {
-    throw new TypeError(`Schema 节点 ${value.key} 没有可用类型`)
+    throw localizedError('Schema 节点 {{key}} 没有可用类型', { key: value.key }, TypeError)
   }
   return {
     [value.key]: value.isArray

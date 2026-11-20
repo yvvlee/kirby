@@ -18,20 +18,21 @@ its first administrator also closes browser setup.
 - Access tokens are short-lived JWTs with an issuer and explicit signing-key ID.
 - Refresh tokens are random, stored only as hashes, rotated on use, and sent in
   `HttpOnly` cookies. Reuse revokes the session.
-- Project API keys contain a public ID and one-time secret. The database stores
+- Environment-bound API keys are 32 random bytes encoded as a one-time base64url secret. The database stores
   a peppered digest and a short display suffix, never the original secret.
 - Application log messages and fields are passed through unchanged. The log
   collection component handles auditing and redaction.
 
 ## Authorization
 
-Environment roles are resolved by user and environment. Repository queries also
-scope projects, configs, snapshots, keys, and imports to their owning
-environment. Permission cache keys include the environment generation, so a
-role change invalidates prior decisions without requiring a new login.
+Project membership and the environment permission matrix determine access.
+System administrators have no implicit project access. Repository queries scope
+configs, snapshots, keys, and imports to their owning project and environment.
+Membership and grant changes take effect without requiring a new login.
 
 Runtime API keys are locked and verified in the database on every request. The
-requested project key must match the credential's project. Published content
+requested project key must match the credential's project, and the credential
+selects exactly one environment. Published content
 cache keys include environment, project, config key, and runtime version.
 
 ## Uploads

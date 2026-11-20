@@ -17,8 +17,7 @@ import (
 
 func TestRuntimeEntryPointsRequireExactlyOneCredential(t *testing.T) {
 	request := &runtimev1.ConfigRequest{
-		Project: "website",
-		Key:     "feature",
+		Key: "feature",
 	}
 
 	ctx := transport.NewServerContext(context.Background(), middlewareTransport{header: header{}})

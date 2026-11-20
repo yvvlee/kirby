@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { uploadAsset, type UploadedAsset } from '@/api/assets'
 import { getApiErrorMessage } from '@/api/errors'
 import type { Identifier } from '@/api/types'
+import { useTranslation } from '@/i18n'
 import {
   filenameFromUrl,
   fileWarnings,
@@ -55,6 +56,7 @@ export default function FileUpload({
   onUploaded,
 }: FileUploadProps) {
   const { message } = App.useApp()
+  const { t } = useTranslation()
   const [attempts, setAttempts] = useState<UploadAttempt[]>([])
   const [preview, setPreview] = useState<{ url: string; type: 'image' | 'video' } | null>(null)
   const names = useRef(new Map<string, string>())
@@ -101,13 +103,13 @@ export default function FileUpload({
 
   const startUpload = useCallback((file: File, callbacks: UploadCallbacks) => {
     const warnings = fileWarnings(file, uploadType, maxSizeBytes)
-    if (warnings.length) void message.warning(`${warnings.join('；')}。后端仍会执行最终校验。`)
+    if (warnings.length) void message.warning(`${warnings.join('; ')}. ${t('后端仍会执行最终校验。')}`)
     const uid = 'uid' in file ? String(file.uid) : crypto.randomUUID()
     const controller = new AbortController()
     const attempt: UploadAttempt = {
       uid,
       file,
-      name: file.name || '文件',
+      name: file.name || t('文件'),
       status: 'uploading',
       percentage: 0,
       error: '',
@@ -136,18 +138,18 @@ export default function FileUpload({
       onUploaded?.(asset)
     }).catch((error: unknown) => {
       if (destroyed.current || isAbortError(error, controller.signal)) return
-      const text = getApiErrorMessage(error, '未知错误')
+      const text = getApiErrorMessage(error, t('未知错误'))
       setAttempts((current) => current.map((item) =>
         item.uid === uid ? { ...item, status: 'error', error: text } : item,
       ))
       callbacks.onError?.(error instanceof Error ? error : new Error(text))
     })
     return { abort: () => controller.abort() }
-  }, [commitUrl, environmentId, maxSizeBytes, message, onUploaded, projectId, removeAttempt, uploadType])
+  }, [commitUrl, environmentId, maxSizeBytes, message, onUploaded, projectId, removeAttempt, t, uploadType])
 
   const customRequest: NonNullable<UploadProps['customRequest']> = (options) => {
     if (!(options.file instanceof File)) {
-      options.onError?.(new TypeError('没有可上传的文件'))
+      options.onError?.(new TypeError(t('没有可上传的文件')))
       return
     }
     return startUpload(options.file, options)
@@ -162,7 +164,7 @@ export default function FileUpload({
     }) satisfies UploadFile),
     ...currentUrls.map((url, index) => ({
       uid: `asset-${index}-${url}`,
-      name: names.current.get(url) || filenameFromUrl(url) || `文件${index + 1}`,
+      name: names.current.get(url) || filenameFromUrl(url) || t('文件 {{index}}', { index: index + 1 }),
       url,
       status: 'done' as const,
       percent: 100,
@@ -206,13 +208,13 @@ export default function FileUpload({
       >
         {canChoose ? (
           listType === 'picture-card' ? <PlusOutlined /> : (
-            <Button disabled={disabled} icon={<UploadOutlined />}>选择文件</Button>
+            <Button disabled={disabled} icon={<UploadOutlined />}>{t('选择文件')}</Button>
           )
         ) : null}
       </Upload>
       {failed.length ? (
         <List
-          aria-label="上传失败的文件"
+          aria-label={t('上传失败的文件')}
           size="small"
           dataSource={failed}
           renderItem={(attempt) => (
@@ -223,7 +225,7 @@ export default function FileUpload({
                 icon={<ReloadOutlined />}
                 disabled={disabled}
                 onClick={() => startUpload(attempt.file, attempt.callbacks)}
-              >重试</Button>,
+              >{t('重试')}</Button>,
             ]}>
               {attempt.name}：{attempt.error}
             </List.Item>
@@ -232,11 +234,11 @@ export default function FileUpload({
       ) : null}
       <Modal
         open={preview !== null}
-        title={preview?.type === 'image' ? '图片预览' : '视频预览'}
+        title={preview?.type === 'image' ? t('图片预览') : t('视频预览')}
         footer={null}
         onCancel={() => setPreview(null)}
       >
-        {preview?.type === 'image' ? <img className="file-preview" src={preview.url} alt="文件预览" /> : null}
+        {preview?.type === 'image' ? <img className="file-preview" src={preview.url} alt={t('文件预览')} /> : null}
         {preview?.type === 'video' ? <video className="file-preview" src={preview.url} controls /> : null}
       </Modal>
     </div>

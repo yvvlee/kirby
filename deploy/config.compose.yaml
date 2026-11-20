@@ -4,18 +4,18 @@ mode: multi
 
 http:
   address: ":8080"
-  timeout: 2m
+  timeout: 120000
 
 grpc:
   address: ":9090"
-  timeout: 10s
+  timeout: 10000
 
 database:
   driver: mysql
   dsn: CHANGE_ME_MYSQL_USER:CHANGE_ME_MYSQL_PASSWORD@tcp(mysql:3306)/kirby?charset=utf8mb4&parseTime=true&loc=UTC
   max_open_conns: 50
   max_idle_conns: 10
-  conn_max_lifetime: 5m
+  conn_max_lifetime: 300000
 
 cache:
   driver: redis
@@ -28,8 +28,8 @@ cache:
 
 jwt:
   issuer: kirby
-  access_ttl: 15m
-  refresh_ttl: 168h
+  access_ttl: 900000
+  refresh_ttl: 604800000
 
 object_storage:
   driver: s3
@@ -45,3 +45,4 @@ object_storage:
 
 log:
   level: info
+

@@ -30,21 +30,6 @@ func OpenFile(path string, flag int, perm os.FileMode) (*os.File, error) {
 	return root.OpenFile(name, flag, perm)
 }
 
-// ReadFile confines the final component to its parent while reading contents.
-//
-// Parameters: path is the explicit file to read.
-// Returns: the file contents.
-// Throws: a filesystem resolution, open, or read error.
-func ReadFile(path string) ([]byte, error) {
-	directory, name := split(path)
-	root, err := os.OpenRoot(directory)
-	if err != nil {
-		return nil, err
-	}
-	defer root.Close()
-	return root.ReadFile(name)
-}
-
 func split(path string) (string, string) {
 	clean := filepath.Clean(path)
 	directory, name := filepath.Split(clean)

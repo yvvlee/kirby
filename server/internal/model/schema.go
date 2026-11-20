@@ -15,8 +15,8 @@ var schemaSQL embed.FS
 
 var requiredTables = []string{
 	"application_secrets", "audit_logs", "config_enums", "configs", "environments", "import_records",
-	"permissions", "project_api_keys", "projects", "refresh_tokens", "role_permissions",
-	"roles", "snapshots", "structures", "user_environment_roles", "users",
+	"project_api_keys", "projects", "refresh_tokens", "snapshots", "structures", "users",
+	"project_members", "environment_permission_grants", "application_settings", "project_invitations",
 }
 
 // RequiredTables returns an independent schema inventory for startup checks.
@@ -75,9 +75,12 @@ func executeSchema(ctx context.Context, connection *sql.Conn, schemaFile string,
 		if statement == "" {
 			continue
 		}
-		if err := executeSchemaStatement(ctx, connection, statement, postgres); err != nil {
+		if err := executeSchemaStatement(ctx, connection, statement); err != nil {
 			return err
 		}
+	}
+	if err := seedApplicationSecrets(ctx, connection, postgres); err != nil {
+		return err
 	}
 	return validateSchema(ctx, connection, postgres)
 }
@@ -94,13 +97,7 @@ func schemaStatement(part string) string {
 	return part
 }
 
-func executeSchemaStatement(ctx context.Context, connection *sql.Conn, statement string, postgres bool) error {
-	// The seed script commits users, permissions, and installation keys together.
-	if statement == "COMMIT" {
-		if err := seedApplicationSecrets(ctx, connection, postgres); err != nil {
-			return err
-		}
-	}
+func executeSchemaStatement(ctx context.Context, connection *sql.Conn, statement string) error {
 	if _, err := connection.ExecContext(ctx, statement); err != nil {
 		return fmt.Errorf("execute database initialization statement: %w", err)
 	}
@@ -158,7 +155,7 @@ func validateSchema(ctx context.Context, reader schemaReader, postgres bool) err
 		sort.Strings(missing)
 		return fmt.Errorf("database schema is incomplete; missing tables: %s", strings.Join(missing, ", "))
 	}
-	return nil
+	return validateEnvironmentColumns(ctx, reader, schemaExpr)
 }
 
 func schemaPlaceholders(postgres bool) string {
@@ -170,4 +167,25 @@ func schemaPlaceholders(postgres bool) string {
 		}
 	}
 	return strings.Join(values, ",")
+}
+
+// Existing installations must assign shared data explicitly before upgrading.
+func validateEnvironmentColumns(ctx context.Context, reader schemaReader, schemaExpr string) error {
+	query := "SELECT table_name FROM information_schema.columns WHERE table_schema = " + schemaExpr + " AND column_name = 'environment_id' AND table_name IN ('configs', 'project_api_keys')"
+	rows, err := reader.QueryContext(ctx, query)
+	if err != nil {
+		return fmt.Errorf("inspect environment isolation schema: %w", err)
+	}
+	defer rows.Close()
+	count := 0
+	for rows.Next() {
+		count++
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("read environment isolation schema: %w", err)
+	}
+	if count != 2 {
+		return fmt.Errorf("database requires environment isolation migration; see docs/environment-isolation.md")
+	}
+	return nil
 }

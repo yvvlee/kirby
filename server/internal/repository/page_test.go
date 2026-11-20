@@ -2,6 +2,7 @@ package repository
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -24,5 +25,5 @@ func TestNormalizePageUsesDefaultsAndCap(t *testing.T) {
 func TestErrorsCanBeClassified(t *testing.T) {
 	assert.True(t, errors.Is(Missing("project"), ErrNotFound))
 	assert.True(t, errors.Is(Unchanged("project"), ErrNoRowsAffected))
-	assert.True(t, errors.Is(InvalidArgument("environment_id"), ErrInvalidArgument))
+	assert.True(t, errors.Is(fmt.Errorf("%w: %s", ErrInvalidArgument, "environment_id"), ErrInvalidArgument))
 }

@@ -170,10 +170,9 @@ func TestS3PostPolicyEnforcesProviderMaximum(t *testing.T) {
 			"x-amz-signature":                        "storage-signature",
 		},
 	}
-	now := time.Date(2026, 8, 17, 10, 0, 0, 0, time.UTC)
 	publicBaseURL, err := url.Parse("https://cdn.example.test/public/kirby")
 	require.NoError(t, err)
-	storage := newS3(&fakeS3{}, presign, "bucket", publicBaseURL, func() time.Time { return now })
+	storage := newS3(&fakeS3{}, presign, "bucket", publicBaseURL)
 
 	ticket, err := storage.PresignUpload(context.Background(), PresignUploadInput{
 		Key:         key,
@@ -214,7 +213,7 @@ func TestS3PostTicketNeverContainsManagementOrSecretCredentials(t *testing.T) {
 	require.NoError(t, err)
 	publicBaseURL, err := url.Parse("https://cdn.example.test/kirby")
 	require.NoError(t, err)
-	storage := newS3(&fakeS3{}, presignClient, "bucket", publicBaseURL, time.Now)
+	storage := newS3(&fakeS3{}, presignClient, "bucket", publicBaseURL)
 	key, err := BuildObjectKey(5, 6, testObjectID, ".png")
 	require.NoError(t, err)
 
@@ -246,7 +245,7 @@ func TestS3CompletePublishesImmutableObjectAndReplayConflicts(t *testing.T) {
 	}}
 	publicBaseURL, err := url.Parse("https://cdn.example.test/public/kirby")
 	require.NoError(t, err)
-	storage := newS3(internal, &fakeS3{}, "bucket", publicBaseURL, time.Now)
+	storage := newS3(internal, &fakeS3{}, "bucket", publicBaseURL)
 
 	metadata, err := storage.CompleteUpload(context.Background(), temporaryKey)
 	require.NoError(t, err)
@@ -292,7 +291,7 @@ func TestS3CleanupFailureKeepsPublishedObject(t *testing.T) {
 	}
 	publicBaseURL, err := url.Parse("https://cdn.example.test/kirby")
 	require.NoError(t, err)
-	storage := newS3(internal, &fakeS3{}, "bucket", publicBaseURL, time.Now)
+	storage := newS3(internal, &fakeS3{}, "bucket", publicBaseURL)
 
 	metadata, err := storage.CompleteUpload(context.Background(), temporaryKey)
 	require.NoError(t, err)
@@ -342,8 +341,8 @@ func TestNewS3UsesSingleProviderClientAndOptionalCDNAddress(t *testing.T) {
 		Endpoint:      "minio:9000",
 		Region:        "us-east-1",
 		Bucket:        "kirby",
-		AccessKey:     conf.NewSecret("access-key"),
-		SecretKey:     conf.NewSecret("secret-key"),
+		AccessKey:     "access-key",
+		SecretKey:     "secret-key",
 		UseSSL:        false,
 		PublicBaseURL: "https://cdn.example.test/public/kirby/",
 	})
@@ -371,8 +370,8 @@ func TestNewS3DefaultsPublicObjectsToSameOriginBucketProxy(t *testing.T) {
 		Endpoint:  "minio:9000",
 		Region:    "us-east-1",
 		Bucket:    "kirby",
-		AccessKey: conf.NewSecret("access-key"),
-		SecretKey: conf.NewSecret("secret-key"),
+		AccessKey: "access-key",
+		SecretKey: "secret-key",
 	})
 	require.NoError(t, err)
 	key, err := BuildObjectKey(5, 6, testObjectID, ".png")
@@ -400,7 +399,7 @@ func TestS3CompletedObjectUsesRelativeURLWithoutPublicBase(t *testing.T) {
 			temporaryKey: uploadedObject("first", "first-etag"),
 		},
 	}
-	storage := newS3(internal, &fakeS3{}, "bucket", &url.URL{}, time.Now)
+	storage := newS3(internal, &fakeS3{}, "bucket", &url.URL{})
 	metadata, err := storage.CompleteUpload(context.Background(), temporaryKey)
 	require.NoError(t, err)
 	assert.Equal(t, "/bucket/"+finalKey, metadata.URL)
@@ -414,7 +413,7 @@ func TestS3BucketCheckUsesOnlyInternalClient(t *testing.T) {
 	presign := &fakeS3{bucketExists: false}
 	publicBaseURL, err := url.Parse("https://cdn.example.test/kirby")
 	require.NoError(t, err)
-	storage := newS3(internal, presign, "bucket", publicBaseURL, time.Now)
+	storage := newS3(internal, presign, "bucket", publicBaseURL)
 
 	exists, err := storage.bucketExists(context.Background())
 	require.NoError(t, err)
@@ -437,7 +436,7 @@ func TestS3CompleteRejectsMetadataMismatch(t *testing.T) {
 	}}
 	publicBaseURL, err := url.Parse("https://cdn.example.test/kirby")
 	require.NoError(t, err)
-	storage := newS3(fake, fake, "bucket", publicBaseURL, time.Now)
+	storage := newS3(fake, fake, "bucket", publicBaseURL)
 	_, err = storage.CompleteUpload(context.Background(), temporaryKey)
 	require.ErrorIs(t, err, ErrObjectIntegrity)
 }
@@ -449,7 +448,7 @@ func TestS3ErrorsDoNotLeakEndpointOrSignedPolicy(t *testing.T) {
 	fake := &fakeS3{presignErr: leaking}
 	publicBaseURL, err := url.Parse("https://cdn.example.test/kirby")
 	require.NoError(t, err)
-	storage := newS3(fake, fake, "bucket", publicBaseURL, time.Now)
+	storage := newS3(fake, fake, "bucket", publicBaseURL)
 	_, err = storage.PresignUpload(context.Background(), PresignUploadInput{
 		Key:         key,
 		ContentType: "image/png",
@@ -466,7 +465,7 @@ func TestS3DeleteIncompleteValidatesKey(t *testing.T) {
 	fake := &fakeS3{}
 	publicBaseURL, err := url.Parse("https://cdn.example.test/kirby")
 	require.NoError(t, err)
-	storage := newS3(fake, fake, "bucket", publicBaseURL, time.Now)
+	storage := newS3(fake, fake, "bucket", publicBaseURL)
 	err = storage.DeleteIncomplete(context.Background(), "../../forged")
 	require.Error(t, err)
 	assert.Empty(t, fake.removedKeys)

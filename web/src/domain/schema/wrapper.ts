@@ -1,8 +1,9 @@
+import { localizedError } from '@/i18n/errors'
 import type { JsonSchema, SchemaValueConfig } from './types'
 
 function needsWrapper(valueConfig: SchemaValueConfig): boolean {
   if (!valueConfig.key || !valueConfig.type) {
-    throw new TypeError('配置项缺少 key 或 type')
+    throw localizedError('配置项缺少 key 或 type', {}, TypeError)
   }
   return Boolean(
     valueConfig.type.baseType ||
@@ -20,7 +21,7 @@ export function wrapSchema(
   }
   const unwrapped = schema[valueConfig.key]
   if (!unwrapped) {
-    throw new Error(`Schema 缺少根属性: ${valueConfig.key}`)
+    throw localizedError('Schema 缺少根属性: {{key}}', { key: valueConfig.key })
   }
   return unwrapped
 }
@@ -40,7 +41,7 @@ export function unwrapValue(
     return value
   }
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw new TypeError('表单值不是可解包的对象')
+    throw localizedError('表单值不是可解包的对象', {}, TypeError)
   }
   return (value as Record<string, unknown>)[valueConfig.key]
 }

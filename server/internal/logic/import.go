@@ -10,6 +10,7 @@ import (
 	"strconv"
 
 	"github.com/google/uuid"
+	"github.com/samber/lo"
 	"google.golang.org/protobuf/proto"
 
 	commonv1 "github.com/yvvlee/kirby/server/api/common"
@@ -19,30 +20,17 @@ import (
 	"github.com/yvvlee/kirby/server/internal/model"
 	"github.com/yvvlee/kirby/server/internal/permission"
 	"github.com/yvvlee/kirby/server/internal/repository"
-	"github.com/yvvlee/kirby/server/internal/util/safeint"
 )
 
-type ConflictStrategy int
+type ConflictStrategy = entity.ConflictStrategy
 
 const (
-	StrategyFail    ConflictStrategy = 1
-	StrategyReplace ConflictStrategy = 2
+	StrategyFail    = entity.StrategyFail
+	StrategyReplace = entity.StrategyReplace
 )
 
-type ImportRequest struct {
-	SourceEnvironmentID int64
-	SourceSnapshotID    int64
-	TargetEnvironmentID int64
-	TargetProjectID     int64
-	TargetConfigID      *int64
-	Description         string
-	Tags                []commonv1.Snapshot_Tag
-	IdempotencyKey      string
-	ConflictStrategy    ConflictStrategy
-}
-
 type ImportResult struct {
-	Snapshot *model.Snapshot
+	Snapshot *commonv1.Snapshot
 	Replayed bool
 }
 
@@ -95,19 +83,20 @@ func NewImportLogic(
 
 // Import copies a snapshot atomically and replays matching idempotent requests.
 //
-// Parameters: ctx carries cancellation and transaction state; actor identifies the authenticated caller; request contains the validated request fields.
+// Parameters: ctx carries cancellation and transaction state; param carries the caller identity and the validated request fields.
 // Returns: the target snapshot and whether the request was replayed; conflicting idempotency keys or failed writes abort the transaction.
 // Throws: none.
-func (l *ImportLogic) Import(ctx context.Context, actor permission.Actor, request ImportRequest) (*ImportResult, error) {
-	requestHash, normalizedTags, err := validateAndHash(request)
+func (l *ImportLogic) Import(ctx context.Context, param *entity.ImportSnapshotParam) (*ImportResult, error) {
+	actor := param.Actor
+	requestHash, normalizedTags, err := validateAndHash(param)
 	if err != nil {
 		return nil, err
 	}
-	request.Tags = normalizedTags
-	if err := RequireSourceRead(ctx, l.permissions, actor.UserID, request.SourceEnvironmentID); err != nil {
+	param.Tags = normalizedTags
+	if err := RequireSourceRead(ctx, l.permissions, actor.UserID, param.SourceEnvironmentID); err != nil {
 		return nil, err
 	}
-	if err := l.permissions.Require(ctx, actor.UserID, request.TargetEnvironmentID,
+	if err := l.permissions.Require(ctx, actor.UserID, param.TargetEnvironmentID,
 		permission.SnapshotImport, permission.SnapshotWrite,
 		permission.ConfigWrite, permission.StructureWrite, permission.EnumWrite,
 	); err != nil {
@@ -117,19 +106,23 @@ func (l *ImportLogic) Import(ctx context.Context, actor permission.Actor, reques
 	var outcome importOutcome
 	err = l.transactions.TX(ctx, func(txctx context.Context) error {
 		var err error
-		outcome, err = l.importSnapshot(txctx, actor, request, requestHash)
+		outcome, err = l.importSnapshot(txctx, actor, param, requestHash)
 		return err
 	})
 	if err != nil {
 		return nil, err
 	}
 	l.cleanupImport(ctx, outcome.cleanup)
-	snapshot, err := l.snapshots.FindByID(ctx, request.TargetEnvironmentID, outcome.snapshotID)
+	snapshot, err := l.snapshots.FindByID(ctx, param.TargetEnvironmentID, outcome.snapshotID)
+	if err != nil {
+		return nil, err
+	}
+	converted, err := converter.SnapshotToProto(snapshot)
 	if err != nil {
 		return nil, err
 	}
 	return &ImportResult{
-		Snapshot: snapshot,
+		Snapshot: converted,
 		Replayed: outcome.replayed,
 	}, nil
 }
@@ -145,8 +138,8 @@ type importTarget struct {
 	snapshot *model.Snapshot
 }
 
-func (l *ImportLogic) importSnapshot(ctx context.Context, actor permission.Actor, request ImportRequest, requestHash [sha256.Size]byte) (importOutcome, error) {
-	record, replayed, err := l.claimImport(ctx, actor, request, requestHash)
+func (l *ImportLogic) importSnapshot(ctx context.Context, actor permission.Actor, param *entity.ImportSnapshotParam, requestHash [sha256.Size]byte) (importOutcome, error) {
+	record, replayed, err := l.claimImport(ctx, actor, param, requestHash)
 	if err != nil {
 		return importOutcome{}, err
 	}
@@ -156,31 +149,31 @@ func (l *ImportLogic) importSnapshot(ctx context.Context, actor permission.Actor
 			replayed:   true,
 		}, nil
 	}
-	target, err := l.prepareImport(ctx, actor, request)
+	target, err := l.prepareImport(ctx, actor, param)
 	if err != nil {
 		return importOutcome{}, err
 	}
-	if err := l.completeImport(ctx, actor, request, record.ID, target.snapshot); err != nil {
+	if err := l.completeImport(ctx, actor, param, record.ID, target.snapshot); err != nil {
 		return importOutcome{}, err
 	}
 	return importOutcome{
 		snapshotID: target.snapshot.ID,
 		cleanup: &cacheTarget{
-			projectID:      target.config.ProjectID,
+			configID:       target.config.ID,
 			configKey:      target.config.Key,
 			runtimeVersion: target.config.RuntimeVersion,
 		},
 	}, nil
 }
 
-func (l *ImportLogic) claimImport(ctx context.Context, actor permission.Actor, request ImportRequest, requestHash [sha256.Size]byte) (*model.ImportRecord, bool, error) {
+func (l *ImportLogic) claimImport(ctx context.Context, actor permission.Actor, param *entity.ImportSnapshotParam, requestHash [sha256.Size]byte) (*model.ImportRecord, bool, error) {
 	record := &model.ImportRecord{
 		UserID:              actor.UserID,
-		SourceEnvironmentID: request.SourceEnvironmentID,
-		TargetEnvironmentID: request.TargetEnvironmentID,
-		SourceSnapshotID:    request.SourceSnapshotID,
-		TargetProjectID:     request.TargetProjectID,
-		IdempotencyKey:      request.IdempotencyKey,
+		SourceEnvironmentID: param.SourceEnvironmentID,
+		TargetEnvironmentID: param.TargetEnvironmentID,
+		SourceSnapshotID:    param.SourceSnapshotID,
+		TargetProjectID:     param.TargetProjectID,
+		IdempotencyKey:      param.IdempotencyKey,
 		RequestHash:         requestHash[:],
 		Status:              model.ImportStatusPending,
 		ErrorMessage:        uuid.NewString(),
@@ -205,8 +198,8 @@ func (l *ImportLogic) claimImport(ctx context.Context, actor permission.Actor, r
 	return claimed, false, nil
 }
 
-func (l *ImportLogic) prepareImport(ctx context.Context, actor permission.Actor, request ImportRequest) (*importTarget, error) {
-	sourceSnapshot, err := l.snapshots.LockByID(ctx, request.SourceEnvironmentID, request.SourceSnapshotID)
+func (l *ImportLogic) prepareImport(ctx context.Context, actor permission.Actor, param *entity.ImportSnapshotParam) (*importTarget, error) {
+	sourceSnapshot, err := l.snapshots.LockByID(ctx, param.SourceEnvironmentID, param.SourceSnapshotID)
 	if err != nil {
 		return nil, err
 	}
@@ -214,18 +207,18 @@ func (l *ImportLogic) prepareImport(ctx context.Context, actor permission.Actor,
 	if err != nil {
 		return nil, err
 	}
-	if _, err := l.projects.LockByID(ctx, request.TargetEnvironmentID, request.TargetProjectID); err != nil {
+	if _, err := l.projects.LockByID(ctx, param.TargetEnvironmentID, param.TargetProjectID); err != nil {
 		return nil, err
 	}
-	config, err := l.writeConfig(ctx, actor.UserID, request, source)
+	config, err := l.writeConfig(ctx, actor.UserID, param, source)
 	if err != nil {
 		return nil, err
 	}
-	content, err := l.importResources(ctx, actor.UserID, request.TargetEnvironmentID, config, source)
+	content, err := l.importResources(ctx, actor.UserID, param.TargetEnvironmentID, config, source)
 	if err != nil {
 		return nil, err
 	}
-	tagsJSON, err := converter.EncodeTags(request.Tags)
+	tagsJSON, err := converter.EncodeTags(param.Tags)
 	if err != nil {
 		return nil, err
 	}
@@ -235,7 +228,7 @@ func (l *ImportLogic) prepareImport(ctx context.Context, actor permission.Actor,
 			ProjectID:   config.ProjectID,
 			ConfigID:    config.ID,
 			ConfigKey:   config.Key,
-			Description: request.Description,
+			Description: param.Description,
 			Content:     content,
 			TagsJSON:    tagsJSON,
 			Meta: model.Meta{
@@ -251,10 +244,10 @@ func (l *ImportLogic) importResources(ctx context.Context, actorID, environmentI
 	if err != nil {
 		return "", err
 	}
-	if err := l.structures.Reconcile(ctx, environmentID, config.ID, structures, actorID); err != nil {
+	if _, err := l.structures.Reconcile(ctx, environmentID, config.ID, structures, actorID); err != nil {
 		return "", err
 	}
-	if err := l.enums.Reconcile(ctx, environmentID, config.ID, enums, actorID); err != nil {
+	if _, err := l.enums.Reconcile(ctx, environmentID, config.ID, enums, actorID); err != nil {
 		return "", err
 	}
 	content, err := canonicalTargetContent(source, config, structures, enums)
@@ -264,38 +257,39 @@ func (l *ImportLogic) importResources(ctx context.Context, actorID, environmentI
 	return entity.EncodeConfigSnapshot(content)
 }
 
-func (l *ImportLogic) completeImport(ctx context.Context, actor permission.Actor, request ImportRequest, recordID int64, snapshot *model.Snapshot) error {
-	if err := l.snapshots.Create(ctx, request.TargetEnvironmentID, snapshot.ProjectID, snapshot.ConfigID, snapshot); err != nil {
+func (l *ImportLogic) completeImport(ctx context.Context, actor permission.Actor, param *entity.ImportSnapshotParam, recordID int64, snapshot *model.Snapshot) error {
+	if _, err := l.snapshots.Create(ctx, param.TargetEnvironmentID, snapshot.ProjectID, snapshot.ConfigID, snapshot); err != nil {
 		return err
 	}
-	if err := l.snapshots.SetCurrent(ctx, request.TargetEnvironmentID, snapshot.ConfigID, snapshot.ID, actor.UserID); err != nil {
+	if _, err := l.snapshots.SetCurrent(ctx, param.TargetEnvironmentID, snapshot.ConfigID, snapshot.ID, actor.UserID); err != nil {
 		return err
 	}
 	resultJSON := fmt.Sprintf(`{"target_snapshot_id":%d}`, snapshot.ID)
-	if err := l.imports.Complete(ctx, recordID, snapshot.ID, resultJSON); err != nil {
+	if _, err := l.imports.Complete(ctx, recordID, snapshot.ID, resultJSON); err != nil {
 		return err
 	}
-	return l.audits.RecordForEnvironment(ctx, request.TargetEnvironmentID, importAudit(actor, request, snapshot.ID))
+	_, err := l.audits.RecordForEnvironment(ctx, param.TargetEnvironmentID, importAudit(actor, param, snapshot.ID))
+	return err
 }
 
 func (l *ImportLogic) cleanupImport(ctx context.Context, target *cacheTarget) {
 	if target == nil {
 		return
 	}
-	if err := l.cache.DeletePublishedConfigVersion(ctx, target.projectID, target.configKey, target.runtimeVersion); err != nil {
-		l.logger.WithContext(ctx).Errorw("msg", "清理导入后的配置缓存失败", "project_id", target.projectID, "config_key", target.configKey, "runtime_version", target.runtimeVersion, "error", err)
+	if err := l.cache.DeletePublishedConfigVersion(ctx, target.configID, target.configKey, target.runtimeVersion); err != nil {
+		l.logger.WithContext(ctx).Errorw("msg", "清理导入后的配置缓存失败", "config_id", target.configID, "config_key", target.configKey, "runtime_version", target.runtimeVersion, "error", err)
 	}
 }
 
-func (l *ImportLogic) writeConfig(ctx context.Context, actorID int64, request ImportRequest, source *entity.ConfigSnapshot) (*model.Config, error) {
+func (l *ImportLogic) writeConfig(ctx context.Context, actorID int64, param *entity.ImportSnapshotParam, source *entity.ConfigSnapshot) (*model.Config, error) {
 	txctx := ctx
 	typeJSON, err := converter.EncodeFieldType(source.Config.Type)
 	if err != nil {
 		return nil, err
 	}
-	if request.ConflictStrategy == StrategyFail {
+	if param.ConflictStrategy == StrategyFail {
 		item := &model.Config{
-			ProjectID:   request.TargetProjectID,
+			ProjectID:   param.TargetProjectID,
 			Key:         source.Config.Key,
 			Description: source.Config.Description,
 			IsArray:     source.Config.IsArray,
@@ -306,19 +300,19 @@ func (l *ImportLogic) writeConfig(ctx context.Context, actorID int64, request Im
 				UpdatedBy: actorID,
 			},
 		}
-		if err := l.configs.Create(txctx, request.TargetEnvironmentID, request.TargetProjectID, item); err != nil {
+		if _, err := l.configs.Create(txctx, param.TargetEnvironmentID, param.TargetProjectID, item); err != nil {
 			return nil, err
 		}
 		return item, nil
 	}
-	target, err := l.configs.LockByID(txctx, request.TargetEnvironmentID, *request.TargetConfigID)
+	target, err := l.configs.LockByID(txctx, param.TargetEnvironmentID, *param.TargetConfigID)
 	if err != nil {
 		return nil, err
 	}
-	if target.ProjectID != request.TargetProjectID {
+	if target.ProjectID != param.TargetProjectID {
 		return nil, repository.Missing("target config")
 	}
-	if err := l.configs.Update(txctx, request.TargetEnvironmentID, target.ID, repository.ConfigUpdate{
+	if _, err := l.configs.Update(txctx, param.TargetEnvironmentID, target.ID, repository.ConfigUpdate{
 		Description: source.Config.Description,
 		IsArray:     source.Config.IsArray,
 		TypeJSON:    typeJSON,
@@ -327,7 +321,7 @@ func (l *ImportLogic) writeConfig(ctx context.Context, actorID int64, request Im
 	}); err != nil {
 		return nil, err
 	}
-	if err := l.configs.UpdateValue(txctx, request.TargetEnvironmentID, target.ID, repository.ConfigValueUpdate{
+	if _, err := l.configs.UpdateValue(txctx, param.TargetEnvironmentID, target.ID, repository.ConfigValueUpdate{
 		Value:     source.Config.Value,
 		UpdatedBy: actorID,
 		Version:   target.Version + 1,
@@ -343,12 +337,12 @@ func (l *ImportLogic) writeConfig(ctx context.Context, actorID int64, request Im
 	return target, nil
 }
 
-func validateAndHash(request ImportRequest) ([sha256.Size]byte, []commonv1.Snapshot_Tag, error) {
+func validateAndHash(param *entity.ImportSnapshotParam) ([sha256.Size]byte, []commonv1.Snapshot_Tag, error) {
 	var empty [sha256.Size]byte
-	if request.ConflictStrategy == StrategyFail && request.TargetConfigID != nil || request.ConflictStrategy == StrategyReplace && request.TargetConfigID == nil || request.ConflictStrategy != StrategyFail && request.ConflictStrategy != StrategyReplace {
+	if param.ConflictStrategy == StrategyFail && param.TargetConfigID != nil || param.ConflictStrategy == StrategyReplace && param.TargetConfigID == nil || param.ConflictStrategy != StrategyFail && param.ConflictStrategy != StrategyReplace {
 		return empty, nil, entity.Invalid("snapshot import conflict strategy does not match target config")
 	}
-	tags := append([]commonv1.Snapshot_Tag(nil), request.Tags...)
+	tags := append([]commonv1.Snapshot_Tag(nil), param.Tags...)
 	sort.Slice(tags, func(i, j int) bool { return tags[i] < tags[j] })
 	for index, tag := range tags {
 		if tag < commonv1.Snapshot_RELEASE || tag > commonv1.Snapshot_REUSE || index > 0 && tags[index-1] == tag {
@@ -365,14 +359,14 @@ func validateAndHash(request ImportRequest) ([sha256.Size]byte, []commonv1.Snaps
 		Tags                []commonv1.Snapshot_Tag `json:"tags"`
 		ConflictStrategy    ConflictStrategy        `json:"conflict_strategy"`
 	}{
-		request.SourceEnvironmentID,
-		request.SourceSnapshotID,
-		request.TargetEnvironmentID,
-		request.TargetProjectID,
-		request.TargetConfigID,
-		request.Description,
+		param.SourceEnvironmentID,
+		param.SourceSnapshotID,
+		param.TargetEnvironmentID,
+		param.TargetProjectID,
+		param.TargetConfigID,
+		param.Description,
 		tags,
-		request.ConflictStrategy,
+		param.ConflictStrategy,
 	}
 	encoded, err := json.Marshal(canonical)
 	if err != nil {
@@ -422,19 +416,12 @@ func resourceModels(content *entity.ConfigSnapshot, configID, actorID int64) ([]
 }
 
 func canonicalTargetContent(source *entity.ConfigSnapshot, config *model.Config, structures []*model.Structure, enums []*model.ConfigEnum) (*entity.ConfigSnapshot, error) {
-	runtimeVersion, err := safeint.Uint64FromInt64(config.RuntimeVersion)
-	if err != nil {
-		return nil, fmt.Errorf("target config runtime version is invalid")
-	}
 	result := &entity.ConfigSnapshot{Config: proto.Clone(source.Config).(*commonv1.Config)}
 	result.Config.Id, result.Config.ProjectId, result.Config.Key = config.ID, config.ProjectID, config.Key
-	result.Config.RuntimeVersion = runtimeVersion
-	result.Config.CreatedBy, result.Config.UpdatedBy, result.Config.CreatedAt, result.Config.UpdatedAt, result.Config.Version = "", "", "", "", 0
+	result.Config.RuntimeVersion = uint64(config.RuntimeVersion)
+	result.Config.CreatedBy, result.Config.UpdatedBy, result.Config.CreatedAt, result.Config.UpdatedAt, result.Config.Version = "", "", nil, nil, 0
 	result.Structures = make([]*commonv1.Structure, 0, len(source.Structures))
-	structureByKey := make(map[string]*model.Structure, len(structures))
-	for _, item := range structures {
-		structureByKey[item.Key] = item
-	}
+	structureByKey := lo.KeyBy(structures, func(item *model.Structure) string { return item.Key })
 	for _, sourceItem := range source.Structures {
 		item := proto.Clone(sourceItem).(*commonv1.Structure)
 		modelItem := structureByKey[item.Key]
@@ -442,14 +429,11 @@ func canonicalTargetContent(source *entity.ConfigSnapshot, config *model.Config,
 			return nil, fmt.Errorf("target structure was not persisted")
 		}
 		item.Id, item.ConfigId = modelItem.ID, config.ID
-		item.CreatedBy, item.UpdatedBy, item.CreatedAt, item.UpdatedAt, item.Version = "", "", "", "", 0
+		item.CreatedBy, item.UpdatedBy, item.CreatedAt, item.UpdatedAt, item.Version = "", "", nil, nil, 0
 		result.Structures = append(result.Structures, item)
 	}
 	result.Enums = make([]*commonv1.ConfigEnum, 0, len(source.Enums))
-	enumByKey := make(map[string]*model.ConfigEnum, len(enums))
-	for _, item := range enums {
-		enumByKey[item.Key] = item
-	}
+	enumByKey := lo.KeyBy(enums, func(item *model.ConfigEnum) string { return item.Key })
 	for _, sourceItem := range source.Enums {
 		item := proto.Clone(sourceItem).(*commonv1.ConfigEnum)
 		modelItem := enumByKey[item.Key]
@@ -457,7 +441,7 @@ func canonicalTargetContent(source *entity.ConfigSnapshot, config *model.Config,
 			return nil, fmt.Errorf("target enum was not persisted")
 		}
 		item.Id, item.ConfigId = modelItem.ID, config.ID
-		item.CreatedBy, item.UpdatedBy, item.CreatedAt, item.UpdatedAt, item.Version = "", "", "", "", 0
+		item.CreatedBy, item.UpdatedBy, item.CreatedAt, item.UpdatedAt, item.Version = "", "", nil, nil, 0
 		result.Enums = append(result.Enums, item)
 	}
 	schema, err := entity.NewSchema(result.Structures, result.Enums)
@@ -472,21 +456,21 @@ func canonicalTargetContent(source *entity.ConfigSnapshot, config *model.Config,
 }
 
 type cacheTarget struct {
-	projectID      int64
+	configID       int64
 	configKey      string
 	runtimeVersion int64
 }
 
-func importAudit(actor permission.Actor, request ImportRequest, snapshotID int64) *model.AuditLog {
+func importAudit(actor permission.Actor, param *entity.ImportSnapshotParam, snapshotID int64) *model.AuditLog {
 	actorID := actor.UserID
 	details, _ := json.Marshal(struct {
 		SourceEnvironmentID int64 `json:"source_environment_id"`
 		SourceSnapshotID    int64 `json:"source_snapshot_id"`
 		TargetProjectID     int64 `json:"target_project_id"`
 	}{
-		request.SourceEnvironmentID,
-		request.SourceSnapshotID,
-		request.TargetProjectID,
+		param.SourceEnvironmentID,
+		param.SourceSnapshotID,
+		param.TargetProjectID,
 	})
 	detailsJSON := string(details)
 	return &model.AuditLog{

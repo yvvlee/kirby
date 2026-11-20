@@ -32,7 +32,7 @@ contains the source config key. It must not include `target_config_id`.
 with the imported value, structures, enums, description, and tags. It does not
 select a target by name or guess which record to replace.
 
-The imported snapshot is not automatically published. A publisher must review
+The imported snapshot is not automatically published. A user with the environment publish permission must review
 and publish it in the target environment.
 
 ## Idempotency

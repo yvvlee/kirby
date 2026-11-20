@@ -22,7 +22,7 @@ type setupTestLogic struct {
 	createErr   error
 	calls       int
 	username    string
-	displayName string
+	nickname    string
 	password    string
 }
 
@@ -30,10 +30,10 @@ func (l *setupTestLogic) GetSetupStatus(context.Context) (bool, error) {
 	return l.initialized, l.statusErr
 }
 
-func (l *setupTestLogic) CreateInitialAdmin(_ context.Context, username, displayName, password string) error {
+func (l *setupTestLogic) CreateInitialAdmin(_ context.Context, username, nickname, password, email string) error {
 	l.calls++
 	l.username = username
-	l.displayName = displayName
+	l.nickname = nickname
 	l.password = password
 	return l.createErr
 }
@@ -50,9 +50,10 @@ func setupTestService(t *testing.T, logicLayer *setupTestLogic) *SetupService {
 
 func initialAdminRequest() *adminv1.CreateInitialAdminRequest {
 	return &adminv1.CreateInitialAdminRequest{
-		Username:    "owner",
-		DisplayName: "Owner",
-		Password:    "initial-password",
+		Email:    "owner@example.com",
+		Username: "owner",
+		Nickname: "Owner",
+		Password: "initial-password",
 	}
 }
 
@@ -81,7 +82,7 @@ func TestSetupCreatesInitialAdminWithoutStartingSession(t *testing.T) {
 	if _, err := service.CreateInitialAdmin(ctx, initialAdminRequest()); err != nil {
 		t.Fatal(err)
 	}
-	if logicLayer.calls != 1 || logicLayer.username != "owner" || logicLayer.displayName != "Owner" || logicLayer.password != "initial-password" {
+	if logicLayer.calls != 1 || logicLayer.username != "owner" || logicLayer.nickname != "Owner" || logicLayer.password != "initial-password" {
 		t.Fatalf("setup inputs were not passed through: %+v", logicLayer)
 	}
 	if len(requestTransport.reply.Values("Set-Cookie")) != 0 {
@@ -110,54 +111,54 @@ func TestSetupRejectsInvalidCredentialsAtBoundary(t *testing.T) {
 	requests := []*adminv1.CreateInitialAdminRequest{
 		nil,
 		{
-			Username:    " ",
-			DisplayName: "Owner",
-			Password:    "initial-password",
+			Username: " ",
+			Nickname: "Owner",
+			Password: "initial-password",
 		},
 		{
-			Username:    "owner\n",
-			DisplayName: "Owner",
-			Password:    "initial-password",
+			Username: "owner\n",
+			Nickname: "Owner",
+			Password: "initial-password",
 		},
 		{
-			Username:    strings.Repeat("a", 129),
-			DisplayName: "Owner",
-			Password:    "initial-password",
+			Username: strings.Repeat("a", 129),
+			Nickname: "Owner",
+			Password: "initial-password",
 		},
 		{
-			Username:    "owner",
-			DisplayName: " ",
-			Password:    "initial-password",
+			Username: "owner",
+			Nickname: " ",
+			Password: "initial-password",
 		},
 		{
-			Username:    "owner",
-			DisplayName: "Own\x00er",
-			Password:    "initial-password",
+			Username: "owner",
+			Nickname: "Own\x00er",
+			Password: "initial-password",
 		},
 		{
-			Username:    "owner",
-			DisplayName: string([]byte{0xff}),
-			Password:    "initial-password",
+			Username: "owner",
+			Nickname: string([]byte{0xff}),
+			Password: "initial-password",
 		},
 		{
-			Username:    "owner",
-			DisplayName: "Owner",
-			Password:    "too-short",
+			Username: "owner",
+			Nickname: "Owner",
+			Password: "too-short",
 		},
 		{
-			Username:    "owner",
-			DisplayName: "Owner",
-			Password:    strings.Repeat("a", 1025),
+			Username: "owner",
+			Nickname: "Owner",
+			Password: strings.Repeat("a", 1025),
 		},
 		{
-			Username:    "owner",
-			DisplayName: "Owner",
-			Password:    strings.Repeat(" ", 12),
+			Username: "owner",
+			Nickname: "Owner",
+			Password: strings.Repeat(" ", 12),
 		},
 		{
-			Username:    "owner",
-			DisplayName: "Owner",
-			Password:    "initial-\x00password",
+			Username: "owner",
+			Nickname: "Owner",
+			Password: "initial-\x00password",
 		},
 	}
 	for index, request := range requests {
@@ -183,15 +184,15 @@ func TestSetupReturnsConflictAfterPermanentInitialization(t *testing.T) {
 	}
 }
 
-func TestSetupPasswordLimitsUseUTF8Bytes(t *testing.T) {
-	for _, value := range []string{strings.Repeat("中", 4), strings.Repeat("中", 341) + "a"} {
+func TestSetupPasswordVisibleASCIIAndLength(t *testing.T) {
+	for _, value := range []string{"Abcdefg1", strings.Repeat("a", 31) + "!"} {
 		request := initialAdminRequest()
 		request.Password = value
 		if err := validateInitialAdmin(request); err != nil {
 			t.Fatalf("valid multibyte password of %d bytes: %v", len(value), err)
 		}
 	}
-	for _, value := range []string{strings.Repeat("中", 3), strings.Repeat("中", 342)} {
+	for _, value := range []string{strings.Repeat("中", 4), "Abcdefgh", "12345678", "abcd ef1", "abcd!12", strings.Repeat("a", 32) + "!"} {
 		request := initialAdminRequest()
 		request.Password = value
 		if err := validateInitialAdmin(request); kratoserrors.FromError(err).Code != http.StatusBadRequest {

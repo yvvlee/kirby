@@ -1,4 +1,5 @@
 import { Select } from 'antd'
+import { useTranslation } from '@/i18n'
 
 import {
   buildDataTypeGroups,
@@ -24,16 +25,17 @@ export default function DataTypeSelector({
   limitedModels = [],
   limit = false,
   optionGroups = [],
-  placeholder = '请选择数据类型',
+  placeholder,
   onChange,
 }: Props) {
+  const { t } = useTranslation()
   const options = optionGroups.length
     ? optionGroups
     : buildDataTypeGroups({ models, enums, limitedModels, limit })
   return (
     <Select
       value={value ?? null}
-      placeholder={placeholder}
+      placeholder={t(placeholder ?? '请选择数据类型')}
       options={options}
       onChange={(nextValue) => onChange?.(nextValue)}
     />

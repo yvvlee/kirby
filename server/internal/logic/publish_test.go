@@ -67,8 +67,8 @@ func snapshotRecord(id int64, status model.SnapshotStatus, version int64, conten
 			ID:        id,
 			CreatedBy: 3,
 			UpdatedBy: 3,
-			CreatedAt: fixedTestTime.Add(-time.Hour),
-			UpdatedAt: fixedTestTime.Add(-time.Hour),
+			CreatedAt: time.Now().Add(-time.Hour),
+			UpdatedAt: time.Now().Add(-time.Hour),
 			Version:   version,
 		},
 		ProjectID:   20,
@@ -231,10 +231,11 @@ func (r statePublicationRepository) LockForConfig(_ context.Context, environment
 	return items, nil
 }
 
-func (r statePublicationRepository) SetReleased(_ context.Context, update repository.SnapshotPublicationUpdate) error {
+func (r statePublicationRepository) SetReleased(_ context.Context, update repository.SnapshotPublicationUpdate) (rowsAffected int64, err error) {
 	snapshot, exists := r.state.snapshots[update.SnapshotID]
 	if !exists || update.EnvironmentID != r.state.environmentID || snapshot.ConfigID != update.ConfigID || snapshot.Status != model.SnapshotStatusUnreleased || snapshot.Version != update.ExpectedVersion {
-		return repository.Unchanged("snapshot publication")
+		err = repository.Unchanged("snapshot publication")
+		return
 	}
 	snapshot.Status = model.SnapshotStatusReleased
 	snapshot.PublishedAt = &update.ChangedAt
@@ -243,13 +244,14 @@ func (r statePublicationRepository) SetReleased(_ context.Context, update reposi
 	snapshot.UpdatedAt = update.ChangedAt
 	snapshot.Version++
 	r.state.snapshots[update.SnapshotID] = snapshot
-	return nil
+	return
 }
 
-func (r statePublicationRepository) SetUnreleased(_ context.Context, update repository.SnapshotPublicationUpdate) error {
+func (r statePublicationRepository) SetUnreleased(_ context.Context, update repository.SnapshotPublicationUpdate) (rowsAffected int64, err error) {
 	snapshot, exists := r.state.snapshots[update.SnapshotID]
 	if !exists || update.EnvironmentID != r.state.environmentID || snapshot.ConfigID != update.ConfigID || snapshot.Status != model.SnapshotStatusReleased || snapshot.Version != update.ExpectedVersion {
-		return repository.Unchanged("snapshot unpublication")
+		err = repository.Unchanged("snapshot unpublication")
+		return
 	}
 	snapshot.Status = model.SnapshotStatusUnreleased
 	snapshot.PublishedAt = nil
@@ -258,18 +260,20 @@ func (r statePublicationRepository) SetUnreleased(_ context.Context, update repo
 	snapshot.UpdatedAt = update.ChangedAt
 	snapshot.Version++
 	r.state.snapshots[update.SnapshotID] = snapshot
-	return nil
+	return
 }
 
-func (r statePublicationRepository) IncrementRuntimeVersion(_ context.Context, environmentID, configID int64) error {
+func (r statePublicationRepository) IncrementRuntimeVersion(_ context.Context, environmentID, configID int64) (rowsAffected int64, err error) {
 	if r.state.failRuntime != nil {
-		return r.state.failRuntime
+		err = r.state.failRuntime
+		return
 	}
 	if environmentID != r.state.environmentID || configID != r.state.config.ID {
-		return repository.Unchanged("config runtime version")
+		err = repository.Unchanged("config runtime version")
+		return
 	}
 	r.state.config.RuntimeVersion++
-	return nil
+	return
 }
 
 type stateAuditRepository struct {
@@ -277,15 +281,17 @@ type stateAuditRepository struct {
 	state *publishState
 }
 
-func (r stateAuditRepository) RecordForEnvironment(_ context.Context, environmentID int64, audit *model.AuditLog) error {
+func (r stateAuditRepository) RecordForEnvironment(_ context.Context, environmentID int64, audit *model.AuditLog) (rowsAffected int64, err error) {
 	if r.state.failAudit != nil {
-		return r.state.failAudit
+		err = r.state.failAudit
+		return
 	}
 	if environmentID != r.state.environmentID {
-		return repository.Missing("environment")
+		err = repository.Missing("environment")
+		return
 	}
 	r.state.audits = append(r.state.audits, *audit)
-	return nil
+	return
 }
 
 type testAuthorizer struct {
@@ -332,7 +338,6 @@ func publishNewTestLogic(t *testing.T, state *publishState, authorizer *testAuth
 		stateSnapshotReader{state: state}, statePublicationRepository{state: state}, authorizer,
 		stateAuditRepository{state: state}, store, cache, newContentTestLogger(t),
 	)
-	logicLayer.now = func() time.Time { return fixedTestTime }
 	return logicLayer
 }
 
@@ -348,16 +353,20 @@ func TestPublishSwitchesReleaseWithStableLockOrder(t *testing.T) {
 	cache := &testCache{}
 	logicLayer := publishNewTestLogic(t, state, &testAuthorizer{}, cache)
 
-	result, err := logicLayer.Publish(context.Background(), permission.Actor{
-		UserID:    7,
-		RequestID: "request-1",
-	}, 5, 101, 3)
+	result, err := logicLayer.Publish(context.Background(), &entity.PublishSnapshotParam{
+		Actor: permission.Actor{
+			UserID:    7,
+			RequestID: "request-1",
+		},
+		EnvironmentID:   5,
+		SnapshotID:      101,
+		ExpectedVersion: 3,
+	})
 
 	require.NoError(t, err)
-	assert.Equal(t, model.SnapshotStatusReleased, result.Status)
-	assert.Equal(t, int64(4), result.Version)
-	require.NotNil(t, result.PublishedBy)
-	assert.Equal(t, int64(7), *result.PublishedBy)
+	assert.Equal(t, commonv1.Snapshot_RELEASED, result.Status)
+	assert.Equal(t, uint32(4), result.Version)
+	assert.Equal(t, "7", result.UpdatedBy)
 	assert.Equal(t, model.SnapshotStatusUnreleased, state.snapshots[100].Status)
 	assert.Equal(t, int64(3), state.snapshots[100].Version)
 	assert.Equal(t, int64(1), state.config.RuntimeVersion)
@@ -367,7 +376,7 @@ func TestPublishSwitchesReleaseWithStableLockOrder(t *testing.T) {
 	assert.Equal(t, "request-1", state.audits[0].RequestID)
 	require.Len(t, cache.calls, 1)
 	assert.Equal(t, publishCleanupCall{
-		projectID:      20,
+		projectID:      10,
 		configKey:      "feature",
 		runtimeVersion: 0,
 	}, cache.calls[0])
@@ -382,7 +391,12 @@ func TestConcurrentPublishLeavesExactlyOneReleasedSnapshot(t *testing.T) {
 		group.Add(1)
 		go func(id int64) {
 			defer group.Done()
-			_, err := logicLayer.Publish(context.Background(), permission.Actor{UserID: 7}, 5, id, 0)
+			_, err := logicLayer.Publish(context.Background(), &entity.PublishSnapshotParam{
+				Actor:           permission.Actor{UserID: 7},
+				EnvironmentID:   5,
+				SnapshotID:      id,
+				ExpectedVersion: 0,
+			})
 			errorsByCall <- err
 		}(snapshotID)
 	}
@@ -454,9 +468,19 @@ func TestPublishRejectsRepeatedAndStaleOperations(t *testing.T) {
 			logicLayer := publishNewTestLogic(t, state, &testAuthorizer{}, cache)
 			var err error
 			if test.unpublish {
-				_, err = logicLayer.Unpublish(context.Background(), permission.Actor{UserID: 7}, 5, 100, test.expected)
+				_, err = logicLayer.Unpublish(context.Background(), &entity.UnpublishSnapshotParam{
+					Actor:           permission.Actor{UserID: 7},
+					EnvironmentID:   5,
+					SnapshotID:      100,
+					ExpectedVersion: test.expected,
+				})
 			} else {
-				_, err = logicLayer.Publish(context.Background(), permission.Actor{UserID: 7}, 5, 100, test.expected)
+				_, err = logicLayer.Publish(context.Background(), &entity.PublishSnapshotParam{
+					Actor:           permission.Actor{UserID: 7},
+					EnvironmentID:   5,
+					SnapshotID:      100,
+					ExpectedVersion: test.expected,
+				})
 			}
 			assert.ErrorIs(t, err, entity.ErrConflict)
 			assert.Equal(t, int64(0), state.config.RuntimeVersion)
@@ -471,14 +495,24 @@ func TestPublishRejectsPermissionAndForeignEnvironment(t *testing.T) {
 	authorizer := &testAuthorizer{err: errDenied}
 	logicLayer := publishNewTestLogic(t, state, authorizer, &testCache{})
 
-	_, err := logicLayer.Publish(context.Background(), permission.Actor{UserID: 7}, 5, 100, 0)
+	_, err := logicLayer.Publish(context.Background(), &entity.PublishSnapshotParam{
+		Actor:           permission.Actor{UserID: 7},
+		EnvironmentID:   5,
+		SnapshotID:      100,
+		ExpectedVersion: 0,
+	})
 	assert.ErrorIs(t, err, errDenied)
 	assert.Empty(t, state.lockOrder)
 	require.Len(t, authorizer.calls, 1)
 	assert.Equal(t, []string{permission.SnapshotPublish}, authorizer.calls[0])
 
 	authorizer.err = nil
-	_, err = logicLayer.Publish(context.Background(), permission.Actor{UserID: 7}, 99, 100, 0)
+	_, err = logicLayer.Publish(context.Background(), &entity.PublishSnapshotParam{
+		Actor:           permission.Actor{UserID: 7},
+		EnvironmentID:   99,
+		SnapshotID:      100,
+		ExpectedVersion: 0,
+	})
 	assert.ErrorIs(t, err, repository.ErrNotFound)
 	assert.Empty(t, state.lockOrder)
 }
@@ -505,7 +539,12 @@ func TestPublishRejectsInvalidSnapshotBeforeWrites(t *testing.T) {
 			state.snapshots[100] = target
 			logicLayer := publishNewTestLogic(t, state, &testAuthorizer{}, &testCache{})
 
-			_, err := logicLayer.Publish(context.Background(), permission.Actor{UserID: 7}, 5, 100, 0)
+			_, err := logicLayer.Publish(context.Background(), &entity.PublishSnapshotParam{
+				Actor:           permission.Actor{UserID: 7},
+				EnvironmentID:   5,
+				SnapshotID:      100,
+				ExpectedVersion: 0,
+			})
 
 			assert.ErrorIs(t, err, entity.ErrInvalid)
 			assert.Equal(t, model.SnapshotStatusUnreleased, state.snapshots[100].Status)
@@ -525,7 +564,12 @@ func TestPublishRejectsMultipleReleasedSnapshots(t *testing.T) {
 	state.snapshots[101] = second
 	logicLayer := publishNewTestLogic(t, state, &testAuthorizer{}, &testCache{})
 
-	_, err := logicLayer.Unpublish(context.Background(), permission.Actor{UserID: 7}, 5, 100, 0)
+	_, err := logicLayer.Unpublish(context.Background(), &entity.UnpublishSnapshotParam{
+		Actor:           permission.Actor{UserID: 7},
+		EnvironmentID:   5,
+		SnapshotID:      100,
+		ExpectedVersion: 0,
+	})
 
 	assert.ErrorIs(t, err, entity.ErrConflict)
 	assert.Equal(t, int64(0), state.config.RuntimeVersion)
@@ -539,7 +583,12 @@ func TestPublishRejectsUnsupportedSnapshotStatus(t *testing.T) {
 	state.snapshots[100] = target
 	logicLayer := publishNewTestLogic(t, state, &testAuthorizer{}, &testCache{})
 
-	_, err := logicLayer.Publish(context.Background(), permission.Actor{UserID: 7}, 5, 100, 0)
+	_, err := logicLayer.Publish(context.Background(), &entity.PublishSnapshotParam{
+		Actor:           permission.Actor{UserID: 7},
+		EnvironmentID:   5,
+		SnapshotID:      100,
+		ExpectedVersion: 0,
+	})
 
 	assert.ErrorIs(t, err, entity.ErrConflict)
 	assert.Equal(t, int64(0), state.config.RuntimeVersion)
@@ -556,7 +605,12 @@ func TestPublishRollsBackStateAndAuditTogether(t *testing.T) {
 	cache := &testCache{}
 	logicLayer := publishNewTestLogic(t, state, &testAuthorizer{}, cache)
 
-	_, err := logicLayer.Publish(context.Background(), permission.Actor{UserID: 7}, 5, 100, 0)
+	_, err := logicLayer.Publish(context.Background(), &entity.PublishSnapshotParam{
+		Actor:           permission.Actor{UserID: 7},
+		EnvironmentID:   5,
+		SnapshotID:      100,
+		ExpectedVersion: 0,
+	})
 
 	assert.ErrorIs(t, err, publishErrAudit)
 	assert.Equal(t, model.SnapshotStatusUnreleased, state.snapshots[100].Status)
@@ -573,7 +627,12 @@ func TestPublishRollsBackWhenRuntimeVersionCannotAdvance(t *testing.T) {
 	state.failRuntime = errRuntime
 	logicLayer := publishNewTestLogic(t, state, &testAuthorizer{}, &testCache{})
 
-	_, err := logicLayer.Publish(context.Background(), permission.Actor{UserID: 7}, 5, 100, 0)
+	_, err := logicLayer.Publish(context.Background(), &entity.PublishSnapshotParam{
+		Actor:           permission.Actor{UserID: 7},
+		EnvironmentID:   5,
+		SnapshotID:      100,
+		ExpectedVersion: 0,
+	})
 
 	assert.ErrorIs(t, err, errRuntime)
 	assert.Equal(t, model.SnapshotStatusUnreleased, state.snapshots[100].Status)
@@ -591,10 +650,15 @@ func TestCacheCleanupFailureDoesNotChangeCommittedResult(t *testing.T) {
 	require.NoError(t, loggerErr)
 	logicLayer.logger = logger
 
-	result, err := logicLayer.Publish(context.Background(), permission.Actor{UserID: 7}, 5, 100, 0)
+	result, err := logicLayer.Publish(context.Background(), &entity.PublishSnapshotParam{
+		Actor:           permission.Actor{UserID: 7},
+		EnvironmentID:   5,
+		SnapshotID:      100,
+		ExpectedVersion: 0,
+	})
 
 	require.NoError(t, err)
-	assert.Equal(t, model.SnapshotStatusReleased, result.Status)
+	assert.Equal(t, commonv1.Snapshot_RELEASED, result.Status)
 	assert.Equal(t, model.SnapshotStatusReleased, state.snapshots[100].Status)
 	assert.Equal(t, int64(1), state.config.RuntimeVersion)
 	require.Len(t, state.audits, 1)
@@ -615,16 +679,19 @@ func TestUnpublishCommitsExplicitTargetAndRuntimeVersion(t *testing.T) {
 	cache := &testCache{}
 	logicLayer := publishNewTestLogic(t, state, &testAuthorizer{}, cache)
 
-	result, err := logicLayer.Unpublish(context.Background(), permission.Actor{
-		UserID:    7,
-		RequestID: "request-2",
-	}, 5, 100, 3)
+	result, err := logicLayer.Unpublish(context.Background(), &entity.UnpublishSnapshotParam{
+		Actor: permission.Actor{
+			UserID:    7,
+			RequestID: "request-2",
+		},
+		EnvironmentID:   5,
+		SnapshotID:      100,
+		ExpectedVersion: 3,
+	})
 
 	require.NoError(t, err)
-	assert.Equal(t, model.SnapshotStatusUnreleased, result.Status)
-	assert.Nil(t, result.PublishedAt)
-	assert.Nil(t, result.PublishedBy)
-	assert.Equal(t, int64(4), result.Version)
+	assert.Equal(t, commonv1.Snapshot_UNRELEASED, result.Status)
+	assert.Equal(t, uint32(4), result.Version)
 	assert.Equal(t, int64(1), state.config.RuntimeVersion)
 	require.Len(t, state.audits, 1)
 	assert.Equal(t, "snapshot.unpublish", state.audits[0].Action)

@@ -7,18 +7,22 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	adminv1 "github.com/yvvlee/kirby/server/api/admin"
-	"github.com/yvvlee/kirby/server/internal/model"
-	"github.com/yvvlee/kirby/server/internal/permission"
+	commonv1 "github.com/yvvlee/kirby/server/api/common"
+	"github.com/yvvlee/kirby/server/internal/entity"
 )
 
-type exportLogicFake struct{}
+type exportLogicFake struct {
+	param  *entity.ExportSnapshotParam
+	result *commonv1.Snapshot
+}
 
-func (exportLogicFake) Export(context.Context, permission.Actor, int64, int64) (*model.Snapshot, error) {
-	return nil, nil
+func (f *exportLogicFake) Export(_ context.Context, param *entity.ExportSnapshotParam) (*commonv1.Snapshot, error) {
+	f.param = param
+	return f.result, nil
 }
 
 func TestExportServiceRequiresCurrentJWTIdentity(t *testing.T) {
-	_, err := (&ExportService{exportLogic: exportLogicFake{}}).ExportSnapshot(context.Background(), &adminv1.ExportSnapshotRequest{
+	_, err := (&ExportService{exportLogic: &exportLogicFake{}}).ExportSnapshot(context.Background(), &adminv1.ExportSnapshotRequest{
 		SourceEnvironmentId: 1,
 		SnapshotId:          12,
 	})

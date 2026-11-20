@@ -3,10 +3,8 @@ package repository
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"errors"
 	"os"
-	"strings"
 	"testing"
 	"time"
 
@@ -60,6 +58,10 @@ func runLormIntegrationDatabase(t *testing.T, driver, dsnEnv string) {
 		run  func(*lormIntegrationFixture)
 	}{
 		{
+			name: "sibling_environment",
+			run:  verifyLormSiblingEnvironment,
+		},
+		{
 			name: "project_environment",
 			run:  verifyLormProjectEnvironment,
 		},
@@ -84,10 +86,6 @@ func runLormIntegrationDatabase(t *testing.T, driver, dsnEnv string) {
 			run:  verifyLormAPIKey,
 		},
 		{
-			name: "role_admin",
-			run:  verifyLormRoleAdmin,
-		},
-		{
 			name: "insert_timestamps",
 			run:  verifyLormInsertTimestamps,
 		},
@@ -95,11 +93,6 @@ func runLormIntegrationDatabase(t *testing.T, driver, dsnEnv string) {
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
 			runLormIntegrationTransaction(t, engine, test.run)
-		})
-	}
-	if driver == "pgx" {
-		t.Run("seed_sequence_migration", func(t *testing.T) {
-			verifyPostgresSeedSequenceMigration(t, dsn)
 		})
 	}
 }
@@ -151,7 +144,8 @@ func newLormIntegrationFixture(t *testing.T, ctx context.Context, engine *lorm.E
 		TypeJSON:    `{"type":"string"}`,
 		Value:       "initial value",
 	}
-	require.NoError(t, NewConfigRepository(fixture.storage).Create(ctx, fixture.environment.ID, fixture.project.ID, fixture.config))
+	_, err := NewConfigRepository(fixture.storage).Create(ctx, fixture.environment.ID, fixture.project.ID, fixture.config)
+	require.NoError(t, err)
 	requireInsertedMeta(t, fixture.config.Meta)
 	return fixture
 }
@@ -163,7 +157,8 @@ func (f *lormIntegrationFixture) createScope() (*model.Project, *model.Environme
 		Name:        "integration project",
 		Description: "initial description",
 	}
-	require.NoError(f.t, NewProjectRepository(f.storage).Create(f.ctx, 0, project))
+	_, err := NewProjectRepository(f.storage).Create(f.ctx, 0, project)
+	require.NoError(f.t, err)
 	requireInsertedMeta(f.t, project.Meta)
 	environment := &model.Environment{
 		ProjectID:   project.ID,
@@ -171,7 +166,8 @@ func (f *lormIntegrationFixture) createScope() (*model.Project, *model.Environme
 		Name:        "integration environment",
 		Description: "initial description",
 	}
-	require.NoError(f.t, NewEnvironmentRepository(f.storage).Create(f.ctx, environment, integrationAudit()))
+	_, err = NewEnvironmentRepository(f.storage).Create(f.ctx, environment, integrationAudit())
+	require.NoError(f.t, err)
 	requireInsertedMeta(f.t, environment.Meta)
 	return project, environment
 }
@@ -187,10 +183,9 @@ func integrationAudit() *model.AuditLog {
 func requireInsertedMeta(t *testing.T, meta model.Meta) {
 	t.Helper()
 	require.Positive(t, meta.ID)
-	require.EqualValues(t, 1, meta.Version)
+	require.EqualValues(t, 0, meta.Version)
 	require.False(t, meta.CreatedAt.IsZero())
 	require.False(t, meta.UpdatedAt.IsZero())
-	require.Nil(t, meta.DeletedAt)
 }
 
 func verifyLormProjectEnvironment(f *lormIntegrationFixture) {
@@ -203,27 +198,29 @@ func verifyLormProjectEnvironment(f *lormIntegrationFixture) {
 	require.NoError(f.t, err)
 	require.EqualValues(f.t, 1, page.Total)
 	require.Len(f.t, page.Items, 1)
-	require.NoError(f.t, projects.Update(f.ctx, f.environment.ID, f.project.ID, ProjectUpdate{
+	_, err = projects.Update(f.ctx, f.environment.ID, f.project.ID, ProjectUpdate{
 		Name:    f.project.Name,
 		Version: f.project.Version,
-	}))
+	})
+	require.NoError(f.t, err)
 	project, err := projects.FindByID(f.ctx, f.environment.ID, f.project.ID)
 	require.NoError(f.t, err)
 	require.WithinDuration(f.t, f.project.CreatedAt, project.CreatedAt, time.Microsecond)
 	require.WithinDuration(f.t, time.Now(), project.UpdatedAt, time.Second)
 	require.Empty(f.t, project.Description)
-	require.EqualValues(f.t, 2, project.Version)
+	require.EqualValues(f.t, 1, project.Version)
 	environments := NewEnvironmentRepository(f.storage)
-	require.NoError(f.t, environments.Update(f.ctx, f.environment.ID, EnvironmentUpdate{
+	_, err = environments.Update(f.ctx, f.environment.ID, EnvironmentUpdate{
 		Name:    f.environment.Name,
 		Enabled: false,
 		Version: f.environment.Version,
-	}, integrationAudit()))
+	}, integrationAudit())
+	require.NoError(f.t, err)
 	environment, err := environments.FindByID(f.ctx, f.environment.ID)
 	require.NoError(f.t, err)
 	require.Empty(f.t, environment.Description)
 	require.False(f.t, environment.Enabled)
-	require.EqualValues(f.t, 2, environment.Version)
+	require.EqualValues(f.t, 1, environment.Version)
 }
 
 func verifyLormConfig(f *lormIntegrationFixture) {
@@ -236,23 +233,27 @@ func verifyLormConfig(f *lormIntegrationFixture) {
 		TypeJSON: `{"type":"string"}`,
 		Version:  f.config.Version,
 	}
-	require.NoError(f.t, repository.Update(f.ctx, f.environment.ID, f.config.ID, update))
-	require.ErrorIs(f.t, repository.Update(f.ctx, f.environment.ID, f.config.ID, update), ErrNoRowsAffected)
+	_, err = repository.Update(f.ctx, f.environment.ID, f.config.ID, update)
+	require.NoError(f.t, err)
+	_, err = repository.Update(f.ctx, f.environment.ID, f.config.ID, update)
+	require.ErrorIs(f.t, err, ErrNoRowsAffected)
 	config, err := repository.FindByID(f.ctx, f.environment.ID, f.config.ID)
 	require.NoError(f.t, err)
 	require.False(f.t, config.IsArray)
 	require.Empty(f.t, config.Description)
-	require.EqualValues(f.t, 2, config.Version)
-	require.NoError(f.t, repository.UpdateValue(f.ctx, f.environment.ID, config.ID, ConfigValueUpdate{
+	require.EqualValues(f.t, 1, config.Version)
+	_, err = repository.UpdateValue(f.ctx, f.environment.ID, config.ID, ConfigValueUpdate{
 		Version: config.Version,
-	}))
+	})
+	require.NoError(f.t, err)
 	config, err = repository.FindByID(f.ctx, f.environment.ID, config.ID)
 	require.NoError(f.t, err)
 	require.Empty(f.t, config.Value)
-	require.EqualValues(f.t, 3, config.Version)
+	require.EqualValues(f.t, 2, config.Version)
 	f.createStructure()
 	f.createEnum()
-	require.NoError(f.t, repository.Delete(f.ctx, f.environment.ID, config.ID, 0))
+	_, err = repository.Delete(f.ctx, f.environment.ID, config.ID)
+	require.NoError(f.t, err)
 	_, err = repository.FindByID(f.ctx, f.environment.ID, config.ID)
 	require.ErrorIs(f.t, err, ErrNotFound)
 	replacement := &model.Config{
@@ -260,9 +261,10 @@ func verifyLormConfig(f *lormIntegrationFixture) {
 		Key:       f.config.Key,
 		TypeJSON:  `{"type":"string"}`,
 	}
-	require.NoError(f.t, repository.Create(f.ctx, f.environment.ID, f.project.ID, replacement))
-	require.Equal(f.t, config.ID, replacement.ID)
-	require.EqualValues(f.t, 5, replacement.Version)
+	_, err = repository.Create(f.ctx, f.environment.ID, f.project.ID, replacement)
+	require.NoError(f.t, err)
+	require.NotEqual(f.t, config.ID, replacement.ID)
+	require.EqualValues(f.t, 0, replacement.Version)
 	structures, err := NewStructureRepository(f.storage).ListForConfig(f.ctx, f.environment.ID, config.ID)
 	require.NoError(f.t, err)
 	require.Empty(f.t, structures)
@@ -283,7 +285,8 @@ func (f *lormIntegrationFixture) createStructure() *model.Structure {
 		Description: "initial description",
 		FieldsJSON:  `[{"name":"field"}]`,
 	}
-	require.NoError(f.t, NewStructureRepository(f.storage).Create(f.ctx, f.environment.ID, f.config.ID, item))
+	_, err := NewStructureRepository(f.storage).Create(f.ctx, f.environment.ID, f.config.ID, item)
+	require.NoError(f.t, err)
 	requireInsertedMeta(f.t, item.Meta)
 	return item
 }
@@ -293,29 +296,34 @@ func verifyLormStructure(f *lormIntegrationFixture) {
 	item := f.createStructure()
 	_, err := repository.FindByID(f.ctx, f.foreign.ID, item.ID)
 	require.ErrorIs(f.t, err, ErrNotFound)
-	require.NoError(f.t, repository.Update(f.ctx, f.environment.ID, item.ID, StructureUpdate{
+	_, err = repository.Update(f.ctx, f.environment.ID, item.ID, StructureUpdate{
 		Key:        item.Key,
 		FieldsJSON: "[]",
 		Version:    item.Version,
-	}))
+	})
+	require.NoError(f.t, err)
 	updated, err := repository.FindByID(f.ctx, f.environment.ID, item.ID)
 	require.NoError(f.t, err)
 	require.Empty(f.t, updated.Name)
 	require.Empty(f.t, updated.Description)
 	require.JSONEq(f.t, "[]", updated.FieldsJSON)
-	require.EqualValues(f.t, 2, updated.Version)
-	require.NoError(f.t, repository.Delete(f.ctx, f.environment.ID, item.ID, 0))
+	require.EqualValues(f.t, 1, updated.Version)
+	_, err = repository.Delete(f.ctx, f.environment.ID, item.ID)
+	require.NoError(f.t, err)
 	_, err = repository.FindByID(f.ctx, f.environment.ID, item.ID)
 	require.ErrorIs(f.t, err, ErrNotFound)
 	replacement := &model.Structure{
 		Key:        item.Key,
 		FieldsJSON: "[]",
 	}
-	require.NoError(f.t, repository.Create(f.ctx, f.environment.ID, f.config.ID, replacement))
-	require.Equal(f.t, item.ID, replacement.ID)
-	require.EqualValues(f.t, 4, replacement.Version)
-	require.NoError(f.t, repository.Reconcile(f.ctx, f.environment.ID, f.config.ID, nil, 0))
-	require.NoError(f.t, repository.Reconcile(f.ctx, f.environment.ID, f.config.ID, []*model.Structure{replacement}, 0))
+	_, err = repository.Create(f.ctx, f.environment.ID, f.config.ID, replacement)
+	require.NoError(f.t, err)
+	require.NotEqual(f.t, item.ID, replacement.ID)
+	require.EqualValues(f.t, 0, replacement.Version)
+	_, err = repository.Reconcile(f.ctx, f.environment.ID, f.config.ID, nil, 0)
+	require.NoError(f.t, err)
+	_, err = repository.Reconcile(f.ctx, f.environment.ID, f.config.ID, []*model.Structure{replacement}, 0)
+	require.NoError(f.t, err)
 	page, err := repository.List(f.ctx, f.environment.ID, StructureFilter{
 		ProjectID: f.project.ID,
 		ConfigID:  f.config.ID,
@@ -323,8 +331,8 @@ func verifyLormStructure(f *lormIntegrationFixture) {
 	require.NoError(f.t, err)
 	require.EqualValues(f.t, 1, page.Total)
 	require.Len(f.t, page.Items, 1)
-	require.EqualValues(f.t, 6, page.Items[0].Version)
-	require.Nil(f.t, page.Items[0].DeletedAt)
+	require.Equal(f.t, replacement.ID, page.Items[0].ID)
+	require.EqualValues(f.t, 0, page.Items[0].Version)
 }
 
 func (f *lormIntegrationFixture) createEnum() *model.ConfigEnum {
@@ -334,7 +342,8 @@ func (f *lormIntegrationFixture) createEnum() *model.ConfigEnum {
 		Description: "initial description",
 		ValuesJSON:  `["initial"]`,
 	}
-	require.NoError(f.t, NewConfigEnumRepository(f.storage).Create(f.ctx, f.environment.ID, f.config.ID, item))
+	_, err := NewConfigEnumRepository(f.storage).Create(f.ctx, f.environment.ID, f.config.ID, item)
+	require.NoError(f.t, err)
 	requireInsertedMeta(f.t, item.Meta)
 	return item
 }
@@ -344,29 +353,34 @@ func verifyLormEnum(f *lormIntegrationFixture) {
 	item := f.createEnum()
 	_, err := repository.FindByID(f.ctx, f.foreign.ID, item.ID)
 	require.ErrorIs(f.t, err, ErrNotFound)
-	require.NoError(f.t, repository.Update(f.ctx, f.environment.ID, item.ID, ConfigEnumUpdate{
+	_, err = repository.Update(f.ctx, f.environment.ID, item.ID, ConfigEnumUpdate{
 		Key:        item.Key,
 		ValuesJSON: "[]",
 		Version:    item.Version,
-	}))
+	})
+	require.NoError(f.t, err)
 	updated, err := repository.FindByID(f.ctx, f.environment.ID, item.ID)
 	require.NoError(f.t, err)
 	require.Empty(f.t, updated.Name)
 	require.Empty(f.t, updated.Description)
 	require.JSONEq(f.t, "[]", updated.ValuesJSON)
-	require.EqualValues(f.t, 2, updated.Version)
-	require.NoError(f.t, repository.Delete(f.ctx, f.environment.ID, item.ID, 0))
+	require.EqualValues(f.t, 1, updated.Version)
+	_, err = repository.Delete(f.ctx, f.environment.ID, item.ID)
+	require.NoError(f.t, err)
 	_, err = repository.FindByID(f.ctx, f.environment.ID, item.ID)
 	require.ErrorIs(f.t, err, ErrNotFound)
 	replacement := &model.ConfigEnum{
 		Key:        item.Key,
 		ValuesJSON: "[]",
 	}
-	require.NoError(f.t, repository.Create(f.ctx, f.environment.ID, f.config.ID, replacement))
-	require.Equal(f.t, item.ID, replacement.ID)
-	require.EqualValues(f.t, 4, replacement.Version)
-	require.NoError(f.t, repository.Reconcile(f.ctx, f.environment.ID, f.config.ID, nil, 0))
-	require.NoError(f.t, repository.Reconcile(f.ctx, f.environment.ID, f.config.ID, []*model.ConfigEnum{replacement}, 0))
+	_, err = repository.Create(f.ctx, f.environment.ID, f.config.ID, replacement)
+	require.NoError(f.t, err)
+	require.NotEqual(f.t, item.ID, replacement.ID)
+	require.EqualValues(f.t, 0, replacement.Version)
+	_, err = repository.Reconcile(f.ctx, f.environment.ID, f.config.ID, nil, 0)
+	require.NoError(f.t, err)
+	_, err = repository.Reconcile(f.ctx, f.environment.ID, f.config.ID, []*model.ConfigEnum{replacement}, 0)
+	require.NoError(f.t, err)
 	page, err := repository.List(f.ctx, f.environment.ID, ConfigEnumFilter{
 		ProjectID: f.project.ID,
 		ConfigID:  f.config.ID,
@@ -374,8 +388,8 @@ func verifyLormEnum(f *lormIntegrationFixture) {
 	require.NoError(f.t, err)
 	require.EqualValues(f.t, 1, page.Total)
 	require.Len(f.t, page.Items, 1)
-	require.EqualValues(f.t, 6, page.Items[0].Version)
-	require.Nil(f.t, page.Items[0].DeletedAt)
+	require.Equal(f.t, replacement.ID, page.Items[0].ID)
+	require.EqualValues(f.t, 0, page.Items[0].Version)
 }
 
 func (f *lormIntegrationFixture) createSnapshot() *model.Snapshot {
@@ -384,7 +398,8 @@ func (f *lormIntegrationFixture) createSnapshot() *model.Snapshot {
 		Content:   "{}",
 		TagsJSON:  "[]",
 	}
-	require.NoError(f.t, NewSnapshotRepository(f.storage).Create(f.ctx, f.environment.ID, f.project.ID, f.config.ID, item))
+	_, err := NewSnapshotRepository(f.storage).Create(f.ctx, f.environment.ID, f.project.ID, f.config.ID, item)
+	require.NoError(f.t, err)
 	requireInsertedMeta(f.t, item.Meta)
 	return item
 }
@@ -397,20 +412,23 @@ func verifyLormSnapshot(f *lormIntegrationFixture) {
 	require.NoError(f.t, err)
 	_, err = repository.FindByID(f.ctx, f.foreign.ID, first.ID)
 	require.ErrorIs(f.t, err, ErrNotFound)
-	require.NoError(f.t, repository.SetCurrent(f.ctx, f.environment.ID, f.config.ID, first.ID, 0))
-	require.NoError(f.t, repository.SetCurrent(f.ctx, f.environment.ID, f.config.ID, second.ID, 0))
+	_, err = repository.SetCurrent(f.ctx, f.environment.ID, f.config.ID, first.ID, 0)
+	require.NoError(f.t, err)
+	_, err = repository.SetCurrent(f.ctx, f.environment.ID, f.config.ID, second.ID, 0)
+	require.NoError(f.t, err)
 	previous, err := repository.FindByID(f.ctx, f.environment.ID, first.ID)
 	require.NoError(f.t, err)
 	require.False(f.t, previous.IsUsing)
-	require.EqualValues(f.t, 3, previous.Version)
+	require.EqualValues(f.t, 2, previous.Version)
 	require.Nil(f.t, previous.PublishedAt)
 	require.Nil(f.t, previous.PublishedBy)
 	current, err := repository.FindCurrentForConfig(f.ctx, f.environment.ID, f.config.ID)
 	require.NoError(f.t, err)
 	require.Equal(f.t, second.ID, current.ID)
-	require.EqualValues(f.t, 2, current.Version)
+	require.EqualValues(f.t, 1, current.Version)
 	verifyLormPublicationTimes(f, current)
-	require.NoError(f.t, repository.Delete(f.ctx, f.environment.ID, first.ID, 0))
+	_, err = repository.Delete(f.ctx, f.environment.ID, first.ID)
+	require.NoError(f.t, err)
 	_, err = repository.FindByID(f.ctx, f.environment.ID, first.ID)
 	require.ErrorIs(f.t, err, ErrNotFound)
 	page, err := repository.List(f.ctx, f.environment.ID, SnapshotFilter{
@@ -431,7 +449,8 @@ func verifyLormPublicationTimes(f *lormIntegrationFixture, snapshot *model.Snaps
 		ExpectedVersion: snapshot.Version,
 		ChangedAt:       changedAt,
 	}
-	require.NoError(f.t, repository.SetReleased(f.ctx, update))
+	_, err := repository.SetReleased(f.ctx, update)
+	require.NoError(f.t, err)
 	released, err := NewSnapshotRepository(f.storage).FindByID(f.ctx, f.environment.ID, snapshot.ID)
 	require.NoError(f.t, err)
 	require.NotNil(f.t, released.PublishedAt)
@@ -440,7 +459,8 @@ func verifyLormPublicationTimes(f *lormIntegrationFixture, snapshot *model.Snaps
 	require.Equal(f.t, snapshot.Version+1, released.Version)
 	update.ExpectedVersion = released.Version
 	update.ChangedAt = changedAt.Add(time.Second)
-	require.NoError(f.t, repository.SetUnreleased(f.ctx, update))
+	_, err = repository.SetUnreleased(f.ctx, update)
+	require.NoError(f.t, err)
 	unreleased, err := NewSnapshotRepository(f.storage).FindByID(f.ctx, f.environment.ID, snapshot.ID)
 	require.NoError(f.t, err)
 	require.Nil(f.t, unreleased.PublishedAt)
@@ -456,7 +476,8 @@ func verifyLormRuntimeVersionTime(f *lormIntegrationFixture) {
 	_, err := f.storage.CoreDB.Update[*model.Config]().ID(f.config.ID).
 		Set(fields.UpdatedAt(), previous).Exec(f.ctx)
 	require.NoError(f.t, err)
-	require.NoError(f.t, NewSnapshotPublicationRepository(f.storage).IncrementRuntimeVersion(f.ctx, f.environment.ID, f.config.ID))
+	_, err = NewSnapshotPublicationRepository(f.storage).IncrementRuntimeVersion(f.ctx, f.environment.ID, f.config.ID)
+	require.NoError(f.t, err)
 	updated, err := NewConfigRepository(f.storage).FindByID(f.ctx, f.environment.ID, f.config.ID)
 	require.NoError(f.t, err)
 	require.Equal(f.t, f.config.RuntimeVersion+1, updated.RuntimeVersion)
@@ -467,12 +488,12 @@ func verifyLormRuntimeVersionTime(f *lormIntegrationFixture) {
 func verifyLormAPIKey(f *lormIntegrationFixture) {
 	repository := NewProjectAPIKeyRepository(f.storage)
 	key := &model.ProjectAPIKey{
-		PublicID:     uuid.NewString(),
 		Name:         "integration credential",
 		SecretHash:   bytes.Repeat([]byte{1}, 32),
 		SecretSuffix: "1234",
 	}
-	require.NoError(f.t, repository.Create(f.ctx, f.environment.ID, f.project.ID, key))
+	_, err := repository.Create(f.ctx, f.environment.ID, f.project.ID, key)
+	require.NoError(f.t, err)
 	require.Positive(f.t, key.ID)
 	require.False(f.t, key.CreatedAt.IsZero())
 	keys, err := repository.List(f.ctx, f.environment.ID, f.project.ID)
@@ -483,89 +504,49 @@ func verifyLormAPIKey(f *lormIntegrationFixture) {
 	_, err = repository.FindByID(f.ctx, f.foreign.ID, f.project.ID, key.ID)
 	require.ErrorIs(f.t, err, ErrNotFound)
 	usedAt := time.Now().In(time.FixedZone("integration UTC+8", 8*60*60))
-	require.NoError(f.t, repository.MarkUsed(f.ctx, key.PublicID, usedAt))
+	_, err = repository.MarkUsed(f.ctx, key.SecretHash, usedAt)
+	require.NoError(f.t, err)
 	used, err := repository.FindByID(f.ctx, f.environment.ID, f.project.ID, key.ID)
 	require.NoError(f.t, err)
 	require.NotNil(f.t, used.LastUsedAt)
 	require.WithinDuration(f.t, usedAt, *used.LastUsedAt, time.Microsecond)
 	require.WithinDuration(f.t, usedAt, used.UpdatedAt, time.Microsecond)
 	mutation := APIKeyMutation{
-		EnvironmentID:   f.foreign.ID,
-		ProjectID:       f.project.ID,
-		KeyID:           key.ID,
-		CurrentPublicID: key.PublicID,
+		EnvironmentID:     f.foreign.ID,
+		ProjectID:         f.project.ID,
+		KeyID:             key.ID,
+		CurrentSecretHash: key.SecretHash,
 	}
 	replacement := &model.ProjectAPIKey{
 		RecordMeta: model.RecordMeta{
 			UpdatedAt: usedAt.Add(time.Second),
 		},
-		PublicID:     uuid.NewString(),
 		SecretHash:   bytes.Repeat([]byte{2}, 32),
 		SecretSuffix: "5678",
 	}
-	require.ErrorIs(f.t, repository.Rotate(f.ctx, mutation, replacement), ErrNoRowsAffected)
+	_, err = repository.Rotate(f.ctx, mutation, replacement)
+	require.ErrorIs(f.t, err, ErrNoRowsAffected)
 	mutation.EnvironmentID = f.environment.ID
-	require.NoError(f.t, repository.Rotate(f.ctx, mutation, replacement))
+	_, err = repository.Rotate(f.ctx, mutation, replacement)
+	require.NoError(f.t, err)
 	rotated, err := repository.FindByID(f.ctx, f.environment.ID, f.project.ID, key.ID)
 	require.NoError(f.t, err)
-	require.Equal(f.t, replacement.PublicID, rotated.PublicID)
 	require.Equal(f.t, replacement.SecretHash, rotated.SecretHash)
 	require.Nil(f.t, rotated.LastUsedAt)
 	require.WithinDuration(f.t, replacement.UpdatedAt, rotated.UpdatedAt, time.Microsecond)
-	mutation.CurrentPublicID = rotated.PublicID
+	mutation.CurrentSecretHash = rotated.SecretHash
 	mutation.EnvironmentID = f.foreign.ID
 	revokedAt := usedAt.Add(2 * time.Second)
-	require.ErrorIs(f.t, repository.Revoke(f.ctx, mutation, revokedAt), ErrNoRowsAffected)
+	_, err = repository.Revoke(f.ctx, mutation, revokedAt)
+	require.ErrorIs(f.t, err, ErrNoRowsAffected)
 	mutation.EnvironmentID = f.environment.ID
-	require.NoError(f.t, repository.Revoke(f.ctx, mutation, revokedAt))
+	_, err = repository.Revoke(f.ctx, mutation, revokedAt)
+	require.NoError(f.t, err)
 	revoked, err := repository.FindByID(f.ctx, f.environment.ID, f.project.ID, key.ID)
 	require.NoError(f.t, err)
 	require.NotNil(f.t, revoked.RevokedAt)
 	require.WithinDuration(f.t, revokedAt, *revoked.RevokedAt, time.Microsecond)
 	require.WithinDuration(f.t, revokedAt, revoked.UpdatedAt, time.Microsecond)
-}
-
-func verifyLormRoleAdmin(f *lormIntegrationFixture) {
-	repository := NewRoleRepository(f.storage)
-	role := &model.Role{
-		Key:         "integration-" + uuid.NewString(),
-		Name:        "integration role",
-		Description: "initial description",
-	}
-	require.NoError(f.t, repository.Create(f.ctx, role, integrationAudit()))
-	requireInsertedMeta(f.t, role.Meta)
-	require.NoError(f.t, repository.Update(f.ctx, role.ID, RoleUpdate{
-		Name:    role.Name,
-		Version: role.Version,
-	}, integrationAudit()))
-	updated, err := repository.FindByID(f.ctx, role.ID)
-	require.NoError(f.t, err)
-	require.Empty(f.t, updated.Role.Description)
-	require.EqualValues(f.t, 2, updated.Role.Version)
-	permission := &model.Permission{
-		Key:  "integration:" + uuid.NewString(),
-		Name: "integration permission",
-	}
-	permission.PrepareInsert()
-	_, err = f.storage.CoreDB.Repository[*model.Permission]().Insert(f.ctx, permission)
-	require.NoError(f.t, err, "seeded permission IDs must advance the PostgreSQL sequence")
-	_, err = repository.UpdatePermissions(f.ctx, role.ID, []int64{permission.ID}, 0, integrationAudit())
-	require.NoError(f.t, err)
-	assigned, err := repository.FindByID(f.ctx, role.ID)
-	require.NoError(f.t, err)
-	require.Len(f.t, assigned.Permissions, 1)
-	require.Equal(f.t, permission.ID, assigned.Permissions[0].ID)
-	_, err = repository.UpdatePermissions(f.ctx, role.ID, nil, 0, integrationAudit())
-	require.NoError(f.t, err)
-	require.NoError(f.t, repository.Delete(f.ctx, role.ID, 0, integrationAudit()))
-	_, err = repository.FindByID(f.ctx, role.ID)
-	require.ErrorIs(f.t, err, ErrNotFound)
-	user, created, err := NewUserRepository(f.storage).CreateOrPromoteSystemAdmin(f.ctx, "integration-"+uuid.NewString(), "Admin", "test-hash")
-	require.NoError(f.t, err)
-	require.True(f.t, created)
-	requireInsertedMeta(f.t, user.Meta)
-	require.True(f.t, user.Enabled)
-	require.True(f.t, user.IsSystemAdmin)
 }
 
 func verifyLormInsertTimestamps(f *lormIntegrationFixture) {
@@ -581,7 +562,8 @@ func verifyLormInsertTimestamps(f *lormIntegrationFixture) {
 		Name: "timestamp project",
 	}
 	projects := NewProjectRepository(f.storage)
-	require.NoError(f.t, projects.Create(f.ctx, 0, project))
+	_, err := projects.Create(f.ctx, 0, project)
+	require.NoError(f.t, err)
 	loadedProject, err := projects.FindByID(f.ctx, 0, project.ID)
 	require.NoError(f.t, err)
 	require.WithinDuration(f.t, createdAt, loadedProject.CreatedAt, time.Microsecond)
@@ -591,13 +573,13 @@ func verifyLormInsertTimestamps(f *lormIntegrationFixture) {
 			CreatedAt: createdAt,
 			UpdatedAt: updatedAt,
 		},
-		PublicID:     uuid.NewString(),
 		Name:         "timestamp credential",
 		SecretHash:   bytes.Repeat([]byte{3}, 32),
 		SecretSuffix: "9012",
 	}
 	keys := NewProjectAPIKeyRepository(f.storage)
-	require.NoError(f.t, keys.Create(f.ctx, f.environment.ID, f.project.ID, key))
+	_, err = keys.Create(f.ctx, f.environment.ID, f.project.ID, key)
+	require.NoError(f.t, err)
 	loadedKey, err := keys.FindByID(f.ctx, f.environment.ID, f.project.ID, key.ID)
 	require.NoError(f.t, err)
 	require.WithinDuration(f.t, createdAt, loadedKey.CreatedAt, time.Microsecond)
@@ -623,42 +605,65 @@ func verifyLormInsertTimestamps(f *lormIntegrationFixture) {
 	require.WithinDuration(f.t, updatedAt, loadedRecord.UpdatedAt, time.Microsecond)
 }
 
-func verifyPostgresSeedSequenceMigration(t *testing.T, dsn string) {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
-	database, err := sql.Open("pgx", dsn)
-	require.NoError(t, err)
-	defer database.Close()
-	connection, err := database.Conn(ctx)
-	require.NoError(t, err)
-	defer connection.Close()
-	schema := "migration_" + strings.ReplaceAll(uuid.NewString(), "-", "")
-	_, err = connection.ExecContext(ctx, "CREATE SCHEMA "+schema)
-	require.NoError(t, err)
-	defer func() {
-		_, cleanupErr := connection.ExecContext(ctx, "DROP SCHEMA "+schema+" CASCADE")
-		require.NoError(t, cleanupErr)
-	}()
-	_, err = connection.ExecContext(ctx, "SET search_path TO "+schema)
-	require.NoError(t, err)
-	_, err = connection.ExecContext(ctx, `
-		CREATE TABLE roles (id BIGSERIAL PRIMARY KEY);
-		CREATE TABLE permissions (id BIGSERIAL PRIMARY KEY);
-		INSERT INTO roles (id) VALUES (1), (4);
-		INSERT INTO permissions (id) VALUES (1), (21);
-		SELECT setval(pg_get_serial_sequence('permissions', 'id'), 50, true);
-	`)
-	require.NoError(t, err)
-	repair, err := os.ReadFile("../../../deploy/migrations/20261015_postgresql_seed_sequences.sql")
-	require.NoError(t, err)
-	_, err = connection.ExecContext(ctx, string(repair))
-	require.NoError(t, err)
-	_, err = connection.ExecContext(ctx, string(repair))
-	require.NoError(t, err, "repair must be repeatable without rewinding either sequence")
-	var roleID, permissionID int64
-	require.NoError(t, connection.QueryRowContext(ctx, "INSERT INTO roles DEFAULT VALUES RETURNING id").Scan(&roleID))
-	require.NoError(t, connection.QueryRowContext(ctx, "INSERT INTO permissions DEFAULT VALUES RETURNING id").Scan(&permissionID))
-	require.EqualValues(t, 5, roleID)
-	require.EqualValues(t, 51, permissionID)
+func verifyLormSiblingEnvironment(f *lormIntegrationFixture) {
+	sibling := &model.Environment{
+		ProjectID: f.project.ID,
+		Key:       "sibling",
+		Name:      "Sibling",
+		Enabled:   true,
+	}
+	_, err := NewEnvironmentRepository(f.storage).Create(f.ctx, sibling, integrationAudit())
+	require.NoError(f.t, err)
+	configs := NewConfigRepository(f.storage)
+	_, err = configs.FindByID(f.ctx, sibling.ID, f.config.ID)
+	require.ErrorIs(f.t, err, ErrNotFound)
+	_, err = configs.UpdateValue(f.ctx, sibling.ID, f.config.ID, ConfigValueUpdate{})
+	require.ErrorIs(f.t, err, ErrNotFound)
+	_, err = configs.Delete(f.ctx, sibling.ID, f.config.ID)
+	require.ErrorIs(f.t, err, ErrNotFound)
+	other := &model.Config{
+		ProjectID: f.project.ID,
+		Key:       f.config.Key,
+		Value:     "sibling value",
+		TypeJSON:  `{}`,
+	}
+	_, err = configs.Create(f.ctx, sibling.ID, f.project.ID, other)
+	require.NoError(f.t, err)
+	require.NotEqual(f.t, f.config.ID, other.ID)
+	snapshot := f.createSnapshot()
+	_, err = NewSnapshotRepository(f.storage).FindByID(f.ctx, sibling.ID, snapshot.ID)
+	require.ErrorIs(f.t, err, ErrNotFound)
+	keys := NewProjectAPIKeyRepository(f.storage)
+	key := &model.ProjectAPIKey{
+		Name:         "isolated",
+		SecretHash:   make([]byte, 32),
+		SecretSuffix: "test",
+	}
+	_, err = keys.Create(f.ctx, f.environment.ID, f.project.ID, key)
+	require.NoError(f.t, err)
+	_, err = keys.FindByID(f.ctx, sibling.ID, f.project.ID, key.ID)
+	require.ErrorIs(f.t, err, ErrNotFound)
+	listed, err := keys.List(f.ctx, sibling.ID, f.project.ID)
+	require.NoError(f.t, err)
+	require.Empty(f.t, listed)
+	selected, err := keys.FindRuntimeConfig(f.ctx, sibling.ID, f.project.ID, other.Key)
+	require.NoError(f.t, err)
+	require.Equal(f.t, other.ID, selected.ID)
+	_, err = keys.Revoke(f.ctx, APIKeyMutation{
+		EnvironmentID:     sibling.ID,
+		ProjectID:         f.project.ID,
+		KeyID:             key.ID,
+		CurrentSecretHash: key.SecretHash,
+	}, time.Now())
+	require.ErrorIs(f.t, err, ErrNoRowsAffected)
+	_, err = keys.FindRuntimeProject(f.ctx, sibling.ID, f.project.ID)
+	require.NoError(f.t, err)
+	_, err = NewEnvironmentRepository(f.storage).Update(f.ctx, sibling.ID, EnvironmentUpdate{
+		Name:    sibling.Name,
+		Enabled: false,
+		Version: sibling.Version,
+	}, integrationAudit())
+	require.NoError(f.t, err)
+	_, err = keys.FindRuntimeProject(f.ctx, sibling.ID, f.project.ID)
+	require.ErrorIs(f.t, err, ErrNotFound)
 }

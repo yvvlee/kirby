@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"net/http"
 	"testing"
 	"time"
@@ -13,8 +14,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	adminv1 "github.com/yvvlee/kirby/server/api/admin"
+	commonv1 "github.com/yvvlee/kirby/server/api/common"
 	authjwt "github.com/yvvlee/kirby/server/internal/auth/jwt"
-	"github.com/yvvlee/kirby/server/internal/conf"
 	"github.com/yvvlee/kirby/server/internal/entity"
 	"github.com/yvvlee/kirby/server/internal/logic"
 	"github.com/yvvlee/kirby/server/internal/middleware"
@@ -23,7 +24,7 @@ import (
 )
 
 type serviceLogic struct {
-	result      *model.Snapshot
+	result      *commonv1.Snapshot
 	err         error
 	actor       permission.Actor
 	environment int64
@@ -32,27 +33,30 @@ type serviceLogic struct {
 	action      string
 }
 
-func (l *serviceLogic) Publish(_ context.Context, actor permission.Actor, environmentID, snapshotID int64, version uint32) (*model.Snapshot, error) {
-	l.actor, l.environment, l.snapshot, l.version, l.action = actor, environmentID, snapshotID, version, "publish"
+func (l *serviceLogic) Publish(_ context.Context, param *entity.PublishSnapshotParam) (*commonv1.Snapshot, error) {
+	l.actor, l.environment, l.snapshot, l.version, l.action = param.Actor, param.EnvironmentID, param.SnapshotID, param.ExpectedVersion, "publish"
 	return l.result, l.err
 }
 
-func (l *serviceLogic) Unpublish(_ context.Context, actor permission.Actor, environmentID, snapshotID int64, version uint32) (*model.Snapshot, error) {
-	l.actor, l.environment, l.snapshot, l.version, l.action = actor, environmentID, snapshotID, version, "unpublish"
+func (l *serviceLogic) Unpublish(_ context.Context, param *entity.UnpublishSnapshotParam) (*commonv1.Snapshot, error) {
+	l.actor, l.environment, l.snapshot, l.version, l.action = param.Actor, param.EnvironmentID, param.SnapshotID, param.ExpectedVersion, "unpublish"
 	return l.result, l.err
 }
 
-func serviceSnapshot(status model.SnapshotStatus) *model.Snapshot {
-	now := time.Date(2026, time.August, 17, 6, 7, 8, 0, time.UTC)
-	return &model.Snapshot{
-		Meta: model.Meta{
-			ID:        12,
-			Version:   4,
-			CreatedAt: now,
-			UpdatedAt: now,
-		},
-		ProjectID: 3, ConfigID: 4, ConfigKey: "feature", Description: "snapshot",
-		Content: `{}`, TagsJSON: `[]`, Status: status,
+var serviceSnapshotTime = time.Date(2026, 8, 17, 6, 7, 8, 0, time.UTC)
+
+func serviceSnapshot(status commonv1.Snapshot_Status) *commonv1.Snapshot {
+	return &commonv1.Snapshot{
+		Id:          12,
+		ProjectId:   3,
+		ConfigId:    4,
+		ConfigKey:   "feature",
+		Description: "snapshot",
+		Content:     `{}`,
+		Status:      status,
+		CreatedAt:   timestamppb.New(serviceSnapshotTime),
+		UpdatedAt:   timestamppb.New(serviceSnapshotTime),
+		Version:     4,
 	}
 }
 
@@ -69,7 +73,7 @@ func TestPublicationServiceRequiresAuthenticatedActor(t *testing.T) {
 }
 
 func TestPublicationServicePassesActorScopeAndVersion(t *testing.T) {
-	logicLayer := &serviceLogic{result: serviceSnapshot(model.SnapshotStatusReleased)}
+	logicLayer := &serviceLogic{result: serviceSnapshot(commonv1.Snapshot_RELEASED)}
 	service := &PublishService{publishLogic: logicLayer}
 	ctx := authenticatedServiceContext(t, 7)
 
@@ -87,7 +91,7 @@ func TestPublicationServicePassesActorScopeAndVersion(t *testing.T) {
 	assert.Equal(t, int64(12), logicLayer.snapshot)
 	assert.Equal(t, uint32(3), logicLayer.version)
 
-	logicLayer.result = serviceSnapshot(model.SnapshotStatusUnreleased)
+	logicLayer.result = serviceSnapshot(commonv1.Snapshot_UNRELEASED)
 	publicationReply, err = service.UnpublishSnapshot(ctx, &adminv1.PublishSnapshotRequest{
 		EnvironmentId: 5,
 		SnapshotId:    12,
@@ -150,7 +154,7 @@ func authenticatedServiceContext(t *testing.T, userID int64) context.Context {
 		Issuer:    "test",
 		ActiveKID: "primary",
 		AccessTTL: 15 * time.Minute,
-		Keys:      map[string]conf.Secret{"primary": conf.NewSecret("01234567890123456789012345678901")},
+		Keys:      map[string]string{"primary": "01234567890123456789012345678901"},
 	})
 	require.NoError(t, err)
 	token, _, err := manager.Issue(userID, "session-id")

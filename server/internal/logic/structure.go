@@ -10,30 +10,7 @@ import (
 	"github.com/yvvlee/kirby/server/internal/model"
 	"github.com/yvvlee/kirby/server/internal/permission"
 	"github.com/yvvlee/kirby/server/internal/repository"
-	"github.com/yvvlee/kirby/server/internal/util/safeint"
 )
-
-type StructureCreateInput struct {
-	ConfigID    int64
-	Key         string
-	Name        string
-	Description string
-}
-
-type StructureUpdateInput struct {
-	StructureID int64
-	Key         string
-	Name        string
-	Description string
-	Fields      []*commonv1.Field
-	Version     int64
-}
-
-type StructureListInput struct {
-	ProjectID int64
-	ConfigID  int64
-	IgnoreID  *int64
-}
 
 type StructureLogic struct {
 	structures   repository.StructureRepository
@@ -72,15 +49,16 @@ func NewStructureLogic(
 // Parameters: ctx carries cancellation and transaction state; actor identifies the authenticated caller; environmentID selects the authorized environment; input contains the parent configuration, structure key, labels, and fields.
 // Returns: the created resource; returns permission, schema-validation, or transactional write failures.
 // Throws: none.
-func (l *StructureLogic) Create(ctx context.Context, actor permission.Actor, environmentID int64, input StructureCreateInput) (*model.Structure, error) {
+func (l *StructureLogic) Create(ctx context.Context, param *entity.CreateStructureParam) (*commonv1.Structure, error) {
+	actor, environmentID := param.Actor, param.EnvironmentID
 	if err := l.permissions.Require(ctx, actor.UserID, environmentID, permission.StructureWrite); err != nil {
 		return nil, err
 	}
 	item := &model.Structure{
-		ConfigID:    input.ConfigID,
-		Key:         input.Key,
-		Name:        input.Name,
-		Description: input.Description,
+		ConfigID:    param.ConfigID,
+		Key:         param.Key,
+		Name:        param.Name,
+		Description: param.Description,
 		FieldsJSON:  "[]",
 		Meta: model.Meta{
 			CreatedBy: actor.UserID,
@@ -88,62 +66,72 @@ func (l *StructureLogic) Create(ctx context.Context, actor permission.Actor, env
 		},
 	}
 	err := l.transactions.TX(ctx, func(txctx context.Context) error {
-		_, structures, enums, err := l.lockedResources(txctx, environmentID, input.ConfigID)
+		_, structures, enums, err := l.lockedResources(txctx, environmentID, param.ConfigID)
 		if err != nil {
 			return err
 		}
 		structures = append(structures, &commonv1.Structure{
-			Key:         input.Key,
-			Name:        input.Name,
-			Description: input.Description,
+			Key:         param.Key,
+			Name:        param.Name,
+			Description: param.Description,
 		})
 		if _, err := entity.NewSchema(structures, enums); err != nil {
 			return err
 		}
-		if err := l.structures.Create(txctx, environmentID, input.ConfigID, item); err != nil {
+		if _, err := l.structures.Create(txctx, environmentID, param.ConfigID, item); err != nil {
 			return err
 		}
-		return l.audits.RecordForEnvironment(txctx, environmentID, structureAudit(actor, "structure.create", item.ID))
+		_, err = l.audits.RecordForEnvironment(txctx, environmentID, structureAudit(actor, "structure.create", item.ID))
+		return err
 	})
 	if err != nil {
 		return nil, err
 	}
-	return l.structures.FindByID(ctx, environmentID, item.ID)
+	created, err := l.structures.FindByID(ctx, environmentID, item.ID)
+	if err != nil {
+		return nil, err
+	}
+	return converter.StructureToProto(created)
 }
 
 // Update applies changes using the expected version to reject stale writes.
 //
-// Parameters: ctx carries cancellation and transaction state; actor identifies the authenticated caller; environmentID selects the authorized environment; input contains the structure ID, replacement key and fields, and expected version.
+// Parameters: ctx carries cancellation and transaction state; param carries the caller identity, scope, the structure ID, replacement key and fields, and expected version.
 // Returns: the reloaded resource after commit; returns permission, schema, dependency-conflict, or stale-version errors.
 // Throws: none.
-func (l *StructureLogic) Update(ctx context.Context, actor permission.Actor, environmentID int64, input StructureUpdateInput) (*model.Structure, error) {
-	operation, err := l.prepareUpdate(ctx, actor, environmentID, input)
+func (l *StructureLogic) Update(ctx context.Context, param *entity.UpdateStructureParam) (*commonv1.Structure, error) {
+	actor := param.Actor
+	operation, err := l.prepareUpdate(ctx, actor, param)
 	if err != nil {
 		return nil, err
 	}
 	err = l.transactions.TX(ctx, func(txctx context.Context) error {
-		if err := l.validateUpdate(txctx, environmentID, operation); err != nil {
+		if err := l.validateUpdate(txctx, param.EnvironmentID, operation); err != nil {
 			return err
 		}
-		return l.saveUpdate(txctx, actor, environmentID, operation)
+		return l.saveUpdate(txctx, actor, param.EnvironmentID, operation)
 	})
 	if err != nil {
 		return nil, err
 	}
-	return l.structures.FindByID(ctx, environmentID, input.StructureID)
+	updated, err := l.structures.FindByID(ctx, param.EnvironmentID, param.StructureID)
+	if err != nil {
+		return nil, err
+	}
+	return converter.StructureToProto(updated)
 }
 
 type structureUpdateOperation struct {
 	configID    int64
-	input       StructureUpdateInput
+	input       *entity.UpdateStructureParam
 	contentJSON string
 }
 
-func (l *StructureLogic) prepareUpdate(ctx context.Context, actor permission.Actor, environmentID int64, input StructureUpdateInput) (structureUpdateOperation, error) {
-	if err := l.permissions.Require(ctx, actor.UserID, environmentID, permission.StructureWrite); err != nil {
+func (l *StructureLogic) prepareUpdate(ctx context.Context, actor permission.Actor, input *entity.UpdateStructureParam) (structureUpdateOperation, error) {
+	if err := l.permissions.Require(ctx, actor.UserID, input.EnvironmentID, permission.StructureWrite); err != nil {
 		return structureUpdateOperation{}, err
 	}
-	current, err := l.structures.FindByID(ctx, environmentID, input.StructureID)
+	current, err := l.structures.FindByID(ctx, input.EnvironmentID, input.StructureID)
 	if err != nil {
 		return structureUpdateOperation{}, err
 	}
@@ -170,7 +158,7 @@ func (l *StructureLogic) validateUpdate(ctx context.Context, environmentID int64
 	return validateStructureReplacement(structures, enums, locked, operation.input)
 }
 
-func structureForUpdate(config *model.Config, structures []*commonv1.Structure, input StructureUpdateInput) (*commonv1.Structure, error) {
+func structureForUpdate(config *model.Config, structures []*commonv1.Structure, input *entity.UpdateStructureParam) (*commonv1.Structure, error) {
 	locked, err := findStructure(structures, input.StructureID)
 	if err != nil {
 		return nil, err
@@ -185,7 +173,7 @@ func structureForUpdate(config *model.Config, structures []*commonv1.Structure, 
 	return locked, nil
 }
 
-func validateStructureReplacement(structures []*commonv1.Structure, enums []*commonv1.ConfigEnum, locked *commonv1.Structure, input StructureUpdateInput) error {
+func validateStructureReplacement(structures []*commonv1.Structure, enums []*commonv1.ConfigEnum, locked *commonv1.Structure, input *entity.UpdateStructureParam) error {
 	candidate, err := structureUpdateCandidate(locked, input)
 	if err != nil {
 		return err
@@ -200,11 +188,7 @@ func validateStructureReplacement(structures []*commonv1.Structure, enums []*com
 	return err
 }
 
-func structureUpdateCandidate(locked *commonv1.Structure, input StructureUpdateInput) (*commonv1.Structure, error) {
-	version, err := safeint.Uint32FromInt64(input.Version)
-	if err != nil {
-		return nil, entity.Invalid("invalid structure version")
-	}
+func structureUpdateCandidate(locked *commonv1.Structure, input *entity.UpdateStructureParam) (*commonv1.Structure, error) {
 	return &commonv1.Structure{
 		Id:          locked.Id,
 		ConfigId:    locked.ConfigId,
@@ -212,13 +196,13 @@ func structureUpdateCandidate(locked *commonv1.Structure, input StructureUpdateI
 		Name:        input.Name,
 		Description: input.Description,
 		Fields:      input.Fields,
-		Version:     version,
+		Version:     uint32(input.Version),
 	}, nil
 }
 
 func (l *StructureLogic) saveUpdate(ctx context.Context, actor permission.Actor, environmentID int64, operation structureUpdateOperation) error {
 	input := operation.input
-	if err := l.structures.Update(ctx, environmentID, input.StructureID, repository.StructureUpdate{
+	if _, err := l.structures.Update(ctx, environmentID, input.StructureID, repository.StructureUpdate{
 		Key:         input.Key,
 		Name:        input.Name,
 		Description: input.Description,
@@ -228,31 +212,32 @@ func (l *StructureLogic) saveUpdate(ctx context.Context, actor permission.Actor,
 	}); err != nil {
 		return err
 	}
-	return l.audits.RecordForEnvironment(ctx, environmentID, structureAudit(actor, "structure.update", input.StructureID))
+	_, err := l.audits.RecordForEnvironment(ctx, environmentID, structureAudit(actor, "structure.update", input.StructureID))
+	return err
 }
 
 // List returns the resources visible in the selected scope.
 //
-// Parameters: ctx carries cancellation and transaction state; actor identifies the authenticated caller; environmentID selects the authorized environment; input selects the project and configuration and optionally excludes one structure.
+// Parameters: ctx carries cancellation and transaction state; param carries the caller identity, scope, and the project and configuration selection that optionally excludes one structure.
 // Returns: the authorized records, or a permission or repository error.
 // Throws: none.
-func (l *StructureLogic) List(ctx context.Context, actor permission.Actor, environmentID int64, input StructureListInput) ([]*commonv1.Structure, error) {
-	if err := l.permissions.Require(ctx, actor.UserID, environmentID, permission.StructureRead); err != nil {
+func (l *StructureLogic) List(ctx context.Context, param *entity.ListStructureParam) ([]*commonv1.Structure, error) {
+	if err := l.permissions.Require(ctx, param.Actor.UserID, param.EnvironmentID, permission.StructureRead); err != nil {
 		return nil, err
 	}
-	config, err := l.configs.FindByID(ctx, environmentID, input.ConfigID)
+	config, err := l.configs.FindByID(ctx, param.EnvironmentID, param.ConfigID)
 	if err != nil {
 		return nil, err
 	}
-	if config.ProjectID != input.ProjectID {
+	if config.ProjectID != param.ProjectID {
 		return nil, repository.Missing("config")
 	}
-	items, err := l.allStructures(ctx, environmentID, input.ProjectID, input.ConfigID)
+	items, err := l.allStructures(ctx, param.EnvironmentID, param.ProjectID, param.ConfigID)
 	if err != nil {
 		return nil, err
 	}
-	if input.IgnoreID != nil {
-		return entity.FilterStructureChoices(items, *input.IgnoreID)
+	if param.IgnoreID != nil {
+		return entity.FilterStructureChoices(items, *param.IgnoreID)
 	}
 	return items, nil
 }
@@ -295,10 +280,11 @@ func (l *StructureLogic) Delete(ctx context.Context, actor permission.Actor, env
 		if _, err := entity.NewSchema(candidate, enums); err != nil {
 			return err
 		}
-		if err := l.structures.Delete(txctx, environmentID, structureID, actor.UserID); err != nil {
+		if _, err := l.structures.Delete(txctx, environmentID, structureID); err != nil {
 			return err
 		}
-		return l.audits.RecordForEnvironment(txctx, environmentID, structureAudit(actor, "structure.delete", structureID))
+		_, err = l.audits.RecordForEnvironment(txctx, environmentID, structureAudit(actor, "structure.delete", structureID))
+		return err
 	})
 }
 

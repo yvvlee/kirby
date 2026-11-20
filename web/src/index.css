@@ -68,7 +68,7 @@ a {
 
 .app-header {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: 1fr auto;
   align-items: center;
   min-height: 60px;
   padding: 8px 24px;
@@ -83,21 +83,10 @@ a {
   text-decoration: none;
 }
 
-.app-navigation,
 .app-actions {
   display: flex;
   align-items: center;
   gap: 12px;
-}
-
-.app-navigation {
-  margin-left: 28px;
-}
-
-.app-navigation a {
-  color: #374151;
-  font-weight: 600;
-  text-decoration: none;
 }
 
 .app-actions .ant-select {
@@ -254,11 +243,14 @@ a {
 
 .project-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
   gap: 12px;
 }
 
 .project-tile {
+  display: flex;
+  flex-direction: column;
+  min-height: 190px;
   min-width: 0;
   padding: 18px;
   border: 1px solid #d9dee7;
@@ -441,12 +433,6 @@ a {
     padding: 10px 14px;
   }
 
-  .app-navigation {
-    order: 3;
-    grid-column: 1 / -1;
-    margin-left: 0;
-  }
-
   .app-actions .ant-tag,
   .app-user {
     display: none;
@@ -503,4 +489,74 @@ a {
     align-items: stretch;
     flex-direction: column;
   }
+}
+
+.project-header-actions {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.api-keys-table .ant-table-cell {
+  overflow-wrap: anywhere;
+}
+
+.api-keys-table .table-actions {
+  flex-wrap: wrap;
+}
+
+.api-keys-title {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+}
+
+.api-keys-toolbar {
+  justify-content: flex-end;
+}
+
+.project-header-actions,
+.project-environment-selector {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.project-environment-selector label {
+  white-space: nowrap;
+}
+
+.project-environment-selector .ant-select {
+  width: 132px;
+}
+
+.project-danger-zone {
+  margin-top: 24px;
+  padding: 16px;
+  border: 1px solid #ffccc7;
+  border-radius: 8px;
+}
+
+.project-danger-zone h3 {
+  margin-top: 0;
+  color: #cf1322;
+}
+
+.project-tile h2,
+.project-tile code,
+.project-tile p {
+  overflow-wrap: anywhere;
+}
+
+.project-environments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: auto;
+}
+
+.project-environments .ant-tag {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-inline-end: 0;
 }

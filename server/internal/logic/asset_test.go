@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/yvvlee/kirby/server/internal/entity"
 	"github.com/yvvlee/kirby/server/internal/infra/object"
 )
 
@@ -94,7 +95,7 @@ func TestPresignScopesKeyAndChecksPermission(t *testing.T) {
 	projects := &fakeProjects{exists: true}
 	logic := assetNewTestLogic(t, storage, authorizer, projects)
 
-	ticket, err := logic.Presign(context.Background(), PresignInput{
+	ticket, err := logic.Presign(context.Background(), &entity.PresignAssetParam{
 		EnvironmentID: 10,
 		ProjectID:     20,
 		Filename:      "logo.PNG",
@@ -114,7 +115,7 @@ func TestPresignRejectsTraversalOversizeAndMIMEMismatchBeforeDependencies(t *tes
 	authorizer := &fakeAuthorizer{allowed: true}
 	projects := &fakeProjects{exists: true}
 	logic := assetNewTestLogic(t, &fakeStorage{}, authorizer, projects)
-	tests := []PresignInput{
+	tests := []*entity.PresignAssetParam{
 		{
 			EnvironmentID: 1,
 			ProjectID:     2,
@@ -154,7 +155,7 @@ func TestPresignRejectsTraversalOversizeAndMIMEMismatchBeforeDependencies(t *tes
 }
 
 func TestPresignRejectsMissingPermissionAndWrongProjectScope(t *testing.T) {
-	base := PresignInput{
+	base := &entity.PresignAssetParam{
 		EnvironmentID: 1,
 		ProjectID:     2,
 		Filename:      "logo.png",

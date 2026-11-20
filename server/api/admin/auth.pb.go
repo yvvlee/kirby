@@ -77,6 +77,74 @@ func (x *LoginRequest) GetPassword() string {
 	return ""
 }
 
+type RegisterRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Username      string                 `protobuf:"bytes,1,opt,name=username,proto3" json:"username,omitempty"`
+	Nickname      string                 `protobuf:"bytes,2,opt,name=nickname,proto3" json:"nickname,omitempty"`
+	Email         string                 `protobuf:"bytes,3,opt,name=email,proto3" json:"email,omitempty"`
+	Password      string                 `protobuf:"bytes,4,opt,name=password,proto3" json:"password,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RegisterRequest) Reset() {
+	*x = RegisterRequest{}
+	mi := &file_admin_auth_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RegisterRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RegisterRequest) ProtoMessage() {}
+
+func (x *RegisterRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_admin_auth_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RegisterRequest.ProtoReflect.Descriptor instead.
+func (*RegisterRequest) Descriptor() ([]byte, []int) {
+	return file_admin_auth_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *RegisterRequest) GetUsername() string {
+	if x != nil {
+		return x.Username
+	}
+	return ""
+}
+
+func (x *RegisterRequest) GetNickname() string {
+	if x != nil {
+		return x.Nickname
+	}
+	return ""
+}
+
+func (x *RegisterRequest) GetEmail() string {
+	if x != nil {
+		return x.Email
+	}
+	return ""
+}
+
+func (x *RegisterRequest) GetPassword() string {
+	if x != nil {
+		return x.Password
+	}
+	return ""
+}
+
 type LoginReply struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	AccessToken   string                 `protobuf:"bytes,1,opt,name=access_token,json=accessToken,proto3" json:"access_token,omitempty"`
@@ -88,7 +156,7 @@ type LoginReply struct {
 
 func (x *LoginReply) Reset() {
 	*x = LoginReply{}
-	mi := &file_admin_auth_proto_msgTypes[1]
+	mi := &file_admin_auth_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -100,7 +168,7 @@ func (x *LoginReply) String() string {
 func (*LoginReply) ProtoMessage() {}
 
 func (x *LoginReply) ProtoReflect() protoreflect.Message {
-	mi := &file_admin_auth_proto_msgTypes[1]
+	mi := &file_admin_auth_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -113,7 +181,7 @@ func (x *LoginReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LoginReply.ProtoReflect.Descriptor instead.
 func (*LoginReply) Descriptor() ([]byte, []int) {
-	return file_admin_auth_proto_rawDescGZIP(), []int{1}
+	return file_admin_auth_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *LoginReply) GetAccessToken() string {
@@ -147,7 +215,7 @@ type MeReply struct {
 
 func (x *MeReply) Reset() {
 	*x = MeReply{}
-	mi := &file_admin_auth_proto_msgTypes[2]
+	mi := &file_admin_auth_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -159,7 +227,7 @@ func (x *MeReply) String() string {
 func (*MeReply) ProtoMessage() {}
 
 func (x *MeReply) ProtoReflect() protoreflect.Message {
-	mi := &file_admin_auth_proto_msgTypes[2]
+	mi := &file_admin_auth_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -172,7 +240,7 @@ func (x *MeReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MeReply.ProtoReflect.Descriptor instead.
 func (*MeReply) Descriptor() ([]byte, []int) {
-	return file_admin_auth_proto_rawDescGZIP(), []int{2}
+	return file_admin_auth_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *MeReply) GetUser() *common.User {
@@ -198,7 +266,13 @@ const file_admin_auth_proto_rawDesc = "" +
 	"\busername\x18\x01 \x01(\tB\n" +
 	"\xfaB\ar\x05\x10\x01\x18\x80\x01R\busername\x12&\n" +
 	"\bpassword\x18\x02 \x01(\tB\n" +
-	"\xfaB\ar\x05\x10\x01\x18\x80\bR\bpassword\"y\n" +
+	"\xfaB\ar\x05\x10\x01\x18\x80\bR\bpassword\"\xd4\x01\n" +
+	"\x0fRegisterRequest\x12D\n" +
+	"\busername\x18\x01 \x01(\tB(\xfaB%r#\x10\x01\x18\x80\x012\x1c^[A-Za-z0-9][A-Za-z0-9_.-]*$R\busername\x12&\n" +
+	"\bnickname\x18\x02 \x01(\tB\n" +
+	"\xfaB\ar\x05\x10\x01\x18\x80\x01R\bnickname\x12\"\n" +
+	"\x05email\x18\x03 \x01(\tB\f\xfaB\tr\a\x10\x03\x18\xc0\x02`\x01R\x05email\x12/\n" +
+	"\bpassword\x18\x04 \x01(\tB\x13\xfaB\x10r\x0e \b( 2\b^[!-~]+$R\bpassword\"y\n" +
 	"\n" +
 	"LoginReply\x12!\n" +
 	"\faccess_token\x18\x01 \x01(\tR\vaccessToken\x12\x1d\n" +
@@ -207,9 +281,10 @@ const file_admin_auth_proto_rawDesc = "" +
 	"\x04user\x18\x03 \x01(\v2\x15.kirby.common.v1.UserR\x04user\"v\n" +
 	"\aMeReply\x12)\n" +
 	"\x04user\x18\x01 \x01(\v2\x15.kirby.common.v1.UserR\x04user\x12@\n" +
-	"\fenvironments\x18\x02 \x03(\v2\x1c.kirby.common.v1.EnvironmentR\fenvironments2\xdd\x02\n" +
+	"\fenvironments\x18\x02 \x03(\v2\x1c.kirby.common.v1.EnvironmentR\fenvironments2\xc1\x03\n" +
 	"\vAuthService\x12Y\n" +
-	"\x05Login\x12\x1c.kirby.admin.v1.LoginRequest\x1a\x1a.kirby.admin.v1.LoginReply\"\x16\x82\xd3\xe4\x93\x02\x10:\x01*\"\v/auth/login\x12W\n" +
+	"\x05Login\x12\x1c.kirby.admin.v1.LoginRequest\x1a\x1a.kirby.admin.v1.LoginReply\"\x16\x82\xd3\xe4\x93\x02\x10:\x01*\"\v/auth/login\x12b\n" +
+	"\bRegister\x12\x1f.kirby.admin.v1.RegisterRequest\x1a\x1a.kirby.admin.v1.LoginReply\"\x19\x82\xd3\xe4\x93\x02\x13:\x01*\"\x0e/auth/register\x12W\n" +
 	"\aRefresh\x12\x16.google.protobuf.Empty\x1a\x1a.kirby.admin.v1.LoginReply\"\x18\x82\xd3\xe4\x93\x02\x12:\x01*\"\r/auth/refresh\x12Q\n" +
 	"\x06Logout\x12\x16.google.protobuf.Empty\x1a\x16.google.protobuf.Empty\"\x17\x82\xd3\xe4\x93\x02\x11:\x01*\"\f/auth/logout\x12G\n" +
 	"\x02Me\x12\x16.google.protobuf.Empty\x1a\x17.kirby.admin.v1.MeReply\"\x10\x82\xd3\xe4\x93\x02\n" +
@@ -227,29 +302,32 @@ func file_admin_auth_proto_rawDescGZIP() []byte {
 	return file_admin_auth_proto_rawDescData
 }
 
-var file_admin_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_admin_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_admin_auth_proto_goTypes = []any{
 	(*LoginRequest)(nil),       // 0: kirby.admin.v1.LoginRequest
-	(*LoginReply)(nil),         // 1: kirby.admin.v1.LoginReply
-	(*MeReply)(nil),            // 2: kirby.admin.v1.MeReply
-	(*common.User)(nil),        // 3: kirby.common.v1.User
-	(*common.Environment)(nil), // 4: kirby.common.v1.Environment
-	(*emptypb.Empty)(nil),      // 5: google.protobuf.Empty
+	(*RegisterRequest)(nil),    // 1: kirby.admin.v1.RegisterRequest
+	(*LoginReply)(nil),         // 2: kirby.admin.v1.LoginReply
+	(*MeReply)(nil),            // 3: kirby.admin.v1.MeReply
+	(*common.User)(nil),        // 4: kirby.common.v1.User
+	(*common.Environment)(nil), // 5: kirby.common.v1.Environment
+	(*emptypb.Empty)(nil),      // 6: google.protobuf.Empty
 }
 var file_admin_auth_proto_depIdxs = []int32{
-	3, // 0: kirby.admin.v1.LoginReply.user:type_name -> kirby.common.v1.User
-	3, // 1: kirby.admin.v1.MeReply.user:type_name -> kirby.common.v1.User
-	4, // 2: kirby.admin.v1.MeReply.environments:type_name -> kirby.common.v1.Environment
+	4, // 0: kirby.admin.v1.LoginReply.user:type_name -> kirby.common.v1.User
+	4, // 1: kirby.admin.v1.MeReply.user:type_name -> kirby.common.v1.User
+	5, // 2: kirby.admin.v1.MeReply.environments:type_name -> kirby.common.v1.Environment
 	0, // 3: kirby.admin.v1.AuthService.Login:input_type -> kirby.admin.v1.LoginRequest
-	5, // 4: kirby.admin.v1.AuthService.Refresh:input_type -> google.protobuf.Empty
-	5, // 5: kirby.admin.v1.AuthService.Logout:input_type -> google.protobuf.Empty
-	5, // 6: kirby.admin.v1.AuthService.Me:input_type -> google.protobuf.Empty
-	1, // 7: kirby.admin.v1.AuthService.Login:output_type -> kirby.admin.v1.LoginReply
-	1, // 8: kirby.admin.v1.AuthService.Refresh:output_type -> kirby.admin.v1.LoginReply
-	5, // 9: kirby.admin.v1.AuthService.Logout:output_type -> google.protobuf.Empty
-	2, // 10: kirby.admin.v1.AuthService.Me:output_type -> kirby.admin.v1.MeReply
-	7, // [7:11] is the sub-list for method output_type
-	3, // [3:7] is the sub-list for method input_type
+	1, // 4: kirby.admin.v1.AuthService.Register:input_type -> kirby.admin.v1.RegisterRequest
+	6, // 5: kirby.admin.v1.AuthService.Refresh:input_type -> google.protobuf.Empty
+	6, // 6: kirby.admin.v1.AuthService.Logout:input_type -> google.protobuf.Empty
+	6, // 7: kirby.admin.v1.AuthService.Me:input_type -> google.protobuf.Empty
+	2, // 8: kirby.admin.v1.AuthService.Login:output_type -> kirby.admin.v1.LoginReply
+	2, // 9: kirby.admin.v1.AuthService.Register:output_type -> kirby.admin.v1.LoginReply
+	2, // 10: kirby.admin.v1.AuthService.Refresh:output_type -> kirby.admin.v1.LoginReply
+	6, // 11: kirby.admin.v1.AuthService.Logout:output_type -> google.protobuf.Empty
+	3, // 12: kirby.admin.v1.AuthService.Me:output_type -> kirby.admin.v1.MeReply
+	8, // [8:13] is the sub-list for method output_type
+	3, // [3:8] is the sub-list for method input_type
 	3, // [3:3] is the sub-list for extension type_name
 	3, // [3:3] is the sub-list for extension extendee
 	0, // [0:3] is the sub-list for field type_name
@@ -266,7 +344,7 @@ func file_admin_auth_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_admin_auth_proto_rawDesc), len(file_admin_auth_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   3,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

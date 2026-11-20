@@ -10,8 +10,8 @@ import (
 )
 
 type AuditLogRepository interface {
-	RecordForEnvironment(ctx context.Context, environmentID int64, log *model.AuditLog) error
-	RecordSystem(ctx context.Context, log *model.AuditLog) error
+	RecordForEnvironment(ctx context.Context, environmentID int64, log *model.AuditLog) (rowsAffected int64, err error)
+	RecordSystem(ctx context.Context, log *model.AuditLog) (rowsAffected int64, err error)
 }
 
 type AuditLogRepositoryImpl struct {
@@ -32,24 +32,22 @@ func NewAuditLogRepository(storage *infra.Storage) *AuditLogRepositoryImpl {
 // RecordForEnvironment 记录环境级审计日志，Insert自动回填ID。
 //
 // Parameters: ctx carries cancellation and transaction state; environmentID selects the authorized environment; log contains the immutable audit event.
-// Returns: nil after assigning environmentID and inserting the audit event, or the insertion error.
+// Returns: rowsAffected from the inserted audit event after assigning environmentID, or the insertion error.
 // Throws: none.
-func (r *AuditLogRepositoryImpl) RecordForEnvironment(ctx context.Context, environmentID int64, log *model.AuditLog) error {
+func (r *AuditLogRepositoryImpl) RecordForEnvironment(ctx context.Context, environmentID int64, log *model.AuditLog) (rowsAffected int64, err error) {
 	log.EnvironmentID = &environmentID
-	log.PrepareInsert()
-	_, err := r.Insert(ctx, log)
-	return err
+	rowsAffected, err = r.Insert(ctx, log)
+	return
 }
 
 // RecordSystem 记录系统级审计日志。
 //
 // Parameters: ctx carries cancellation and transaction state; log contains the immutable audit event.
-// Returns: nil after inserting the system audit event, or the insertion error.
+// Returns: rowsAffected from the inserted system audit event, or the insertion error.
 // Throws: none.
-func (r *AuditLogRepositoryImpl) RecordSystem(ctx context.Context, log *model.AuditLog) error {
-	log.PrepareInsert()
-	_, err := r.Insert(ctx, log)
-	return err
+func (r *AuditLogRepositoryImpl) RecordSystem(ctx context.Context, log *model.AuditLog) (rowsAffected int64, err error) {
+	rowsAffected, err = r.Insert(ctx, log)
+	return
 }
 
 var _ AuditLogRepository = (*AuditLogRepositoryImpl)(nil)

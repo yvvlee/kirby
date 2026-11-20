@@ -57,17 +57,6 @@ func (m *ConfigRequest) validate(all bool) error {
 
 	var errors []error
 
-	if l := utf8.RuneCountInString(m.GetProject()); l < 1 || l > 64 {
-		err := ConfigRequestValidationError{
-			field:  "Project",
-			reason: "value length must be between 1 and 64 runes, inclusive",
-		}
-		if !all {
-			return err
-		}
-		errors = append(errors, err)
-	}
-
 	if l := utf8.RuneCountInString(m.GetKey()); l < 1 || l > 64 {
 		err := ConfigRequestValidationError{
 			field:  "Key",

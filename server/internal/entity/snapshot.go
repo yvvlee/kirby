@@ -1,12 +1,10 @@
 package entity
 
 import (
-	"bytes"
-	"encoding/json"
-	"errors"
+	stdjson "encoding/json"
 	"fmt"
-	"io"
 
+	json "github.com/bytedance/sonic"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
@@ -21,10 +19,10 @@ type ConfigSnapshot struct {
 }
 
 type configSnapshotJSON struct {
-	Config     json.RawMessage   `json:"config"`
-	Structures []json.RawMessage `json:"structures"`
-	Enums      []json.RawMessage `json:"enums"`
-	Tree       json.RawMessage   `json:"tree"`
+	Config     stdjson.RawMessage   `json:"config"`
+	Structures []stdjson.RawMessage `json:"structures"`
+	Enums      []stdjson.RawMessage `json:"enums"`
+	Tree       stdjson.RawMessage   `json:"tree"`
 }
 
 // EncodeConfigSnapshot uses protobuf JSON for every nested message. The Go
@@ -38,8 +36,8 @@ func EncodeConfigSnapshot(value *ConfigSnapshot) (string, error) {
 		return "", Invalid("snapshot content is incomplete")
 	}
 	wire := configSnapshotJSON{
-		Structures: make([]json.RawMessage, 0, len(value.Structures)),
-		Enums:      make([]json.RawMessage, 0, len(value.Enums)),
+		Structures: make([]stdjson.RawMessage, 0, len(value.Structures)),
+		Enums:      make([]stdjson.RawMessage, 0, len(value.Enums)),
 	}
 	var err error
 	if wire.Config, err = marshalProto(value.Config); err != nil {
@@ -69,22 +67,17 @@ func EncodeConfigSnapshot(value *ConfigSnapshot) (string, error) {
 	return string(encoded), nil
 }
 
+// strictCodec 拒绝未知字段与尾随内容，保持与原 encoding/json 流式解码一致的严格性。
+var strictCodec = json.Config{DisallowUnknownFields: true}.Froze()
+
 // DecodeConfigSnapshot strictly decodes stored or imported protobuf JSON.
 //
 // Parameters: content is the encoded snapshot document.
 // Returns: the decoded snapshot for subsequent domain validation.
 // Throws: an error for malformed JSON, unknown fields, trailing content, or missing messages.
 func DecodeConfigSnapshot(content string) (*ConfigSnapshot, error) {
-	decoder := json.NewDecoder(bytes.NewBufferString(content))
-	decoder.DisallowUnknownFields()
 	var wire configSnapshotJSON
-	if err := decoder.Decode(&wire); err != nil {
-		return nil, fmt.Errorf("decode snapshot content: %w", err)
-	}
-	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		if err == nil {
-			return nil, Invalid("snapshot content contains trailing JSON")
-		}
+	if err := strictCodec.UnmarshalFromString(content, &wire); err != nil {
 		return nil, fmt.Errorf("decode snapshot content: %w", err)
 	}
 	result := &ConfigSnapshot{
@@ -116,7 +109,7 @@ func DecodeConfigSnapshot(content string) (*ConfigSnapshot, error) {
 	return result, nil
 }
 
-func marshalProto(value proto.Message) (json.RawMessage, error) {
+func marshalProto(value proto.Message) (stdjson.RawMessage, error) {
 	if value == nil || !value.ProtoReflect().IsValid() {
 		return nil, Invalid("snapshot contains a nil message")
 	}
@@ -127,7 +120,7 @@ func marshalProto(value proto.Message) (json.RawMessage, error) {
 	return encoded, nil
 }
 
-func unmarshalProto(encoded json.RawMessage, value proto.Message) error {
+func unmarshalProto(encoded stdjson.RawMessage, value proto.Message) error {
 	if len(encoded) == 0 || string(encoded) == "null" {
 		return Invalid("snapshot content is incomplete")
 	}

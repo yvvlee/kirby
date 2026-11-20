@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"os"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/yvvlee/lorm"
@@ -43,13 +42,13 @@ func TestInitialAdministratorCanLoginAndRefresh(t *testing.T) {
 	cfg := &conf.Config{
 		JWT: conf.JWTConfig{
 			Issuer:     "setup-login-test",
-			AccessTTL:  conf.Duration{Duration: 15 * time.Minute},
-			RefreshTTL: conf.Duration{Duration: 7 * 24 * time.Hour},
+			AccessTTL:  15 * 60 * 1000,
+			RefreshTTL: 7 * 24 * 60 * 60 * 1000,
 		},
 	}
 	hasher := password.NewDefault()
 	setupLogic := logic.NewSetupLogic(repository.NewSetupRepository(store), hasher, store.CoreDB)
-	require.NoError(t, setupLogic.CreateInitialAdmin(ctx, "setup-owner", "Setup Owner", "integration-password"))
+	require.NoError(t, setupLogic.CreateInitialAdmin(ctx, "setup-owner", "Setup Owner", "integration-password", "owner@example.com"))
 	secrets, found, err := engine.Query[*model.ApplicationSecrets]().ID(1).Get(ctx)
 	require.NoError(t, err)
 	require.True(t, found)
@@ -58,7 +57,7 @@ func TestInitialAdministratorCanLoginAndRefresh(t *testing.T) {
 	require.NoError(t, err)
 	users := repository.NewUserRepository(store)
 	refresh := repository.NewRefreshTokenRepository(store)
-	authLogic, err := logic.NewAuthLogic(cfg, users, refresh, store.Cache, store.CoreDB, hasher, tokens)
+	authLogic, err := logic.NewAuthLogic(cfg, users, refresh, store.Cache, store.CoreDB, hasher, tokens, nil)
 	require.NoError(t, err)
 	service, err := NewAuthService(cfg, authLogic)
 	require.NoError(t, err)

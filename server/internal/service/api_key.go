@@ -7,17 +7,16 @@ import (
 
 	adminv1 "github.com/yvvlee/kirby/server/api/admin"
 	commonv1 "github.com/yvvlee/kirby/server/api/common"
-	"github.com/yvvlee/kirby/server/internal/converter"
+	"github.com/yvvlee/kirby/server/internal/entity"
 	"github.com/yvvlee/kirby/server/internal/logic"
-	"github.com/yvvlee/kirby/server/internal/model"
 	"github.com/yvvlee/kirby/server/internal/permission"
 )
 
 type apiKeyLogic interface {
-	List(ctx context.Context, actor permission.Actor, environmentID, projectID int64) ([]model.ProjectAPIKey, error)
-	Create(ctx context.Context, actor permission.Actor, environmentID, projectID int64, name string) (*logic.APIKeySecretResult, error)
-	Rotate(ctx context.Context, actor permission.Actor, environmentID, projectID, keyID int64) (*logic.APIKeySecretResult, error)
-	Revoke(ctx context.Context, actor permission.Actor, environmentID, projectID, keyID int64) error
+	List(ctx context.Context, actor permission.Actor, environmentID, projectID int64) ([]*commonv1.ProjectApiKey, error)
+	Create(ctx context.Context, param *entity.CreateAPIKeyParam) (*logic.APIKeySecretResult, error)
+	Rotate(ctx context.Context, param *entity.RotateAPIKeyParam) (*logic.APIKeySecretResult, error)
+	Revoke(ctx context.Context, param *entity.RevokeAPIKeyParam) error
 }
 
 type APIKeyService struct {
@@ -51,11 +50,7 @@ func (s *APIKeyService) ListProjectApiKeys(ctx context.Context, request *adminv1
 	if err != nil {
 		return nil, apiError(err)
 	}
-	result := make([]*commonv1.ProjectApiKey, 0, len(items))
-	for index := range items {
-		result = append(result, converter.APIKeyToProto(&items[index]))
-	}
-	return &adminv1.ListProjectApiKeysReply{List: result}, nil
+	return &adminv1.ListProjectApiKeysReply{List: items}, nil
 }
 
 // CreateProjectApiKey returns a generated secret only in its successful creation response.
@@ -70,8 +65,19 @@ func (s *APIKeyService) CreateProjectApiKey(ctx context.Context, request *adminv
 	if err != nil {
 		return nil, apiError(err)
 	}
-	result, err := s.apiKeyLogic.Create(ctx, actor, request.EnvironmentId, request.ProjectId, request.Name)
-	return secretReply(result, err)
+	result, err := s.apiKeyLogic.Create(ctx, &entity.CreateAPIKeyParam{
+		Actor:         actor,
+		EnvironmentID: request.EnvironmentId,
+		ProjectID:     request.ProjectId,
+		Name:          request.Name,
+	})
+	if err != nil {
+		return nil, apiError(err)
+	}
+	return &adminv1.ProjectApiKeySecretReply{
+		ApiKey: result.Key,
+		Secret: result.Secret,
+	}, nil
 }
 
 // RotateProjectApiKey returns the replacement secret only after rotation succeeds.
@@ -86,8 +92,19 @@ func (s *APIKeyService) RotateProjectApiKey(ctx context.Context, request *adminv
 	if err != nil {
 		return nil, apiError(err)
 	}
-	result, err := s.apiKeyLogic.Rotate(ctx, actor, request.EnvironmentId, request.ProjectId, request.KeyId)
-	return secretReply(result, err)
+	result, err := s.apiKeyLogic.Rotate(ctx, &entity.RotateAPIKeyParam{
+		Actor:         actor,
+		EnvironmentID: request.EnvironmentId,
+		ProjectID:     request.ProjectId,
+		KeyID:         request.KeyId,
+	})
+	if err != nil {
+		return nil, apiError(err)
+	}
+	return &adminv1.ProjectApiKeySecretReply{
+		ApiKey: result.Key,
+		Secret: result.Secret,
+	}, nil
 }
 
 // RevokeProjectApiKey forwards revocation for the authenticated environment and project.
@@ -102,18 +119,13 @@ func (s *APIKeyService) RevokeProjectApiKey(ctx context.Context, request *adminv
 	if err != nil {
 		return nil, apiError(err)
 	}
-	if err := s.apiKeyLogic.Revoke(ctx, actor, request.EnvironmentId, request.ProjectId, request.KeyId); err != nil {
+	if err := s.apiKeyLogic.Revoke(ctx, &entity.RevokeAPIKeyParam{
+		Actor:         actor,
+		EnvironmentID: request.EnvironmentId,
+		ProjectID:     request.ProjectId,
+		KeyID:         request.KeyId,
+	}); err != nil {
 		return nil, apiError(err)
 	}
 	return &emptypb.Empty{}, nil
-}
-
-func secretReply(result *logic.APIKeySecretResult, err error) (*adminv1.ProjectApiKeySecretReply, error) {
-	if err != nil {
-		return nil, apiError(err)
-	}
-	return &adminv1.ProjectApiKeySecretReply{
-		ApiKey: converter.APIKeyToProto(result.Key),
-		Secret: result.Secret,
-	}, nil
 }

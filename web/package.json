@@ -19,7 +19,8 @@
     "test": "vitest run",
     "typecheck": "tsc -b",
     "test:e2e": "npm run build && playwright test",
-    "test:e2e:setup": "npm run build && playwright test --config playwright.setup.config.js"
+    "test:e2e:setup": "npm run build && playwright test --config playwright.setup.config.js",
+    "check:i18n": "node ../scripts/check-i18n.mjs"
   },
   "dependencies": {
     "@ant-design/icons": "6.3.2",

@@ -16,8 +16,9 @@ import (
 	"github.com/yvvlee/kirby/server/internal/service"
 )
 
-func wireServer(ctx context.Context, cfg *conf.Config, webHandler http.Handler) (*kratos.App, func(), error) {
+func wireServer(ctx context.Context, configPath string, webHandler http.Handler) (*kratos.App, func(), error) {
 	panic(wire.Build(
+		conf.ProviderSet,
 		repository.ProviderSet,
 		logic.ProviderSet,
 		service.ProviderSet,

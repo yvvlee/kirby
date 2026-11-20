@@ -1,3 +1,4 @@
+import { getLocale } from '@/i18n'
 import axios, {
   type AxiosAdapter,
   type AxiosError,
@@ -69,6 +70,7 @@ export function createApiClient(options: ApiClientOptions = {}): AxiosInstance {
   const refreshClient = axios.create(commonOptions)
 
   client.interceptors.request.use((config) => {
+    config.headers.set('Accept-Language', getLocale())
     const kirbyConfig = asKirbyConfig(config)
     const snapshot = getAccessTokenSnapshot()
     kirbyConfig._kirbyAccessTokenGeneration = snapshot.accessTokenGeneration
@@ -81,7 +83,7 @@ export function createApiClient(options: ApiClientOptions = {}): AxiosInstance {
 
   function refreshAccessToken() {
     return refreshAccessTokenSession(async () => {
-      const { data } = await refreshClient.post<unknown>('/auth/refresh', null)
+      const { data } = await refreshClient.post<unknown>('/auth/refresh', null, { headers: { 'Accept-Language': getLocale() } })
       return data
     })
   }

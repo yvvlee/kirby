@@ -72,8 +72,9 @@ models:
 make -C server generate-models
 ```
 
-Queries must explicitly apply project/environment scope and `IS NULL` for soft
-deletes. Mutable updates include the expected version and advance it once.
+Queries must explicitly apply project/environment scope. Mutable updates
+include the expected version and advance it once; deletes remove rows
+physically.
 Business transactions use the same lorm engine and pass the transaction context
 to every repository operation. Test transaction substitutes live only in tests.
 Schema initialization still uses the embedded MySQL/PostgreSQL DDL under a

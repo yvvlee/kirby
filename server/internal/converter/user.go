@@ -5,8 +5,6 @@ import (
 
 	commonv1 "github.com/yvvlee/kirby/server/api/common"
 	"github.com/yvvlee/kirby/server/internal/model"
-	"github.com/yvvlee/kirby/server/internal/util/safeint"
-	"github.com/yvvlee/kirby/server/internal/util/timeutil"
 )
 
 // UserToProto exposes public account fields while excluding password hashes and session data.
@@ -18,18 +16,15 @@ func UserToProto(item *model.User) (*commonv1.User, error) {
 	if item.ID <= 0 {
 		return nil, fmt.Errorf("invalid user record")
 	}
-	version, err := safeint.Uint32FromInt64(item.Version)
-	if err != nil {
-		return nil, fmt.Errorf("invalid user record")
-	}
 	return &commonv1.User{
 		Id:            item.ID,
 		Username:      item.Username,
-		DisplayName:   item.DisplayName,
+		Nickname:      item.Nickname,
+		Email:         item.Email,
 		Enabled:       item.Enabled,
 		IsSystemAdmin: item.IsSystemAdmin,
-		CreatedAt:     timeutil.FormatRFC3339(item.CreatedAt),
-		UpdatedAt:     timeutil.FormatRFC3339(item.UpdatedAt),
-		Version:       version,
+		CreatedAt:     timestamp(item.CreatedAt),
+		UpdatedAt:     timestamp(item.UpdatedAt),
+		Version:       uint32(item.Version),
 	}, nil
 }

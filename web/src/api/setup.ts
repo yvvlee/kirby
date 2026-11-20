@@ -1,3 +1,4 @@
+import { localizedError } from '@/i18n/errors'
 import client, { type KirbyRequestOptions } from './client'
 
 export type SetupStatus = {
@@ -5,8 +6,9 @@ export type SetupStatus = {
 }
 
 export type InitialAdministrator = {
+ email: string
   username: string
-  display_name: string
+  nickname: string
   password: string
 }
 
@@ -24,10 +26,10 @@ const anonymousRequest: KirbyRequestOptions = {
 export async function getSetupStatus(): Promise<SetupStatus> {
   const { data } = await client.get<unknown>('/setup/status', anonymousRequest)
   if (typeof data !== 'object' || data === null || !('initialized' in data)) {
-    throw new TypeError('初始化状态响应无效')
+    throw localizedError('初始化状态响应无效', {}, TypeError)
   }
   if (typeof data.initialized !== 'boolean') {
-    throw new TypeError('初始化状态响应无效')
+    throw localizedError('初始化状态响应无效', {}, TypeError)
   }
   return { initialized: data.initialized }
 }

@@ -11,7 +11,6 @@ import (
 	"github.com/go-kratos/kratos/v2/transport"
 
 	authjwt "github.com/yvvlee/kirby/server/internal/auth/jwt"
-	"github.com/yvvlee/kirby/server/internal/conf"
 	"github.com/yvvlee/kirby/server/internal/model"
 )
 
@@ -50,8 +49,8 @@ func TestAdminAuthAddsStablePrincipal(t *testing.T) {
 		Issuer:    "test",
 		ActiveKID: "primary",
 		AccessTTL: 15 * time.Minute,
-		Keys: map[string]conf.Secret{
-			"primary": conf.NewSecret("01234567890123456789012345678901"),
+		Keys: map[string]string{
+			"primary": "01234567890123456789012345678901",
 		},
 	})
 	if err != nil {
@@ -90,8 +89,8 @@ func TestAdminAuthUsesUniformUnauthorizedResponse(t *testing.T) {
 		Issuer:    "test",
 		ActiveKID: "primary",
 		AccessTTL: 15 * time.Minute,
-		Keys: map[string]conf.Secret{
-			"primary": conf.NewSecret("01234567890123456789012345678901"),
+		Keys: map[string]string{
+			"primary": "01234567890123456789012345678901",
 		},
 	})
 	if err != nil {

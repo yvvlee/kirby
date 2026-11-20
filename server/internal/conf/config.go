@@ -1,8 +1,7 @@
-// Package conf loads and validates Kirby's single YAML configuration source.
+// Package conf loads and validates Kirby's configuration sources.
 package conf
 
 import (
-	"encoding/json"
 	"fmt"
 	"net"
 	"net/netip"
@@ -10,10 +9,10 @@ import (
 	"path"
 	"strconv"
 	"strings"
-	"time"
-
-	"gopkg.in/yaml.v3"
 )
+
+// App 全局应用配置，由 NewConfig 在加载完成后赋值。
+var App *AppConfig
 
 // DeploymentMode controls whether process-local dependencies are permitted.
 type DeploymentMode string
@@ -23,136 +22,50 @@ const (
 	ModeMulti  DeploymentMode = "multi"
 )
 
-// Duration is a YAML duration such as 15s or 24h.
-type Duration struct {
-	time.Duration
+// Env 部署环境
+type Env string
+
+const (
+	EnvProduction Env = "prod"
+	EnvTest       Env = "test"
+	EnvDev        Env = "dev"
+	EnvLocal      Env = "local"
+)
+
+// AppConfig 应用基本配置
+type AppConfig struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+	Env     Env    `json:"env"`
 }
 
-// UnmarshalYAML parses a duration from a YAML string.
-//
-// Parameters: node is the YAML value being decoded.
-// Returns: nil after the receiver has been updated.
-// Throws: an error for an unsupported YAML type or malformed value.
-func (d *Duration) UnmarshalYAML(node *yaml.Node) error {
-	if node.Kind != yaml.ScalarNode || node.Tag != "!!str" {
-		return fmt.Errorf("duration must be a string such as 15s")
-	}
-	value, err := time.ParseDuration(node.Value)
-	if err != nil {
-		return fmt.Errorf("invalid duration %q: %w", node.Value, err)
-	}
-	d.Duration = value
-	return nil
-}
-
-// MarshalYAML writes the duration in Go duration syntax.
+// IsProduction 是否生产环境
 //
 // Parameters: none.
-// Returns: the scalar value and a nil error.
+// Returns: whether the deployment environment is production.
 // Throws: none.
-func (d Duration) MarshalYAML() (any, error) {
-	return d.String(), nil
+func (a *AppConfig) IsProduction() bool {
+	return a.Env == EnvProduction
 }
 
-// Secret holds a configured credential.
-type Secret struct {
-	value string
-}
-
-// NewSecret wraps a credential for programmatic configuration.
-//
-// Parameters: value is the configured credential.
-// Returns: the credential wrapper.
-// Throws: none.
-func NewSecret(value string) Secret {
-	return Secret{value: value}
-}
-
-// Value returns the credential to the component that must use it.
-//
-// Parameters: none.
-// Returns: the original credential.
-// Throws: none.
-func (s Secret) Value() string {
-	return s.value
-}
-
-// Empty reports whether the credential is absent.
-//
-// Parameters: none.
-// Returns: whether the value is blank after trimming whitespace.
-// Throws: none.
-func (s Secret) Empty() bool {
-	return strings.TrimSpace(s.value) == ""
-}
-
-// String returns the configured value.
-//
-// Parameters: none.
-// Returns: the original value.
-// Throws: none.
-func (s Secret) String() string {
-	return s.value
-}
-
-// GoString returns the quoted configured value.
-//
-// Parameters: none.
-// Returns: the quoted original value.
-// Throws: none.
-func (s Secret) GoString() string {
-	return strconv.Quote(s.value)
-}
-
-// MarshalJSON serializes the configured value.
-//
-// Parameters: none.
-// Returns: the JSON string representation.
-// Throws: an error if encoding fails.
-func (s Secret) MarshalJSON() ([]byte, error) {
-	return json.Marshal(s.value)
-}
-
-// UnmarshalYAML reads a scalar credential.
-//
-// Parameters: node is the YAML value being decoded.
-// Returns: nil after the receiver has been updated.
-// Throws: an error for an unsupported YAML type or malformed value.
-func (s *Secret) UnmarshalYAML(node *yaml.Node) error {
-	if node.Kind != yaml.ScalarNode || node.Tag != "!!str" {
-		return fmt.Errorf("secret must be a string")
-	}
-	s.value = node.Value
-	return nil
-}
-
-// MarshalYAML serializes the configured value.
-//
-// Parameters: none.
-// Returns: the scalar value and a nil error.
-// Throws: none.
-func (s Secret) MarshalYAML() (any, error) {
-	return s.value, nil
-}
-
-// Config is the complete server configuration.
+// Config 全局Config，时长字段一律使用毫秒
 type Config struct {
-	Mode          DeploymentMode      `yaml:"mode"`
-	HTTP          ListenerConfig      `yaml:"http"`
-	GRPC          ListenerConfig      `yaml:"grpc"`
-	Database      DatabaseConfig      `yaml:"database"`
-	MySQL         DatabaseConfig      `yaml:"mysql"` // Deprecated: use database.
-	Cache         CacheConfig         `yaml:"cache"`
-	JWT           JWTConfig           `yaml:"jwt"`
-	Security      SecurityConfig      `yaml:"security"`
-	ObjectStorage ObjectStorageConfig `yaml:"object_storage"`
-	Log           LogConfig           `yaml:"log"`
+	Mode          DeploymentMode      `json:"mode"`
+	App           *AppConfig          `json:"app"`
+	HTTP          ListenerConfig      `json:"http"`
+	GRPC          ListenerConfig      `json:"grpc"`
+	Database      DatabaseConfig      `json:"database"`
+	Cache         CacheConfig         `json:"cache"`
+	JWT           JWTConfig           `json:"jwt"`
+	Security      SecurityConfig      `json:"security"`
+	ObjectStorage ObjectStorageConfig `json:"object_storage"`
+	Log           LogConfig           `json:"log"`
 }
 
 // ListenerConfig configures one network listener.
 type ListenerConfig struct {
-	Address string   `yaml:"address"`
-	Timeout Duration `yaml:"timeout"`
+	Address string `json:"address"`
+	Timeout int    `json:"timeout"`
 }
 
 // DatabaseDriver selects the relational database dialect.
@@ -165,70 +78,66 @@ const (
 
 // DatabaseConfig configures the shared relational database.
 type DatabaseConfig struct {
-	Driver          DatabaseDriver `yaml:"driver"`
-	DSN             Secret         `yaml:"dsn"`
-	MaxOpenConns    int            `yaml:"max_open_conns"`
-	MaxIdleConns    int            `yaml:"max_idle_conns"`
-	ConnMaxLifetime Duration       `yaml:"conn_max_lifetime"`
+	Driver          DatabaseDriver `json:"driver"`
+	DSN             string         `json:"dsn"`
+	MaxOpenConns    int            `json:"max_open_conns"`
+	MaxIdleConns    int            `json:"max_idle_conns"`
+	ConnMaxLifetime int            `json:"conn_max_lifetime"`
 }
-
-// MySQLConfig is retained as a source-compatible alias for integrations that
-// still construct the legacy configuration type directly.
-type MySQLConfig = DatabaseConfig
 
 // CacheConfig selects a process-local or shared cache.
 type CacheConfig struct {
-	Driver string      `yaml:"driver"`
-	Redis  RedisConfig `yaml:"redis"`
+	Driver string      `json:"driver"`
+	Redis  RedisConfig `json:"redis"`
 }
 
 // RedisConfig configures a shared Redis cache.
 type RedisConfig struct {
-	Address   string `yaml:"address"`
-	Username  string `yaml:"username"`
-	Password  Secret `yaml:"password"`
-	DB        int    `yaml:"db"`
-	KeyPrefix string `yaml:"key_prefix"`
+	Address   string `json:"address"`
+	Username  string `json:"username"`
+	Password  string `json:"password"`
+	DB        int    `json:"db"`
+	KeyPrefix string `json:"key_prefix"`
 }
 
 // JWTConfig configures token identity and lifetimes; signing keys are stored in the database.
 type JWTConfig struct {
-	Issuer     string   `yaml:"issuer"`
-	AccessTTL  Duration `yaml:"access_ttl"`
-	RefreshTTL Duration `yaml:"refresh_ttl"`
+	Issuer     string `json:"issuer"`
+	AccessTTL  int    `json:"access_ttl"`
+	RefreshTTL int    `json:"refresh_ttl"`
 }
 
 // SecurityConfig identifies proxies trusted to forward client request metadata.
 type SecurityConfig struct {
-	TrustedProxies []string `yaml:"trusted_proxies"`
+	TrustedProxies []string `json:"trusted_proxies"`
 }
 
 // ObjectStorageConfig selects local or S3-compatible object storage.
 type ObjectStorageConfig struct {
-	Driver string      `yaml:"driver"`
-	Local  LocalConfig `yaml:"local"`
-	S3     S3Config    `yaml:"s3"`
+	Driver string      `json:"driver"`
+	Local  LocalConfig `json:"local"`
+	S3     S3Config    `json:"s3"`
 }
 
 // LocalConfig configures single-instance local object storage.
 type LocalConfig struct {
-	Directory string `yaml:"directory"`
+	Directory string `json:"directory"`
 }
 
 // S3Config configures an S3-compatible shared object store.
 type S3Config struct {
-	Endpoint      string `yaml:"endpoint"`
-	Region        string `yaml:"region"`
-	Bucket        string `yaml:"bucket"`
-	AccessKey     Secret `yaml:"access_key"`
-	SecretKey     Secret `yaml:"secret_key"`
-	UseSSL        bool   `yaml:"use_ssl"`
-	PublicBaseURL string `yaml:"public_base_url"`
+	Endpoint      string `json:"endpoint"`
+	Region        string `json:"region"`
+	Bucket        string `json:"bucket"`
+	AccessKey     string `json:"access_key"`
+	SecretKey     string `json:"secret_key"`
+	UseSSL        bool   `json:"use_ssl"`
+	PublicBaseURL string `json:"public_base_url"`
 }
 
 // LogConfig controls structured application logging.
 type LogConfig struct {
-	Level string `yaml:"level"`
+	Level string `json:"level"`
 }
 
 // Validate rejects incomplete, ambiguous, or unsafe deployment combinations.
@@ -249,35 +158,8 @@ func (c Config) Validate() error {
 	if listenerAddressesConflict(c.HTTP.Address, c.GRPC.Address) {
 		return fmt.Errorf("http.address and grpc.address must use different listeners")
 	}
-	database := c.Database
-	legacyDatabase := false
-	if database.Driver == "" && database.DSN.Empty() && c.MySQL.Driver == "" && c.MySQL.DSN.Empty() {
-		return fmt.Errorf("mysql.dsn is required")
-	}
-	if database.Driver == "" && !c.MySQL.DSN.Empty() {
-		database = c.MySQL
-		legacyDatabase = true
-		if database.Driver == "" {
-			database.Driver = DatabaseDriverMySQL
-		}
-	}
-	if database.Driver != DatabaseDriverMySQL && database.Driver != DatabaseDriverPGSQL {
-		return fmt.Errorf("database.driver must be %q or %q", DatabaseDriverMySQL, DatabaseDriverPGSQL)
-	}
-	if database.DSN.Empty() {
-		if legacyDatabase {
-			return fmt.Errorf("mysql.dsn is required")
-		}
-		return fmt.Errorf("database.dsn is required")
-	}
-	if database.MaxOpenConns <= 0 {
-		return fmt.Errorf("database.max_open_conns must be greater than zero")
-	}
-	if database.MaxIdleConns < 0 || database.MaxIdleConns > database.MaxOpenConns {
-		return fmt.Errorf("database.max_idle_conns must be between zero and max_open_conns")
-	}
-	if database.ConnMaxLifetime.Duration <= 0 {
-		return fmt.Errorf("database.conn_max_lifetime must be greater than zero")
+	if err := c.Database.validate(); err != nil {
+		return err
 	}
 	if err := c.Cache.validate(); err != nil {
 		return err
@@ -296,6 +178,25 @@ func (c Config) Validate() error {
 	}
 	if c.Mode == ModeMulti && c.ObjectStorage.Driver != "s3" {
 		return fmt.Errorf("mode=multi requires object_storage.driver=s3")
+	}
+	return nil
+}
+
+func (database DatabaseConfig) validate() error {
+	if database.Driver != DatabaseDriverMySQL && database.Driver != DatabaseDriverPGSQL {
+		return fmt.Errorf("database.driver must be %q or %q", DatabaseDriverMySQL, DatabaseDriverPGSQL)
+	}
+	if database.DSN == "" {
+		return fmt.Errorf("database.dsn is required")
+	}
+	if database.MaxOpenConns <= 0 {
+		return fmt.Errorf("database.max_open_conns must be greater than zero")
+	}
+	if database.MaxIdleConns < 0 || database.MaxIdleConns > database.MaxOpenConns {
+		return fmt.Errorf("database.max_idle_conns must be between zero and max_open_conns")
+	}
+	if database.ConnMaxLifetime <= 0 {
+		return fmt.Errorf("database.conn_max_lifetime must be greater than zero")
 	}
 	return nil
 }
@@ -321,7 +222,7 @@ func validateListener(name string, listener ListenerConfig) error {
 	if strings.TrimSpace(listener.Address) == "" {
 		return fmt.Errorf("%s.address is required", name)
 	}
-	if listener.Timeout.Duration <= 0 {
+	if listener.Timeout <= 0 {
 		return fmt.Errorf("%s.timeout must be greater than zero", name)
 	}
 	return nil
@@ -351,10 +252,10 @@ func (c JWTConfig) validate() error {
 	if strings.TrimSpace(c.Issuer) == "" {
 		return fmt.Errorf("jwt.issuer is required")
 	}
-	if c.AccessTTL.Duration <= 0 {
+	if c.AccessTTL <= 0 {
 		return fmt.Errorf("jwt.access_ttl must be greater than zero")
 	}
-	if c.RefreshTTL.Duration <= c.AccessTTL.Duration {
+	if c.RefreshTTL <= c.AccessTTL {
 		return fmt.Errorf("jwt.refresh_ttl must be greater than access_ttl")
 	}
 	return nil
@@ -432,7 +333,7 @@ func (c S3Config) Validate() error {
 	if strings.TrimSpace(c.Bucket) == "" {
 		return fmt.Errorf("object_storage.s3.bucket is required")
 	}
-	if c.AccessKey.Empty() || c.SecretKey.Empty() {
+	if c.AccessKey == "" || c.SecretKey == "" {
 		return fmt.Errorf("object_storage.s3 access_key and secret_key are required")
 	}
 	if c.PublicBaseURL == "" {

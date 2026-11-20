@@ -55,7 +55,7 @@ For an independent CDN or resource domain, optionally set
 ## Database initialization
 
 Create an empty database and start Kirby. It creates the model tables from
-embedded SQL, then inserts the built-in permissions and roles. It also generates
+embedded SQL and initializes system settings with self-registration disabled. It also generates
 and stores the JWT signing key and API-key pepper in `application_secrets`.
 Each application startup loads those shared values into memory; no key or
 origin allowlist needs to be entered in the configuration. The configured
@@ -63,7 +63,7 @@ origin allowlist needs to be entered in the configuration. The configured
 
 A new database has no built-in administrator or default password. After the
 service starts, open `/setup` from the web application. Enter a username,
-display name, and a password of at least 12 bytes to create the first
+nickname, email, and a password of 8–32 visible ASCII bytes using at least two of letters, digits, and symbols to create the first
 system administrator, then continue to `/login`. The deployer should complete
 this first setup through a controlled network or ingress before opening access
 to other users.
@@ -83,7 +83,7 @@ For automated deployments or account recovery, the CLI remains available:
 ```sh
 cd server
 go run . create-admin --config /etc/kirby/config.yaml \
-  --username admin --display-name Administrator
+  --username admin --nickname Administrator --email admin@example.com
 ```
 
 For automation, pass `--password-file`. The file must be regular, must not be a

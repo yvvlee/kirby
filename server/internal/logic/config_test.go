@@ -36,10 +36,12 @@ func TestUpdateValueUsesCanonicalTransactionLockOrder(t *testing.T) {
 	}
 	logicLayer := NewConfigLogic(configs, &configStructureRepositoryFake{order: &order}, &configEnumRepositoryFake{order: &order}, configSnapshotRepositoryFake{}, configAuthorizerFake{}, &configAuditRepositoryFake{order: &order}, directTransactions{})
 
-	updated, err := logicLayer.UpdateValue(context.Background(), permission.Actor{UserID: 9}, 1, ConfigValueInput{
-		ConfigID: 7,
-		Value:    `"new"`,
-		Version:  3,
+	updated, err := logicLayer.UpdateValue(context.Background(), &entity.UpdateConfigValueParam{
+		Actor:         permission.Actor{UserID: 9},
+		EnvironmentID: 1,
+		ConfigID:      7,
+		Value:         `"new"`,
+		Version:       3,
 	})
 	require.NoError(t, err)
 	assert.Equal(t, `"new"`, updated.Value)
@@ -66,12 +68,14 @@ func TestMetadataUpdateNeverOverwritesConfigValue(t *testing.T) {
 	}
 	logicLayer := NewConfigLogic(configs, &configStructureRepositoryFake{order: &order}, &configEnumRepositoryFake{order: &order}, configSnapshotRepositoryFake{}, configAuthorizerFake{}, &configAuditRepositoryFake{order: &order}, directTransactions{})
 
-	_, err = logicLayer.Update(context.Background(), permission.Actor{UserID: 9}, 1, ConfigUpdateInput{
-		ConfigID:    7,
-		Description: "description",
-		FieldType:   &commonv1.Field_Type{Kind: &commonv1.Field_Type_BaseType{BaseType: commonv1.Field_INT}},
-		IsArray:     false,
-		Version:     3,
+	_, err = logicLayer.Update(context.Background(), &entity.UpdateConfigParam{
+		Actor:         permission.Actor{UserID: 9},
+		EnvironmentID: 1,
+		ConfigID:      7,
+		Description:   "description",
+		FieldType:     &commonv1.Field_Type{Kind: &commonv1.Field_Type_BaseType{BaseType: commonv1.Field_INT}},
+		IsArray:       false,
+		Version:       3,
 	})
 	require.NoError(t, err)
 	assert.Equal(t, `"must-survive"`, configs.item.Value)
@@ -116,10 +120,12 @@ func TestUpdateValueRevalidatesConcurrentEnumChangeInsideTransaction(t *testing.
 	}
 	logicLayer := NewConfigLogic(configs, &configStructureRepositoryFake{order: &order}, enums, configSnapshotRepositoryFake{}, configAuthorizerFake{}, &configAuditRepositoryFake{order: &order}, directTransactions{})
 
-	_, err = logicLayer.UpdateValue(context.Background(), permission.Actor{UserID: 9}, 1, ConfigValueInput{
-		ConfigID: 7,
-		Value:    `"ACTIVE"`,
-		Version:  3,
+	_, err = logicLayer.UpdateValue(context.Background(), &entity.UpdateConfigValueParam{
+		Actor:         permission.Actor{UserID: 9},
+		EnvironmentID: 1,
+		ConfigID:      7,
+		Value:         `"ACTIVE"`,
+		Version:       3,
 	})
 	assert.True(t, errors.Is(err, entity.ErrInvalid), "validation must see the enum version locked inside the transaction")
 	assert.Equal(t, []string{"config.lock", "structure.lock", "enum.lock"}, order)
@@ -130,28 +136,34 @@ func TestWriteOnlyRoleCanCreateEmptyConfigButCannotReceiveUpdatedConfig(t *testi
 	configs := &configRepositoryFake{order: &order}
 	logicLayer := NewConfigLogic(configs, &configStructureRepositoryFake{order: &order}, &configEnumRepositoryFake{order: &order}, configSnapshotRepositoryFake{}, configWriteOnlyAuthorizer{}, &configAuditRepositoryFake{order: &order}, directTransactions{})
 
-	created, err := logicLayer.Create(context.Background(), permission.Actor{UserID: 9}, 1, ConfigCreateInput{
-		ProjectID:   2,
-		Key:         "message",
-		Description: "",
+	created, err := logicLayer.Create(context.Background(), &entity.CreateConfigParam{
+		Actor:         permission.Actor{UserID: 9},
+		EnvironmentID: 1,
+		ProjectID:     2,
+		Key:           "message",
+		Description:   "",
 	})
 	require.NoError(t, err, "create returns only the known empty initial value")
 	assert.Equal(t, `""`, created.Value)
 
 	order = order[:0]
-	_, err = logicLayer.Update(context.Background(), permission.Actor{UserID: 9}, 1, ConfigUpdateInput{
-		ConfigID:    created.ID,
-		Description: "",
-		FieldType:   &commonv1.Field_Type{Kind: &commonv1.Field_Type_BaseType{BaseType: commonv1.Field_STRING}},
-		IsArray:     false,
-		Version:     0,
+	_, err = logicLayer.Update(context.Background(), &entity.UpdateConfigParam{
+		Actor:         permission.Actor{UserID: 9},
+		EnvironmentID: 1,
+		ConfigID:      created.Id,
+		Description:   "",
+		FieldType:     &commonv1.Field_Type{Kind: &commonv1.Field_Type_BaseType{BaseType: commonv1.Field_STRING}},
+		IsArray:       false,
+		Version:       0,
 	})
 	assert.ErrorIs(t, err, permission.ErrForbidden)
 	assert.Empty(t, order)
-	_, err = logicLayer.UpdateValue(context.Background(), permission.Actor{UserID: 9}, 1, ConfigValueInput{
-		ConfigID: created.ID,
-		Value:    `"secret"`,
-		Version:  0,
+	_, err = logicLayer.UpdateValue(context.Background(), &entity.UpdateConfigValueParam{
+		Actor:         permission.Actor{UserID: 9},
+		EnvironmentID: 1,
+		ConfigID:      created.Id,
+		Value:         `"secret"`,
+		Version:       0,
 	})
 	assert.ErrorIs(t, err, permission.ErrForbidden)
 	assert.Empty(t, order)
@@ -201,9 +213,9 @@ type configAuditRepositoryFake struct {
 	order *[]string
 }
 
-func (f *configAuditRepositoryFake) RecordForEnvironment(context.Context, int64, *model.AuditLog) error {
+func (f *configAuditRepositoryFake) RecordForEnvironment(context.Context, int64, *model.AuditLog) (rowsAffected int64, err error) {
 	*f.order = append(*f.order, "audit")
-	return nil
+	return
 }
 
 type configRepositoryFake struct {
@@ -211,10 +223,10 @@ type configRepositoryFake struct {
 	item  *model.Config
 }
 
-func (f *configRepositoryFake) Create(_ context.Context, _, _ int64, item *model.Config) error {
+func (f *configRepositoryFake) Create(_ context.Context, _, _ int64, item *model.Config) (rowsAffected int64, err error) {
 	item.ID = 7
 	f.item = item
-	return nil
+	return
 }
 func (f *configRepositoryFake) FindByID(context.Context, int64, int64) (*model.Config, error) {
 	*f.order = append(*f.order, "config.find")
@@ -224,21 +236,21 @@ func (f *configRepositoryFake) FindByID(context.Context, int64, int64) (*model.C
 func (f *configRepositoryFake) List(context.Context, int64, repository.ConfigFilter, repository.PageRequest) (repository.PageResult[model.Config], error) {
 	return repository.PageResult[model.Config]{}, nil
 }
-func (f *configRepositoryFake) Update(_ context.Context, _, _ int64, update repository.ConfigUpdate) error {
+func (f *configRepositoryFake) Update(_ context.Context, _, _ int64, update repository.ConfigUpdate) (rowsAffected int64, err error) {
 	*f.order = append(*f.order, "config.update")
 	f.item.Description, f.item.IsArray, f.item.TypeJSON = update.Description, update.IsArray, update.TypeJSON
 	f.item.Version++
-	return nil
+	return
 }
-func (f *configRepositoryFake) UpdateValue(_ context.Context, _, _ int64, update repository.ConfigValueUpdate) error {
+func (f *configRepositoryFake) UpdateValue(_ context.Context, _, _ int64, update repository.ConfigValueUpdate) (rowsAffected int64, err error) {
 	*f.order = append(*f.order, "config.value.update")
 	f.item.Value = update.Value
 	f.item.Version++
-	return nil
+	return
 }
-func (f *configRepositoryFake) Delete(context.Context, int64, int64, int64) error {
+func (f *configRepositoryFake) Delete(context.Context, int64, int64) (rowsAffected int64, err error) {
 	*f.order = append(*f.order, "config.delete")
-	return nil
+	return
 }
 func (f *configRepositoryFake) LockByID(context.Context, int64, int64) (*model.Config, error) {
 	*f.order = append(*f.order, "config.lock")

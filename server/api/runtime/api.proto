@@ -14,7 +14,8 @@ service Api {
 }
 
 message ConfigRequest {
-  string project = 1 [(validate.rules).string = {min_len: 1, max_len: 64}];
+  reserved 1;
+  reserved "project";
   string key = 2 [(validate.rules).string = {min_len: 1, max_len: 64}];
 }
 

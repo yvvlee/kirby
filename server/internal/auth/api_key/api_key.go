@@ -10,20 +10,14 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
-	"strings"
-
-	"github.com/yvvlee/kirby/server/internal/conf"
 )
 
 const (
-	publicPrefix       = "kirby_pk_"
-	publicEntropyBytes = 16
 	secretEntropyBytes = 32
 	secretSuffixLength = 4
 )
 
 type Generated struct {
-	PublicID     string
 	Full         string
 	Hash         []byte
 	SecretSuffix string
@@ -39,8 +33,8 @@ type Manager struct {
 // Parameters: pepper is the installation-specific hashing secret.
 // Returns: a credential manager.
 // Throws: an error if the pepper is empty or too short.
-func New(pepper conf.Secret) (*Manager, error) {
-	return newManager([]byte(pepper.Value()), rand.Reader)
+func New(pepper string) (*Manager, error) {
+	return newManager([]byte(pepper), rand.Reader)
 }
 
 func newManager(pepper []byte, random io.Reader) (*Manager, error) {
@@ -53,78 +47,54 @@ func newManager(pepper []byte, random io.Reader) (*Manager, error) {
 	}, nil
 }
 
-// Generate creates one public ID and secret; only its hash and suffix may be stored.
+// Generate creates one credential digest and secret; only its hash and suffix may be stored.
 //
 // Parameters: none.
-// Returns: the full credential, public ID, hash, and display suffix.
+// Returns: the full credential, credential digest, hash, and display suffix.
 // Throws: an error when cryptographic randomness cannot be read.
 func (m *Manager) Generate() (*Generated, error) {
-	publicEntropy := make([]byte, publicEntropyBytes)
 	secretEntropy := make([]byte, secretEntropyBytes)
-	if _, err := io.ReadFull(m.random, publicEntropy); err != nil {
-		return nil, fmt.Errorf("generate API key public id: %w", err)
-	}
 	if _, err := io.ReadFull(m.random, secretEntropy); err != nil {
-		return nil, fmt.Errorf("generate API key secret: %w", err)
+		return nil, fmt.Errorf("generate API key: %w", err)
 	}
-	publicID := publicPrefix + base64.RawURLEncoding.EncodeToString(publicEntropy)
 	secret := base64.RawURLEncoding.EncodeToString(secretEntropy)
-	full := publicID + "." + secret
+	full := secret
 	return &Generated{
-		PublicID:     publicID,
 		Full:         full,
 		Hash:         m.hash(full),
 		SecretSuffix: secret[len(secret)-secretSuffixLength:],
 	}, nil
 }
 
-// PublicID validates the full credential and returns only its queryable part.
-//
+// LookupHash validates canonical random secrets before deriving the database lookup digest.
 // Parameters: full is the presented credential.
-// Returns: the public identifier.
-// Throws: an error for an invalid credential format.
-func (m *Manager) PublicID(full string) (string, error) {
-	publicID, _, err := parse(full)
-	return publicID, err
+// Returns: its peppered HMAC digest.
+// Throws: invalid encoding or entropy length errors.
+func (m *Manager) LookupHash(full string) ([]byte, error) {
+	if len(full) != 43 {
+		return nil, fmt.Errorf("invalid API key format")
+	}
+	decoded, err := base64.RawURLEncoding.DecodeString(full)
+	if err != nil || len(decoded) != secretEntropyBytes || base64.RawURLEncoding.EncodeToString(decoded) != full {
+		return nil, fmt.Errorf("invalid API key format")
+	}
+	return m.hash(full), nil
 }
 
-// Verify compares both the public id and HMAC in constant time.
-//
-// Parameters: full is the credential; expectedPublicID and expectedHash are persisted values.
-// Returns: whether the identity and secret both match.
+// Verify compares the presented secret to a stored digest in constant time.
+// Parameters: full is the secret; expectedHash is the stored HMAC.
+// Returns: whether the credential matches.
 // Throws: none.
-func (m *Manager) Verify(full, expectedPublicID string, expectedHash []byte) bool {
-	publicID, _, err := parse(full)
+func (m *Manager) Verify(full string, expectedHash []byte) bool {
+	hash, err := m.LookupHash(full)
 	if err != nil {
 		return false
 	}
-	publicMatches := subtle.ConstantTimeCompare([]byte(publicID), []byte(expectedPublicID))
-	hashMatches := subtle.ConstantTimeCompare(m.hash(full), expectedHash)
-	return publicMatches&hashMatches == 1
+	return subtle.ConstantTimeCompare(hash, expectedHash) == 1
 }
 
 func (m *Manager) hash(full string) []byte {
 	digest := hmac.New(sha256.New, m.pepper)
 	_, _ = digest.Write([]byte(full))
 	return digest.Sum(nil)
-}
-
-func parse(full string) (string, string, error) {
-	if strings.TrimSpace(full) != full || strings.Count(full, ".") != 1 {
-		return "", "", fmt.Errorf("invalid API key format")
-	}
-	publicID, secret, _ := strings.Cut(full, ".")
-	if !strings.HasPrefix(publicID, publicPrefix) {
-		return "", "", fmt.Errorf("invalid API key public id")
-	}
-	publicEncoded := strings.TrimPrefix(publicID, publicPrefix)
-	publicBytes, err := base64.RawURLEncoding.DecodeString(publicEncoded)
-	if err != nil || len(publicBytes) != publicEntropyBytes || base64.RawURLEncoding.EncodeToString(publicBytes) != publicEncoded {
-		return "", "", fmt.Errorf("invalid API key public id")
-	}
-	secretBytes, err := base64.RawURLEncoding.DecodeString(secret)
-	if err != nil || len(secretBytes) != secretEntropyBytes || base64.RawURLEncoding.EncodeToString(secretBytes) != secret {
-		return "", "", fmt.Errorf("invalid API key secret")
-	}
-	return publicID, secret, nil
 }

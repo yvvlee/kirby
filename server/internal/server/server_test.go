@@ -19,11 +19,14 @@ import (
 	"github.com/yvvlee/kirby/server/internal/repository"
 	"github.com/yvvlee/kirby/server/internal/service"
 
+	kratoserrors "github.com/go-kratos/kratos/v2/errors"
 	kratoshttp "github.com/go-kratos/kratos/v2/transport/http"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/metadata"
 
 	adminv1 "github.com/yvvlee/kirby/server/api/admin"
+	errorsv1 "github.com/yvvlee/kirby/server/api/errors"
 	runtimev1 "github.com/yvvlee/kirby/server/api/runtime"
 	authsession "github.com/yvvlee/kirby/server/internal/auth/session"
 )
@@ -42,6 +45,41 @@ func TestHTTPJSONUsesPublicSnakeCaseContract(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "application/json", response.Header().Get("Content-Type"))
 	assert.JSONEq(t, `{"access_token":"token","expires_in":60,"user":null}`, response.Body.String())
+}
+
+func TestLocalizedErrorEncoderUsesAcceptLanguage(t *testing.T) {
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/auth/login", nil)
+	request.Header.Set("Accept-Language", "en-US")
+	localizedErrorEncoder(response, request, errorsv1.ErrorUnauthorized("authentication failed"))
+	assert.Equal(t, http.StatusUnauthorized, response.Code)
+	assert.Contains(t, response.Body.String(), "authentication failed")
+	assert.Contains(t, response.Body.String(), "\"reason\":\"Unauthorized\"")
+}
+
+func TestLocalizedNotFoundHandlerUsesDefaultChinese(t *testing.T) {
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/missing", nil)
+	localizedNotFoundHandler(response, request)
+	assert.Equal(t, http.StatusNotFound, response.Code)
+	assert.Contains(t, response.Body.String(), "请求的资源不存在")
+}
+
+func TestLocalizedMethodNotAllowedUsesHTTPMethodStatus(t *testing.T) {
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPut, "/api/method", nil)
+	localizedMethodNotAllowedHandler(response, request)
+	assert.Equal(t, http.StatusMethodNotAllowed, response.Code)
+	assert.Contains(t, response.Body.String(), "不支持此请求方法")
+	assert.Contains(t, response.Body.String(), "METHOD_NOT_ALLOWED")
+}
+
+func TestGRPCErrorUsesAcceptLanguageMetadata(t *testing.T) {
+	err := errorsv1.ErrorUnauthorized("authentication failed")
+	localized := kratoserrors.FromError(localizeGRPCError(err, metadata.Pairs("accept-language", "en-US")))
+	assert.Equal(t, "authentication failed", localized.Message)
+	assert.Equal(t, int32(http.StatusUnauthorized), localized.Code)
+	assert.Equal(t, "Unauthorized", localized.Reason)
 }
 
 func TestHTTPJSONIgnoresUnknownFields(t *testing.T) {
@@ -227,19 +265,20 @@ func (r *serverSetupRepository) IsInitialized(context.Context) (bool, error) {
 	return r.initialized, nil
 }
 
-func (r *serverSetupRepository) CreateInitialAdmin(context.Context, *model.User) error {
+func (r *serverSetupRepository) CreateInitialAdmin(context.Context, *model.User) (rowsAffected int64, err error) {
 	if r.initialized {
-		return repository.ErrAlreadyInitialized
+		err = repository.ErrAlreadyInitialized
+		return
 	}
 	r.initialized = true
-	return nil
+	return
 }
 
 func TestSetupHTTPIsPublicAndClosesAfterInitialAdministrator(t *testing.T) {
 	cfg := &conf.Config{
 		HTTP: conf.ListenerConfig{
 			Address: ":0",
-			Timeout: conf.Duration{Duration: time.Second},
+			Timeout: 1000,
 		},
 	}
 	logger, err := infra.NewLoggerWithWriter(io.Discard, conf.LogConfig{Level: "info"})
@@ -264,7 +303,7 @@ func TestSetupHTTPIsPublicAndClosesAfterInitialAdministrator(t *testing.T) {
 	assert.JSONEq(t, `{"initialized":false}`, status.Body.String())
 
 	for _, expected := range []int{http.StatusOK, http.StatusConflict} {
-		request := httptest.NewRequest(http.MethodPost, "https://kirby.example.com/api/setup/admin", strings.NewReader(`{"username":"owner","display_name":"Owner","password":"initial-password"}`))
+		request := httptest.NewRequest(http.MethodPost, "https://kirby.example.com/api/setup/admin", strings.NewReader(`{"username":"owner","nickname":"Owner","email":"owner@example.com","password":"initial-password"}`))
 		request.Header.Set("Content-Type", "application/json")
 		request.Header.Set("Origin", "https://kirby.example.com")
 		response := httptest.NewRecorder()
@@ -313,7 +352,7 @@ func TestInitialAdministratorCreationUsesAuthenticationRateLimit(t *testing.T) {
 	cfg := &conf.Config{
 		HTTP: conf.ListenerConfig{
 			Address: ":0",
-			Timeout: conf.Duration{Duration: time.Second},
+			Timeout: 1000,
 		},
 	}
 	logger, err := infra.NewLoggerWithWriter(io.Discard, conf.LogConfig{Level: "info"})
@@ -326,10 +365,38 @@ func TestInitialAdministratorCreationUsesAuthenticationRateLimit(t *testing.T) {
 		},
 	}, nil, nil)
 	require.NoError(t, err)
-	request := httptest.NewRequest(http.MethodPost, "https://kirby.example.com/api/setup/admin", strings.NewReader(`{"username":"owner","display_name":"Owner","password":"initial-password"}`))
+	request := httptest.NewRequest(http.MethodPost, "https://kirby.example.com/api/setup/admin", strings.NewReader(`{"username":"owner","nickname":"Owner","email":"owner@example.com","password":"initial-password"}`))
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Origin", "https://kirby.example.com")
 	response := httptest.NewRecorder()
 	server.ServeHTTP(response, request)
 	assert.Equal(t, http.StatusTooManyRequests, response.Code, response.Body.String())
+}
+
+func TestInvitationPageDoesNotInvokeInvitationAPI(t *testing.T) {
+	web := http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "text/html")
+		_, _ = io.WriteString(writer, "<html>Kirby</html>")
+	})
+	api := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		assert.True(t, isAPIRequest(request))
+		_, _ = io.WriteString(writer, "API")
+	})
+	handler := browserInvitations(web)(APIPrefix()(api))
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/invitations/private-token", nil))
+	assert.Equal(t, "text/html", response.Header().Get("Content-Type"))
+	assert.Contains(t, response.Body.String(), "Kirby")
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/invitations/private-token", nil))
+	assert.Equal(t, "API", response.Body.String())
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/invitations/private-token/accept", nil))
+	assert.Equal(t, http.StatusNotFound, response.Code)
+}
+
+func TestInvitationTokensAreExcludedFromRequestLogs(t *testing.T) {
+	assert.Equal(t, "/api/invitations/[redacted]", logRequestPath("/api/invitations/private-token/accept"))
+	assert.Equal(t, "/invitations/[redacted]", logRequestPath("/invitations/private-token"))
+	assert.Equal(t, "/projects", logRequestPath("/projects"))
 }

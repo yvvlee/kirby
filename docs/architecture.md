@@ -6,7 +6,7 @@ Kirby has one administration plane and one runtime plane.
 
 The administration plane consists of the React 19 application and management HTTP
 API. Users log in once. Each request carries an access JWT, then the backend
-resolves the user's current role for the requested environment.
+resolves the user's project role and the requested environment's permission grants.
 
 The runtime plane exposes the same published configuration over HTTP and gRPC.
 It uses project API keys instead of administrator JWTs. Management protobufs
@@ -54,8 +54,9 @@ returns a cleanup function for both startup failures and normal shutdown.
 
 `infra.Storage.CoreDB` is one `*lorm.Engine`. Each repository embeds the typed
 lorm repository and uses generated column names. SQL NULL checks, environment
-scope, soft deletion, and version predicates are explicit in every applicable
-query. A logic operation owns the transaction; its context carries that
+scope, and version predicates are explicit in every applicable query; rows are
+removed with physical deletes. A logic operation owns the transaction; its
+context carries that
 transaction through repository calls. Production has no optional transaction
 runner or database-free execution path.
 
@@ -72,9 +73,11 @@ Environment IDs are part of repository queries and authorization checks.
 Projects, configs, snapshots, imports, API keys, and object paths are checked
 against the owning project and environment.
 
-A user has one identity and one JWT session. The user's roles are separate for
-each environment. A system administrator can manage users, roles, and
-environments, but environment content still uses explicit environment scope.
+A user has one identity and one JWT session. Project membership assigns one of
+four fixed roles: Owner, Maintainer, Member, or Guest. Environment permission
+grants apply to these project roles; there are no separate environment members.
+System administrators manage users and system settings without bypassing project
+membership. Only project Owners manage environments and delete projects.
 
 ## Publication flow
 
@@ -109,3 +112,5 @@ proxy CIDR list can restrict this behavior. JWT signing keys and the API-key
 pepper are persisted in the database and loaded into memory at startup. Browser
 requests use the web application's public origin without a configured allowlist.
 No sticky session is required.
+
+Project environments own independent configuration data and API keys. Runtime requests select the environment through the API key. See [project and environment isolation](environment-isolation.md).

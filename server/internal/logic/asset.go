@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/yvvlee/kirby/server/internal/entity"
 	"github.com/yvvlee/kirby/server/internal/infra/object"
 	"github.com/yvvlee/kirby/server/internal/permission"
 	"github.com/yvvlee/kirby/server/internal/repository"
@@ -89,15 +90,6 @@ func DefaultPolicy() Policy {
 	}
 }
 
-// PresignInput is the application-level upload request.
-type PresignInput struct {
-	EnvironmentID int64
-	ProjectID     int64
-	Filename      string
-	ContentType   string
-	Size          uint64
-}
-
 // AssetLogic coordinates authorization, project ownership, policy, and storage.
 type AssetLogic struct {
 	storage    object.ObjectStorage
@@ -136,29 +128,29 @@ func newLogic(storage object.ObjectStorage, authorizer assetAuthorizer, projects
 }
 
 // Presign authorizes the request and creates a scoped, unguessable key.
-// Parameters: ctx carries the caller; input describes the requested project upload.
+// Parameters: ctx carries the caller; param describes the requested project upload.
 // Returns: a scoped ticket with its expiration and upload requirements.
 // Throws: invalid input, forbidden access, missing project, or wrapped dependency errors.
-func (l *AssetLogic) Presign(ctx context.Context, input PresignInput) (*object.UploadTicket, error) {
-	extension, contentType, err := l.validateUpload(input.Filename, input.ContentType, input.Size)
+func (l *AssetLogic) Presign(ctx context.Context, param *entity.PresignAssetParam) (*object.UploadTicket, error) {
+	extension, contentType, err := l.validateUpload(param.Filename, param.ContentType, param.Size)
 	if err != nil {
 		return nil, err
 	}
-	if err := l.requireAccess(ctx, input.EnvironmentID, input.ProjectID); err != nil {
+	if err := l.requireAccess(ctx, param.EnvironmentID, param.ProjectID); err != nil {
 		return nil, err
 	}
 	objectID, err := l.newID()
 	if err != nil {
 		return nil, fmt.Errorf("%w: generate object ID: %w", ErrDependency, err)
 	}
-	key, err := object.BuildObjectKey(input.EnvironmentID, input.ProjectID, objectID, extension)
+	key, err := object.BuildObjectKey(param.EnvironmentID, param.ProjectID, objectID, extension)
 	if err != nil {
 		return nil, fmt.Errorf("%w: generated object key is invalid: %w", ErrDependency, err)
 	}
 	ticket, err := l.storage.PresignUpload(ctx, object.PresignUploadInput{
 		Key:         key,
 		ContentType: contentType,
-		Size:        input.Size,
+		Size:        param.Size,
 		ExpiresIn:   l.policy.UploadLifetime,
 	})
 	if err != nil {

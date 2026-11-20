@@ -29,7 +29,7 @@ type runtimeLogicFake struct {
 	err         error
 }
 
-func (f *runtimeLogicFake) Read(_ context.Context, credential, _, _ string) (*logic.RuntimeResult, error) {
+func (f *runtimeLogicFake) Read(_ context.Context, credential, _ string) (*logic.RuntimeResult, error) {
 	f.credentials = append(f.credentials, credential)
 	return f.result, f.err
 }
@@ -60,8 +60,7 @@ func TestHTTPAndGRPCUseSameRuntimeService(t *testing.T) {
 	fake := &runtimeLogicFake{result: &logic.RuntimeResult{Content: `{"enabled":true}`, Version: 7}}
 	service := &RuntimeService{runtimeLogic: fake}
 	request := &runtimev1.ConfigRequest{
-		Project: "website",
-		Key:     "feature",
+		Key: "feature",
 	}
 
 	header := testHeader{}
@@ -89,8 +88,7 @@ func TestHTTPAndGRPCUseSameRuntimeService(t *testing.T) {
 
 func TestRuntimeServiceMapsAuthenticationAndScopeErrors(t *testing.T) {
 	request := &runtimev1.ConfigRequest{
-		Project: "website",
-		Key:     "feature",
+		Key: "feature",
 	}
 	for _, test := range []struct {
 		err  error
@@ -99,10 +97,6 @@ func TestRuntimeServiceMapsAuthenticationAndScopeErrors(t *testing.T) {
 		{
 			err:  logic.ErrUnauthenticated,
 			code: http.StatusUnauthorized,
-		},
-		{
-			err:  logic.ErrProjectMismatch,
-			code: http.StatusForbidden,
 		},
 	} {
 		service := &RuntimeService{runtimeLogic: &runtimeLogicFake{err: test.err}}
@@ -126,8 +120,7 @@ func TestRuntimeServiceLogsUnexpectedErrors(t *testing.T) {
 
 	_, err = middleware.UnaryAPIKey(ctx, nil, nil, func(ctx context.Context, _ any) (any, error) {
 		return service.Config(ctx, &runtimev1.ConfigRequest{
-			Project: "website",
-			Key:     "feature",
+			Key: "feature",
 		})
 	})
 

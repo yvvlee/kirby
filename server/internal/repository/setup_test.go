@@ -40,7 +40,8 @@ func TestSetupInsertFailureRollsBackWithoutCompletingMarker(t *testing.T) {
 	mock.ExpectExec("INSERT INTO `users`").WillReturnError(failure)
 	mock.ExpectRollback()
 	err := engine.CoreDB.TX(context.Background(), func(ctx context.Context) error {
-		return NewSetupRepository(engine).CreateInitialAdmin(ctx, initialTestUser("owner"))
+		_, err := NewSetupRepository(engine).CreateInitialAdmin(ctx, initialTestUser("owner"))
+		return err
 	})
 	require.ErrorIs(t, err, failure)
 	require.NoError(t, mock.ExpectationsWereMet())
@@ -57,7 +58,8 @@ func TestSetupMarkerFailureRollsBackAdministratorInsert(t *testing.T) {
 		WithArgs(true, 1).WillReturnError(failure)
 	mock.ExpectRollback()
 	err := engine.CoreDB.TX(context.Background(), func(ctx context.Context) error {
-		return NewSetupRepository(engine).CreateInitialAdmin(ctx, initialTestUser("owner"))
+		_, err := NewSetupRepository(engine).CreateInitialAdmin(ctx, initialTestUser("owner"))
+		return err
 	})
 	require.ErrorIs(t, err, failure)
 	require.NoError(t, mock.ExpectationsWereMet())
@@ -70,7 +72,8 @@ func TestCompletedSetupRefusesAdministratorInsert(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"id", "admin_initialized"}).AddRow(1, true))
 	mock.ExpectRollback()
 	err := engine.CoreDB.TX(context.Background(), func(ctx context.Context) error {
-		return NewSetupRepository(engine).CreateInitialAdmin(ctx, initialTestUser("owner"))
+		_, err := NewSetupRepository(engine).CreateInitialAdmin(ctx, initialTestUser("owner"))
+		return err
 	})
 	require.ErrorIs(t, err, ErrAlreadyInitialized)
 	require.NoError(t, mock.ExpectationsWereMet())
@@ -86,7 +89,8 @@ func TestCLISetupMarkerFailureRollsBackBeforeUserProvisioning(t *testing.T) {
 		WithArgs(true, 1).WillReturnError(failure)
 	mock.ExpectRollback()
 	err := engine.CoreDB.TX(context.Background(), func(ctx context.Context) error {
-		return NewSetupRepository(engine).MarkInitialized(ctx)
+		_, err := NewSetupRepository(engine).MarkInitialized(ctx)
+		return err
 	})
 	require.ErrorIs(t, err, failure)
 	require.NoError(t, mock.ExpectationsWereMet())

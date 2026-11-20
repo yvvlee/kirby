@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package kirby.admin.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "validate/validate.proto";
+
+option go_package = "github.com/yvvlee/kirby/server/api/admin;adminv1";
+
+service ProjectInvitationService {
+  rpc CreateProjectInvitation(CreateProjectInvitationRequest) returns (ProjectInvitationReply) {
+    option (google.api.http) = {post: "/admin/projects/{project_id}/invitations", body: "*"};
+  }
+  rpc GetProjectInvitation(ProjectInvitationTokenRequest) returns (ProjectInvitationReply) {
+    option (google.api.http) = {get: "/invitations/{token}"};
+  }
+  rpc AcceptProjectInvitation(ProjectInvitationTokenRequest) returns (ProjectInvitationReply) {
+    option (google.api.http) = {post: "/invitations/{token}/accept", body: "*"};
+  }
+  rpc RevokeProjectInvitation(ProjectInvitationTokenRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {delete: "/invitations/{token}"};
+  }
+}
+
+message CreateProjectInvitationRequest {
+  int64 project_id = 1 [(validate.rules).int64.gt = 0];
+  string role = 2 [(validate.rules).string.in = "OWNER", (validate.rules).string.in = "MAINTAINER", (validate.rules).string.in = "MEMBER", (validate.rules).string.in = "GUEST"];
+}
+
+message ProjectInvitationTokenRequest {
+  string token = 1 [(validate.rules).string = {min_len: 32, max_len: 128}];
+}
+
+message ProjectInvitationReply {
+  int64 project_id = 1;
+  string role = 2;
+  string expires_at = 3;
+  string token = 4;
+}

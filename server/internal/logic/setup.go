@@ -37,22 +37,24 @@ func (l *SetupLogic) GetSetupStatus(ctx context.Context) (bool, error) {
 }
 
 // CreateInitialAdmin hashes credentials before acquiring the database setup lock.
-// Parameters: ctx controls the transaction; username, displayName, and plainPassword are validated inputs.
+// Parameters: ctx controls the transaction; username, nickname, and plainPassword are validated inputs.
 // Returns: nil when the first administrator and permanent setup marker are committed.
 // Throws: password hashing, transaction, repository, or already initialized errors.
-func (l *SetupLogic) CreateInitialAdmin(ctx context.Context, username, displayName, plainPassword string) error {
+func (l *SetupLogic) CreateInitialAdmin(ctx context.Context, username, nickname, plainPassword, email string) error {
 	hash, err := l.passwords.Hash(plainPassword)
 	if err != nil {
 		return fmt.Errorf("hash initial administrator password: %w", err)
 	}
 	user := &model.User{
 		Username:      username,
-		DisplayName:   displayName,
+		Email:         email,
+		Nickname:      nickname,
 		PasswordHash:  hash,
 		Enabled:       true,
 		IsSystemAdmin: true,
 	}
 	return l.transactions.TX(ctx, func(txctx context.Context) error {
-		return l.repo.CreateInitialAdmin(txctx, user)
+		_, err := l.repo.CreateInitialAdmin(txctx, user)
+		return err
 	})
 }

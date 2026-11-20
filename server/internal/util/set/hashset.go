@@ -44,23 +44,3 @@ func (s *Set[T]) Contains(item T) bool {
 	_, ok := s.values[item]
 	return ok
 }
-
-// Size reports distinct membership rather than insertion count.
-//
-// Parameters: none.
-// Returns: the number of distinct members.
-// Throws: none.
-func (s *Set[T]) Size() int { return len(s.values) }
-
-// Values returns a separate slice so callers cannot mutate membership.
-//
-// Parameters: none.
-// Returns: the members in unspecified order.
-// Throws: none.
-func (s *Set[T]) Values() []T {
-	result := make([]T, 0, len(s.values))
-	for item := range s.values {
-		result = append(result, item)
-	}
-	return result
-}

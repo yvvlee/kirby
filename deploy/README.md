@@ -31,9 +31,9 @@ leave it absent or empty for the default. Uploads still go through Kirby.
 ## First administrator
 
 An empty database is initialized automatically with tables, signing keys,
-permissions, and roles. No default account or password is created. After the
+and system settings. Self-registration is disabled by default. No default account or password is created. After the
 first start, open `/setup` through a controlled network or ingress and create
-the system administrator with a username, display name, and password of at
+the system administrator with a username, nickname, email, and password of at
 least 12 bytes. Continue to `/login` after setup completes.
 
 The database records setup completion permanently; removing all administrators

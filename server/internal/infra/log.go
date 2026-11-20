@@ -29,11 +29,20 @@ var _ kratoslog.Logger = (*Logger)(nil)
 
 // NewLogger uses one structured stderr stream for the application.
 //
-// Parameters: cfg supplies logging settings.
+// Parameters: cfg supplies logging settings and the application identity.
 // Returns: the logger and its cleanup function.
 // Throws: an error when the log destination cannot be initialized.
 func NewLogger(cfg *conf.Config) (*Logger, func(), error) {
-	logger, err := NewLoggerWithWriter(os.Stderr, cfg.Log, zap.AddCaller(), zap.AddCallerSkip(3))
+	options := []zap.Option{zap.AddCaller(), zap.AddCallerSkip(3)}
+	if cfg.App != nil && cfg.App.IsProduction() {
+		// 生产环境为每条日志附加应用身份字段，便于采集平台按应用检索。
+		options = append(options, zap.Fields(
+			zap.String("_APP_", cfg.App.Name),
+			zap.String("_VER_", cfg.App.Version),
+			zap.String("_DEPLOY_", string(cfg.App.Env)),
+		))
+	}
+	logger, err := NewLoggerWithWriter(os.Stderr, cfg.Log, options...)
 	if err != nil {
 		return nil, nil, err
 	}

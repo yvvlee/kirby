@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -16,20 +15,40 @@ import (
 	adminv1 "github.com/yvvlee/kirby/server/api/admin"
 	commonv1 "github.com/yvvlee/kirby/server/api/common"
 	errorsv1 "github.com/yvvlee/kirby/server/api/errors"
+	"github.com/yvvlee/kirby/server/internal/auth/passwordpolicy"
 	authsession "github.com/yvvlee/kirby/server/internal/auth/session"
 	"github.com/yvvlee/kirby/server/internal/conf"
-	"github.com/yvvlee/kirby/server/internal/converter"
 	"github.com/yvvlee/kirby/server/internal/logic"
 	adminmiddleware "github.com/yvvlee/kirby/server/internal/middleware"
-	"github.com/yvvlee/kirby/server/internal/model"
-	"github.com/yvvlee/kirby/server/internal/util/safeint"
+	"github.com/yvvlee/kirby/server/internal/repository"
 )
 
 type authLogic interface {
 	Login(ctx context.Context, username, plainPassword, clientIP string) (*logic.AuthResult, error)
+	Register(ctx context.Context, username, nickname, email, password string) (*logic.AuthResult, error)
 	Refresh(ctx context.Context, refreshToken string) (*logic.AuthResult, error)
 	Logout(ctx context.Context, refreshToken string) error
 	Me(ctx context.Context, userID int64) (*logic.AuthProfile, error)
+}
+
+// Register creates an account only while public registration is enabled.
+// Parameters: ctx carries cancellation and identity; remaining inputs identify the requested operation.
+// Returns: the operation result or an error when authorization or persistence fails.
+// Throws: none; errors are returned.
+func (s *AuthService) Register(ctx context.Context, request *adminv1.RegisterRequest) (*adminv1.LoginReply, error) {
+	if err := passwordpolicy.Validate(request.Password); err != nil {
+		return nil, errorsv1.ErrorBadRequest("%s", err.Error())
+	}
+	_, origin, err := s.validatedOriginRequest(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result, err := s.authLogic.Register(ctx, request.Username, request.Nickname, request.Email, request.Password)
+	if err != nil {
+		return nil, authAPIError(ctx, err)
+	}
+	setCookie(ctx, authsession.Cookie(result.RefreshToken, result.RefreshExpiresAt, authsession.SecureForOrigin(origin)))
+	return loginReply(result.AccessToken, result.AccessTTL, result.User), nil
 }
 
 type AuthService struct {
@@ -69,20 +88,20 @@ func (s *AuthService) Login(ctx context.Context, request *adminv1.LoginRequest) 
 	if err != nil {
 		return nil, err
 	}
-	username := strings.TrimSpace(request.Username)
-	if username == "" || request.Password == "" {
+	identifier := strings.TrimSpace(request.Username)
+	if identifier == "" || request.Password == "" {
 		return nil, authenticationFailed()
 	}
 	clientAddress, err := s.clientIPs.Resolve(httpRequest)
 	if err != nil {
 		return nil, errorsv1.ErrorBadRequest("client address is invalid")
 	}
-	result, err := s.authLogic.Login(ctx, username, request.Password, clientAddress.String())
+	result, err := s.authLogic.Login(ctx, identifier, request.Password, clientAddress.String())
 	if err != nil {
 		return nil, authAPIError(ctx, err)
 	}
 	setCookie(ctx, authsession.Cookie(result.RefreshToken, result.RefreshExpiresAt, authsession.SecureForOrigin(origin)))
-	return loginReply(ctx, result.AccessToken, result.AccessTTL, result.User)
+	return loginReply(result.AccessToken, result.AccessTTL, result.User), nil
 }
 
 // Refresh rotates the refresh cookie after confirming the browser origin.
@@ -106,7 +125,7 @@ func (s *AuthService) Refresh(ctx context.Context, _ *emptypb.Empty) (*adminv1.L
 		return nil, authAPIError(ctx, err)
 	}
 	setCookie(ctx, authsession.Cookie(result.RefreshToken, result.RefreshExpiresAt, authsession.SecureForOrigin(origin)))
-	return loginReply(ctx, result.AccessToken, result.AccessTTL, result.User)
+	return loginReply(result.AccessToken, result.AccessTTL, result.User), nil
 }
 
 // Logout revokes a same-origin browser session and clears its cookie.
@@ -127,10 +146,10 @@ func (s *AuthService) Logout(ctx context.Context, _ *emptypb.Empty) (*emptypb.Em
 	return &emptypb.Empty{}, nil
 }
 
-// Me uses the shared account and environment mappings for the authenticated profile.
+// Me returns the authenticated account with its visible environments.
 //
 // Parameters: ctx carries the authenticated transport; the request body is empty.
-// Returns: the public response, or a sanitized authorization, conflict, conversion, or persistence error.
+// Returns: the public response, or a sanitized authorization or persistence error.
 // Throws: none; failures are returned as errors.
 func (s *AuthService) Me(ctx context.Context, _ *emptypb.Empty) (*adminv1.MeReply, error) {
 	principal, ok := adminmiddleware.PrincipalFromContext(ctx)
@@ -141,22 +160,9 @@ func (s *AuthService) Me(ctx context.Context, _ *emptypb.Empty) (*adminv1.MeRepl
 	if err != nil {
 		return nil, authAPIError(ctx, err)
 	}
-	user, environments := profile.User, profile.Environments
-	protoUser, err := converter.UserToProto(user)
-	if err != nil {
-		return nil, authAPIError(ctx, err)
-	}
-	protoEnvironments := make([]*commonv1.Environment, 0, len(environments))
-	for index := range environments {
-		converted, err := converter.EnvironmentToProto(&environments[index])
-		if err != nil {
-			return nil, authAPIError(ctx, err)
-		}
-		protoEnvironments = append(protoEnvironments, converted)
-	}
 	return &adminv1.MeReply{
-		User:         protoUser,
-		Environments: protoEnvironments,
+		User:         profile.User,
+		Environments: profile.Environments,
 	}, nil
 }
 func (s *AuthService) validatedOriginRequest(ctx context.Context) (*http.Request, string, error) {
@@ -175,23 +181,12 @@ func authenticationFailed() error {
 	return errorsv1.ErrorUnauthorized("authentication failed")
 }
 
-func loginReply(ctx context.Context, accessToken string, ttl time.Duration, user *model.User) (*adminv1.LoginReply, error) {
-	protoUser, err := converter.UserToProto(user)
-	if err != nil {
-		return nil, authAPIError(ctx, err)
-	}
-	seconds, err := safeint.Uint32FromInt64(int64(ttl / time.Second))
-	if err != nil {
-		return nil, authAPIError(ctx, err)
-	}
-	if seconds == 0 {
-		return nil, authAPIError(ctx, fmt.Errorf("access token lifetime must be positive"))
-	}
+func loginReply(accessToken string, ttl time.Duration, user *commonv1.User) *adminv1.LoginReply {
 	return &adminv1.LoginReply{
 		AccessToken: accessToken,
-		ExpiresIn:   seconds,
-		User:        protoUser,
-	}, nil
+		ExpiresIn:   uint32(ttl / time.Second),
+		User:        user,
+	}
 }
 
 func setCookie(ctx context.Context, cookie *http.Cookie) {
@@ -201,6 +196,10 @@ func setCookie(ctx context.Context, cookie *http.Cookie) {
 
 func authAPIError(ctx context.Context, err error) error {
 	switch {
+	case errors.Is(err, repository.ErrKeyConflict):
+		return errorsv1.ErrorConflict("username or email already exists")
+	case errors.Is(err, logic.ErrRegistrationDisabled):
+		return errorsv1.ErrorForbidden("self registration is disabled")
 	case errors.Is(err, logic.ErrAuthFailed):
 		return authenticationFailed()
 	case errors.Is(err, logic.ErrAuthRateLimited):

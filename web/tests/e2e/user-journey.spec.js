@@ -63,7 +63,7 @@ test('runs the standalone management and runtime journey against the real backen
   loginReply = await (await loginResponse).json()
   const token = loginReply.access_token
   expect(token).toBeTruthy()
-  await expect(page.getByRole('heading', { name: '配置管理平台' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '项目', exact: true })).toBeVisible()
 
   await page.goto('/projects')
   await page.getByRole('button', { name: '创建项目' }).click()
@@ -80,31 +80,8 @@ test('runs the standalone management and runtime journey against the real backen
   const sourceProject = sourceProjectReply.project
   const targetProject = targetProjectReply.project
 
-  await page.goto('/system/environments')
-  await page.getByRole('button', { name: '新建环境' }).click()
-  dialog = page.getByRole('dialog', { name: '新建环境' })
-  await dialog.getByRole('combobox', { name: '所属项目' }).click()
-  await page.getByText('Source Project (SourceProject)', { exact: true }).filter({ visible: true }).click()
-  await dialog.getByPlaceholder('例如 production').fill('source')
-  await dialog.getByLabel('名称').fill('Source')
-  await dialog.getByLabel('说明').fill('E2E source environment')
-  const sourceSaved = page.waitForResponse((response) => response.url().endsWith(`/api/admin/projects/${sourceProject.id}/environments`) && response.request().method() === 'POST')
-  await dialog.getByRole('button', { name: /保\s*存/ }).click()
-  await sourceSaved
-  await expect(dialog).toBeHidden()
-
-  await page.getByRole('button', { name: '新建环境' }).click()
-  dialog = page.getByRole('dialog', { name: '新建环境' })
-  await dialog.getByRole('combobox', { name: '所属项目' }).click()
-  await page.getByText('Target Project (TargetProject)', { exact: true }).filter({ visible: true }).click()
-  await dialog.getByPlaceholder('例如 production').fill('target')
-  await dialog.getByLabel('名称').fill('Target')
-  await dialog.getByLabel('说明').fill('E2E target environment')
-  const targetSaved = page.waitForResponse((response) => response.url().endsWith(`/api/admin/projects/${targetProject.id}/environments`) && response.request().method() === 'POST')
-  await dialog.getByRole('button', { name: /保\s*存/ }).click()
-  await targetSaved
-  await expect(dialog).toBeHidden()
-
+  await api(request, token, 'POST', `/admin/projects/${sourceProject.id}/environments`, { key: 'source', name: 'Source' })
+  await api(request, token, 'POST', `/admin/projects/${targetProject.id}/environments`, { key: 'target', name: 'Target' })
   const environmentReply = await api(request, token, 'GET', '/admin/environments')
   const source = environmentReply.list.find((item) => item.key === 'source')
   const target = environmentReply.list.find((item) => item.key === 'target')
@@ -176,9 +153,9 @@ test('runs the standalone management and runtime journey against the real backen
   const keyReply = await api(request, token, 'POST', `/admin/environments/${source.id}/projects/${sourceProject.id}/api-keys`, {
     environment_id: source.id, project_id: sourceProject.id, name: 'e2e',
   })
-  expect(keyReply.secret).toMatch(/^kirby_pk_/)
+  expect(keyReply.secret).toMatch(/^[A-Za-z0-9_-]{43}$/)
   const runtime = await request.get('/api/v1/config', {
-    params: { project: sourceProject.key, key: configReply.config.key },
+    params: { key: configReply.config.key },
     headers: { 'X-Kirby-API-Key': keyReply.secret },
   })
   expect(runtime.ok(), await runtime.text()).toBeTruthy()
@@ -202,7 +179,7 @@ test('runs the standalone management and runtime journey against the real backen
   })
   expect(rotated.secret).not.toBe(keyReply.secret)
   const oldKeyResponse = await request.get('/api/v1/config', {
-    params: { project: sourceProject.key, key: configReply.config.key }, headers: { 'X-Kirby-API-Key': keyReply.secret },
+    params: { key: configReply.config.key }, headers: { 'X-Kirby-API-Key': keyReply.secret },
   })
   expect(oldKeyResponse.status()).toBe(401)
 
@@ -210,14 +187,14 @@ test('runs the standalone management and runtime journey against the real backen
   expect(JSON.stringify(listedKeys)).not.toContain(rotated.secret)
 
   for (const [roleId, roleName, expectedPermission] of [
-    [1, 'viewer', 'project:read'], [2, 'editor', 'config:write'],
-    [3, 'publisher', 'snapshot:publish'], [4, 'environment-admin', 'project:api_key:manage'],
+    ['GUEST', 'viewer', 'project:read'], ['MEMBER', 'editor', 'config:write'],
+    ['MAINTAINER', 'publisher', 'snapshot:publish'], ['OWNER', 'environment-admin', 'project:api_key:manage'],
   ]) {
     const userReply = await api(request, token, 'POST', '/admin/users', {
-      username: `e2e-${roleName}`, display_name: roleName, password: roleCredential, is_system_admin: false,
+      username: `e2e-${roleName}`, nickname: roleName, email: `e2e-${roleName}@example.test`, password: roleCredential, is_system_admin: false,
     })
-    await api(request, token, 'PUT', `/admin/environments/${source.id}/users/${userReply.user.id}/roles`, {
-      environment_id: source.id, user_id: userReply.user.id, role_ids: [roleId],
+    await api(request, token, 'POST', `/admin/projects/${sourceProject.id}/members`, {
+      user_id: userReply.user.id, role: roleId,
     })
     const roleLogin = await loginByAPI(request, `e2e-${roleName}`, roleCredential)
     const permissions = await api(request, roleLogin.access_token, 'GET', `/admin/environments/${source.id}/my-permissions`)
@@ -229,10 +206,6 @@ test('runs the standalone management and runtime journey against the real backen
   page.on('response', (response) => {
     if (response.url().endsWith('/api/auth/refresh')) refreshCount += 1
   })
-
-  await page.getByRole('combobox', { name: '当前环境' }).press('ArrowDown')
-  const targetOption = page.getByText('Target', { exact: true }).filter({ visible: true })
-  await expect(targetOption).toBeVisible()
 
   let expiredTokenInjected = false
   await page.route('**/api/admin/**', async (route) => {
@@ -249,7 +222,8 @@ test('runs the standalone management and runtime journey against the real backen
     })
   })
 
-  await targetOption.click()
+  await page.getByRole('button', { name: '返回项目', exact: true }).click()
+  await page.getByRole('link', { name: /Target Project/ }).click()
   await expect(page.getByText('Target Project')).toBeVisible()
   await expect(page.getByText('Source Project')).not.toBeVisible()
   await page.unroute('**/api/admin/**')

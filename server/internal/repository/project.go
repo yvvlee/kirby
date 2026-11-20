@@ -19,10 +19,11 @@ type ProjectUpdate struct {
 }
 
 type ProjectRepository interface {
-	Create(ctx context.Context, environmentID int64, project *model.Project) error
+	Delete(ctx context.Context, projectID int64) error
+	Create(ctx context.Context, environmentID int64, project *model.Project) (rowsAffected int64, err error)
 	FindByID(ctx context.Context, environmentID, projectID int64) (*model.Project, error)
 	List(ctx context.Context, environmentID int64, keyword string, page PageRequest) (PageResult[model.Project], error)
-	Update(ctx context.Context, environmentID, projectID int64, update ProjectUpdate) error
+	Update(ctx context.Context, environmentID, projectID int64, update ProjectUpdate) (rowsAffected int64, err error)
 	LockByID(ctx context.Context, environmentID, projectID int64) (*model.Project, error)
 }
 
@@ -44,12 +45,14 @@ func NewProjectRepository(storage *infra.Storage) *ProjectRepositoryImpl {
 // Create inserts a system-level project after the caller has checked project-management permission.
 //
 // Parameters: ctx carries cancellation and transaction state; project contains the new project metadata.
-// Returns: nil after inserting the project and setting its ID, version, and timestamps; database failures are returned.
+// Returns: rowsAffected from the project insert with its ID, version, and timestamps set; database failures are returned.
 // Throws: none.
-func (r *ProjectRepositoryImpl) Create(ctx context.Context, _ int64, project *model.Project) error {
-	project.PrepareInsert()
-	_, err := r.Insert(ctx, project)
-	return WrapDatabaseError(err)
+func (r *ProjectRepositoryImpl) Create(ctx context.Context, _ int64, project *model.Project) (rowsAffected int64, err error) {
+	rowsAffected, err = r.Insert(ctx, project)
+	if err != nil {
+		err = WrapDatabaseError(err)
+	}
+	return
 }
 
 // FindByID loads a resource only when it belongs to the requested scope.
@@ -58,13 +61,14 @@ func (r *ProjectRepositoryImpl) Create(ctx context.Context, _ int64, project *mo
 // Returns: the live row, or ErrNotFound when the ID is missing, deleted, or outside the environment.
 // Throws: none.
 func (r *ProjectRepositoryImpl) FindByID(ctx context.Context, environmentID, projectID int64) (*model.Project, error) {
-	fields := new(model.Project).LormCols()
-	query := r.Engine.Query[*model.Project]().ID(projectID).Where(builder.IsNull(fields.DeletedAt()))
+	var query *lorm.SelectStmt[*model.Project]
 	if environmentID > 0 {
 		query = projectScope(r.Engine).Where(builder.Eq{
 			"e.id": environmentID,
 			"p.id": projectID,
 		})
+	} else {
+		query = r.Engine.Query[*model.Project]().ID(projectID)
 	}
 	project, found, err := query.Get(ctx)
 	if err != nil {
@@ -87,8 +91,7 @@ func (r *ProjectRepositoryImpl) List(ctx context.Context, environmentID int64, k
 		builder.Like("p.name", pattern),
 		builder.Like("p.description", pattern),
 	}
-	query := r.Engine.Query[*model.Project]().Select("p.*").From("projects AS p").
-		Where(builder.IsNull("p.deleted_at"))
+	query := r.Engine.Query[*model.Project]().Select("p.*").From("projects AS p")
 	if environmentID > 0 {
 		query = projectScope(r.Engine).Where(builder.Eq{"e.id": environmentID})
 	}
@@ -98,26 +101,28 @@ func (r *ProjectRepositoryImpl) List(ctx context.Context, environmentID int64, k
 // Update applies changes using the expected version to reject stale writes.
 //
 // Parameters: ctx carries cancellation and transaction state; projectID selects the project; update contains the guarded changes and expected version.
-// Returns: nil after one matching live row changes; ErrNoRowsAffected if the expected version is stale.
+// Returns: rowsAffected after one matching live row changes; ErrNoRowsAffected if the expected version is stale.
 // Throws: none.
-func (r *ProjectRepositoryImpl) Update(ctx context.Context, _, projectID int64, update ProjectUpdate) error {
+func (r *ProjectRepositoryImpl) Update(ctx context.Context, _, projectID int64, update ProjectUpdate) (rowsAffected int64, err error) {
 	fields := new(model.Project).LormCols()
-	affected, err := r.Engine.Update[*model.Project]().Where(builder.IsNull(fields.DeletedAt())).ID(projectID).
+	rowsAffected, err = r.Engine.Update[*model.Project]().ID(projectID).
 		Where(builder.Eq{fields.Version(): update.Version}).
 		SetMap(map[string]any{
 			fields.Name():        update.Name,
 			fields.Description(): update.Description,
 			fields.UpdatedBy():   update.UpdatedBy,
-			fields.UpdatedAt():   time.Now().UTC(),
+			fields.UpdatedAt():   time.Now(),
 			fields.Version():     update.Version + 1,
 		}).Exec(ctx)
 	if err != nil {
-		return WrapDatabaseError(err)
+		err = WrapDatabaseError(err)
+		return
 	}
-	if affected == 0 {
-		return Unchanged("project")
+	if rowsAffected == 0 {
+		err = Unchanged("project")
+		return
 	}
-	return nil
+	return
 }
 
 // LockByID locks a scoped resource so concurrent writes share the same order.
@@ -126,12 +131,14 @@ func (r *ProjectRepositoryImpl) Update(ctx context.Context, _, projectID int64, 
 // Returns: the locked live row, or ErrNotFound for a missing or inaccessible resource; requires the caller’s transaction.
 // Throws: none.
 func (r *ProjectRepositoryImpl) LockByID(ctx context.Context, environmentID, projectID int64) (*model.Project, error) {
-	project, has, err := projectScope(r.Engine).
-		Where(builder.Eq{
+	query := r.Engine.Query[*model.Project]().ID(projectID)
+	if environmentID > 0 {
+		query = projectScope(r.Engine).Where(builder.Eq{
 			"e.id": environmentID,
 			"p.id": projectID,
-		}).
-		Suffix("FOR UPDATE").Get(ctx)
+		})
+	}
+	project, has, err := query.Suffix("FOR UPDATE").Get(ctx)
 	if err != nil {
 		return nil, WrapDatabaseError(err)
 	}
@@ -142,3 +149,80 @@ func (r *ProjectRepositoryImpl) LockByID(ctx context.Context, environmentID, pro
 }
 
 var _ ProjectRepository = (*ProjectRepositoryImpl)(nil)
+
+// Delete removes a project graph while retaining immutable audit records.
+// Parameters: ctx carries the project-locked transaction; projectID selects its graph.
+// Returns: nil or the first persistence error.
+// Throws: none; errors are returned.
+func (r *ProjectRepositoryImpl) Delete(ctx context.Context, projectID int64) error {
+	configs, err := r.Engine.Query[*model.Config]().Where(builder.Eq{"project_id": projectID}).Find(ctx)
+	if err != nil {
+		return WrapDatabaseError(err)
+	}
+	for _, config := range configs {
+		if err := r.deleteConfigChildren(ctx, config.ID); err != nil {
+			return err
+		}
+	}
+	environments, err := r.Engine.Query[*model.Environment]().Where(builder.Eq{"project_id": projectID}).Find(ctx)
+	if err != nil {
+		return WrapDatabaseError(err)
+	}
+	for _, env := range environments {
+		if _, err := r.Engine.Delete[*model.ImportRecord]().Where(builder.Or{builder.Eq{"source_environment_id": env.ID}, builder.Eq{"target_environment_id": env.ID}}).Exec(ctx); err != nil {
+			return WrapDatabaseError(err)
+		}
+		if _, err := r.Engine.Delete[*model.EnvironmentPermissionGrant]().Where(builder.Eq{"environment_id": env.ID}).Exec(ctx); err != nil {
+			return WrapDatabaseError(err)
+		}
+	}
+	return r.deleteProjectRows(ctx, projectID)
+}
+func (r *ProjectRepositoryImpl) deleteConfigChildren(ctx context.Context, configID int64) error {
+	if _, err := r.Engine.Delete[*model.Structure]().Where(builder.Eq{"config_id": configID}).Exec(ctx); err != nil {
+		return WrapDatabaseError(err)
+	}
+	if _, err := r.Engine.Delete[*model.ConfigEnum]().Where(builder.Eq{"config_id": configID}).Exec(ctx); err != nil {
+		return WrapDatabaseError(err)
+	}
+	return nil
+}
+func (r *ProjectRepositoryImpl) deleteProjectRows(ctx context.Context, projectID int64) error {
+	steps := []func() error{
+		func() error {
+			_, err := r.Engine.Delete[*model.Snapshot]().Where(builder.Eq{"project_id": projectID}).Exec(ctx)
+			return WrapDatabaseError(err)
+		},
+		func() error {
+			_, err := r.Engine.Delete[*model.Config]().Where(builder.Eq{"project_id": projectID}).Exec(ctx)
+			return WrapDatabaseError(err)
+		},
+		func() error {
+			_, err := r.Engine.Delete[*model.ProjectAPIKey]().Where(builder.Eq{"project_id": projectID}).Exec(ctx)
+			return WrapDatabaseError(err)
+		},
+		func() error {
+			_, err := r.Engine.Delete[*model.ProjectInvitation]().Where(builder.Eq{"project_id": projectID}).Exec(ctx)
+			return WrapDatabaseError(err)
+		},
+		func() error {
+			_, err := r.Engine.Delete[*model.ImportRecord]().Where(builder.Eq{"target_project_id": projectID}).Exec(ctx)
+			return WrapDatabaseError(err)
+		},
+		func() error {
+			_, err := r.Engine.Delete[*model.Environment]().Where(builder.Eq{"project_id": projectID}).Exec(ctx)
+			return WrapDatabaseError(err)
+		},
+		func() error {
+			_, err := r.Engine.Delete[*model.ProjectMember]().Where(builder.Eq{"project_id": projectID}).Exec(ctx)
+			return WrapDatabaseError(err)
+		},
+	}
+	for _, step := range steps {
+		if err := step(); err != nil {
+			return err
+		}
+	}
+	_, err := r.Engine.Delete[*model.Project]().ID(projectID).Exec(ctx)
+	return WrapDatabaseError(err)
+}

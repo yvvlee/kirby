@@ -1,47 +1,65 @@
 # Authorization
 
-Authentication answers who the user is. Authorization answers what that user
-may do in one environment. Kirby keeps those decisions separate.
+Authentication identifies the user. Authorization checks project membership and
+permissions in the requested environment. The access JWT carries user and
+session identity, not a copy of project roles or environment grants.
 
-An administrator has one access JWT. The token contains stable user and session
-identity, not environment permissions. For each management request, the server
-resolves current roles for the environment named in the path and request body.
+## System and project scope
 
-## Built-in roles
+System administrators manage users and system settings. They do not bypass
+project membership or environment permissions. Self-registration is disabled by
+default and can be enabled in system settings.
 
-| Capability | viewer | editor | publisher | admin | system admin |
-|---|:---:|:---:|:---:|:---:|:---:|
-| Read projects, configs, structures, enums, and snapshots | Yes | Yes | Yes | Yes | All environments |
-| Read project API-key metadata | Yes | Yes | Yes | Yes | All environments |
-| Export snapshots | Yes | Yes | Yes | Yes | All environments |
-| Edit configs, structures, and enums | No | Yes | Yes | Yes | All environments |
-| Create and edit projects | No | No | No | No | Yes |
-| Create/delete snapshots and upload assets | No | Yes | Yes | Yes | All environments |
-| Import snapshots | No | Yes | Yes | Yes | All environments |
-| Publish and unpublish snapshots | No | No | Yes | Yes | All environments |
-| Create, rotate, and revoke project API keys | No | No | No | Yes | All environments |
-| Manage members of the current environment | No | No | No | Yes | All environments |
-| Manage users, roles, and environments | No | No | No | No | Yes |
+Every signed-in user can create a project and becomes its Owner. The project
+list shows only projects the user belongs to. Global management is accessed
+from the upper-right menu; members, environments, and project settings are
+managed inside the project. Login opens the project list.
 
-System administration is the `users.is_system_admin` flag. The four system
-permissions are not assigned to environment roles. A system administrator
-bypasses environment roles and receives all permissions for every existing
-environment. Requests for a nonexistent environment still fail.
+## Fixed project roles
 
-## Custom roles
+Roles are fixed: Owner > Maintainer > Member > Guest. A project can have multiple
+Owners. Its last Owner cannot be removed or demoted. There are no custom roles
+or separate environment memberships.
 
-System administrators can create custom roles and assign any environment-level
-permission. Built-in role records are seeded by the service at startup. Keep
-system permissions separate from environment roles.
+Only Owners can edit or delete the project and create, edit, or delete its
+environments. Owners and Maintainers can add members, change roles, or remove
+members whose current role is no higher than their own. They cannot assign a
+role higher than their own. Maintainers cannot manage Owners.
+
+## Environment permission grants
+
+Each environment has four fixed permission points. Its creation initializes the
+following grants to project roles:
+
+| Permission | Owner | Maintainer | Member | Guest |
+|---|:---:|:---:|:---:|:---:|
+| Read configuration, metadata, snapshots, and exports | Yes | Yes | Yes | Yes |
+| Write configuration, structures, enums, snapshots, imports, and uploads | Yes | Yes | Yes | No |
+| Publish and unpublish | Yes | Yes | No | No |
+| Manage API keys | Yes | Yes | No | No |
+
+Owners and Maintainers can tighten or expand these grants independently for each
+environment. Owner access is unconditional and cannot be removed. An environment
+API key selects exactly one project and environment for runtime reads.
+
+## Members and invitations
+
+Owners and Maintainers can search existing users and add them directly without
+confirmation. When self-registration is enabled, they can also generate an
+invitation link with a role no higher than their own. The link expires after
+24 hours and can be accepted once; its token is stored only as a hash.
+
+A signed-in recipient must confirm before joining. A signed-out recipient goes
+to login or registration, returns to the invitation page, and then confirms.
+User creation and registration require an email address. Users can log in with
+either their username or email; the display field is called nickname.
 
 ## Enforcement
 
-The React application hides unavailable actions for usability. It is not a
-security boundary. The backend checks permissions and scopes repository queries
-to the environment. Replacing an environment, project, snapshot, import, key,
-or object ID in a request does not bypass the ownership check.
+The React application hides unavailable actions for usability. The backend is
+the security boundary: it checks project membership, environment grants, and
+resource ownership on every management request. Replacing project, environment,
+snapshot, import, key, or object IDs does not bypass these checks.
 
-Role changes increment shared generation state. Other requests resolve the new
-permissions without requiring the user to log in again. The configured
-relational database remains authoritative during a Redis cache outage, so a
-cache failure cannot grant permissions.
+Membership and permission changes take effect without another login. The
+relational database remains authoritative; cache failures cannot grant access.

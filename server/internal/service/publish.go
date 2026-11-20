@@ -4,15 +4,15 @@ import (
 	"context"
 
 	adminv1 "github.com/yvvlee/kirby/server/api/admin"
-	"github.com/yvvlee/kirby/server/internal/converter"
+	commonv1 "github.com/yvvlee/kirby/server/api/common"
+	"github.com/yvvlee/kirby/server/internal/entity"
 	"github.com/yvvlee/kirby/server/internal/logic"
-	"github.com/yvvlee/kirby/server/internal/model"
 	"github.com/yvvlee/kirby/server/internal/permission"
 )
 
 type publishLogic interface {
-	Publish(ctx context.Context, actor permission.Actor, environmentID, snapshotID int64, expectedVersion uint32) (*model.Snapshot, error)
-	Unpublish(ctx context.Context, actor permission.Actor, environmentID, snapshotID int64, expectedVersion uint32) (*model.Snapshot, error)
+	Publish(ctx context.Context, param *entity.PublishSnapshotParam) (*commonv1.Snapshot, error)
+	Unpublish(ctx context.Context, param *entity.UnpublishSnapshotParam) (*commonv1.Snapshot, error)
 }
 
 type PublishService struct {
@@ -40,8 +40,16 @@ func (s *PublishService) PublishSnapshot(ctx context.Context, request *adminv1.P
 	if err != nil {
 		return nil, apiError(err)
 	}
-	item, err := s.publishLogic.Publish(ctx, actor, request.EnvironmentId, request.SnapshotId, request.Version)
-	return publicationReply(item, err)
+	item, err := s.publishLogic.Publish(ctx, &entity.PublishSnapshotParam{
+		Actor:           actor,
+		EnvironmentID:   request.EnvironmentId,
+		SnapshotID:      request.SnapshotId,
+		ExpectedVersion: request.Version,
+	})
+	if err != nil {
+		return nil, apiError(err)
+	}
+	return &adminv1.SnapshotReply{Snapshot: item}, nil
 }
 
 // UnpublishSnapshot maps the authenticated API request to the application operation.
@@ -54,17 +62,14 @@ func (s *PublishService) UnpublishSnapshot(ctx context.Context, request *adminv1
 	if err != nil {
 		return nil, apiError(err)
 	}
-	item, err := s.publishLogic.Unpublish(ctx, actor, request.EnvironmentId, request.SnapshotId, request.Version)
-	return publicationReply(item, err)
-}
-
-func publicationReply(item *model.Snapshot, err error) (*adminv1.SnapshotReply, error) {
+	item, err := s.publishLogic.Unpublish(ctx, &entity.UnpublishSnapshotParam{
+		Actor:           actor,
+		EnvironmentID:   request.EnvironmentId,
+		SnapshotID:      request.SnapshotId,
+		ExpectedVersion: request.Version,
+	})
 	if err != nil {
 		return nil, apiError(err)
 	}
-	converted, err := converter.SnapshotToProto(item)
-	if err != nil {
-		return nil, apiError(err)
-	}
-	return &adminv1.SnapshotReply{Snapshot: converted}, nil
+	return &adminv1.SnapshotReply{Snapshot: item}, nil
 }

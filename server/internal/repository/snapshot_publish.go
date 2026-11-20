@@ -24,9 +24,9 @@ type SnapshotPublicationUpdate struct {
 
 type SnapshotPublicationRepository interface {
 	LockForConfig(ctx context.Context, environmentID, configID int64) ([]model.Snapshot, error)
-	SetReleased(ctx context.Context, update SnapshotPublicationUpdate) error
-	SetUnreleased(ctx context.Context, update SnapshotPublicationUpdate) error
-	IncrementRuntimeVersion(ctx context.Context, environmentID, configID int64) error
+	SetReleased(ctx context.Context, update SnapshotPublicationUpdate) (rowsAffected int64, err error)
+	SetUnreleased(ctx context.Context, update SnapshotPublicationUpdate) (rowsAffected int64, err error)
+	IncrementRuntimeVersion(ctx context.Context, environmentID, configID int64) (rowsAffected int64, err error)
 }
 
 type SnapshotPublicationRepositoryImpl struct {
@@ -66,12 +66,12 @@ func (r *SnapshotPublicationRepositoryImpl) LockForConfig(ctx context.Context, e
 // SetReleased publishes a snapshot only if its status and version still match.
 //
 // Parameters: ctx carries cancellation and transaction state; update contains the guarded changes and expected version.
-// Returns: nil after the unreleased status and expected version match; otherwise ErrNoRowsAffected.
+// Returns: rowsAffected after the unreleased status and expected version match; otherwise ErrNoRowsAffected.
 // Throws: none.
-func (r *SnapshotPublicationRepositoryImpl) SetReleased(ctx context.Context, update SnapshotPublicationUpdate) error {
+func (r *SnapshotPublicationRepositoryImpl) SetReleased(ctx context.Context, update SnapshotPublicationUpdate) (rowsAffected int64, err error) {
 	update.ChangedAt = update.ChangedAt.UTC()
 	fields := new(model.Snapshot).LormCols()
-	affected, err := r.Engine.Update[*model.Snapshot]().Where(builder.IsNull(fields.DeletedAt())).ID(update.SnapshotID).
+	rowsAffected, err = r.Engine.Update[*model.Snapshot]().ID(update.SnapshotID).
 		Where(builder.Eq{
 			fields.ConfigID(): update.ConfigID,
 			fields.Status():   model.SnapshotStatusUnreleased,
@@ -86,23 +86,25 @@ func (r *SnapshotPublicationRepositoryImpl) SetReleased(ctx context.Context, upd
 			fields.Version():     update.ExpectedVersion + 1,
 		}).Exec(ctx)
 	if err != nil {
-		return WrapDatabaseError(err)
+		err = WrapDatabaseError(err)
+		return
 	}
-	if affected == 0 {
-		return Unchanged("snapshot publication")
+	if rowsAffected == 0 {
+		err = Unchanged("snapshot publication")
+		return
 	}
-	return nil
+	return
 }
 
 // SetUnreleased unpublishes a snapshot only if its status and version still match.
 //
 // Parameters: ctx carries cancellation and transaction state; update contains the guarded changes and expected version.
-// Returns: nil after the released status and expected version match; otherwise ErrNoRowsAffected.
+// Returns: rowsAffected after the released status and expected version match; otherwise ErrNoRowsAffected.
 // Throws: none.
-func (r *SnapshotPublicationRepositoryImpl) SetUnreleased(ctx context.Context, update SnapshotPublicationUpdate) error {
+func (r *SnapshotPublicationRepositoryImpl) SetUnreleased(ctx context.Context, update SnapshotPublicationUpdate) (rowsAffected int64, err error) {
 	update.ChangedAt = update.ChangedAt.UTC()
 	fields := new(model.Snapshot).LormCols()
-	affected, err := r.Engine.Update[*model.Snapshot]().Where(builder.IsNull(fields.DeletedAt())).ID(update.SnapshotID).
+	rowsAffected, err = r.Engine.Update[*model.Snapshot]().ID(update.SnapshotID).
 		Where(builder.Eq{
 			fields.ConfigID(): update.ConfigID,
 			fields.Status():   model.SnapshotStatusReleased,
@@ -117,36 +119,40 @@ func (r *SnapshotPublicationRepositoryImpl) SetUnreleased(ctx context.Context, u
 			fields.Version():     update.ExpectedVersion + 1,
 		}).Exec(ctx)
 	if err != nil {
-		return WrapDatabaseError(err)
+		err = WrapDatabaseError(err)
+		return
 	}
-	if affected == 0 {
-		return Unchanged("snapshot unpublication")
+	if rowsAffected == 0 {
+		err = Unchanged("snapshot unpublication")
+		return
 	}
-	return nil
+	return
 }
 
 // IncrementRuntimeVersion advances the runtime cache generation without integer overflow.
 //
 // Parameters: ctx carries cancellation and transaction state; environmentID selects the authorized environment; configID selects the configuration.
-// Returns: nil after advancing the runtime generation and UTC update time while retaining the edit version; ErrNoRowsAffected at the integer limit.
+// Returns: rowsAffected after advancing the runtime generation and UTC update time while retaining the edit version; ErrNoRowsAffected at the integer limit.
 // Throws: none.
-func (r *SnapshotPublicationRepositoryImpl) IncrementRuntimeVersion(ctx context.Context, environmentID, configID int64) error {
+func (r *SnapshotPublicationRepositoryImpl) IncrementRuntimeVersion(ctx context.Context, environmentID, configID int64) (rowsAffected int64, err error) {
 	fields := new(model.Config).LormCols()
-	if err := lockScopedConfig(ctx, r.Engine, environmentID, configID); err != nil {
-		return err
+	if err = lockScopedConfig(ctx, r.Engine, environmentID, configID); err != nil {
+		return
 	}
-	affected, err := r.Engine.Update[*model.Config]().Where(builder.IsNull(fields.DeletedAt())).ID(configID).
+	rowsAffected, err = r.Engine.Update[*model.Config]().ID(configID).
 		Where(builder.Lt("runtime_version", int64(math.MaxInt64))).
 		Set(fields.RuntimeVersion(), builder.Expr("runtime_version + 1")).
-		Set(fields.UpdatedAt(), time.Now().UTC()).
+		Set(fields.UpdatedAt(), time.Now()).
 		Exec(ctx)
 	if err != nil {
-		return WrapDatabaseError(err)
+		err = WrapDatabaseError(err)
+		return
 	}
-	if affected == 0 {
-		return Unchanged("config runtime version")
+	if rowsAffected == 0 {
+		err = Unchanged("config runtime version")
+		return
 	}
-	return nil
+	return
 }
 
 var _ SnapshotPublicationRepository = (*SnapshotPublicationRepositoryImpl)(nil)

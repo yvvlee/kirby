@@ -70,8 +70,9 @@ func (x *SetupStatusReply) GetInitialized() bool {
 
 type CreateInitialAdminRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
+	Email         string                 `protobuf:"bytes,4,opt,name=email,proto3" json:"email,omitempty"`
 	Username      string                 `protobuf:"bytes,1,opt,name=username,proto3" json:"username,omitempty"`
-	DisplayName   string                 `protobuf:"bytes,2,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	Nickname      string                 `protobuf:"bytes,2,opt,name=nickname,proto3" json:"nickname,omitempty"`
 	Password      string                 `protobuf:"bytes,3,opt,name=password,proto3" json:"password,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -107,6 +108,13 @@ func (*CreateInitialAdminRequest) Descriptor() ([]byte, []int) {
 	return file_admin_setup_proto_rawDescGZIP(), []int{1}
 }
 
+func (x *CreateInitialAdminRequest) GetEmail() string {
+	if x != nil {
+		return x.Email
+	}
+	return ""
+}
+
 func (x *CreateInitialAdminRequest) GetUsername() string {
 	if x != nil {
 		return x.Username
@@ -114,9 +122,9 @@ func (x *CreateInitialAdminRequest) GetUsername() string {
 	return ""
 }
 
-func (x *CreateInitialAdminRequest) GetDisplayName() string {
+func (x *CreateInitialAdminRequest) GetNickname() string {
 	if x != nil {
-		return x.DisplayName
+		return x.Nickname
 	}
 	return ""
 }
@@ -134,14 +142,13 @@ const file_admin_setup_proto_rawDesc = "" +
 	"\n" +
 	"\x11admin/setup.proto\x12\x0ekirby.admin.v1\x1a\x1cgoogle/api/annotations.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a\x17validate/validate.proto\"4\n" +
 	"\x10SetupStatusReply\x12 \n" +
-	"\vinitialized\x18\x01 \x01(\bR\vinitialized\"\x9a\x01\n" +
-	"\x19CreateInitialAdminRequest\x12&\n" +
-	"\busername\x18\x01 \x01(\tB\n" +
-	"\xfaB\ar\x05\x10\x01\x18\x80\x01R\busername\x12-\n" +
-	"\fdisplay_name\x18\x02 \x01(\tB\n" +
-	"\xfaB\ar\x05\x10\x01\x18\x80\x01R\vdisplayName\x12&\n" +
-	"\bpassword\x18\x03 \x01(\tB\n" +
-	"\xfaB\ar\x05 \f(\x80\bR\bpassword2\xe3\x01\n" +
+	"\vinitialized\x18\x01 \x01(\bR\vinitialized\"\xde\x01\n" +
+	"\x19CreateInitialAdminRequest\x12\"\n" +
+	"\x05email\x18\x04 \x01(\tB\f\xfaB\tr\a\x10\x03\x18\xc0\x02`\x01R\x05email\x12D\n" +
+	"\busername\x18\x01 \x01(\tB(\xfaB%r#\x10\x01\x18\x80\x012\x1c^[A-Za-z0-9][A-Za-z0-9_.-]*$R\busername\x12&\n" +
+	"\bnickname\x18\x02 \x01(\tB\n" +
+	"\xfaB\ar\x05\x10\x01\x18\x80\x01R\bnickname\x12/\n" +
+	"\bpassword\x18\x03 \x01(\tB\x13\xfaB\x10r\x0e \b( 2\b^[!-~]+$R\bpassword2\xe3\x01\n" +
 	"\fSetupService\x12a\n" +
 	"\x0eGetSetupStatus\x12\x16.google.protobuf.Empty\x1a .kirby.admin.v1.SetupStatusReply\"\x15\x82\xd3\xe4\x93\x02\x0f\x12\r/setup/status\x12p\n" +
 	"\x12CreateInitialAdmin\x12).kirby.admin.v1.CreateInitialAdminRequest\x1a\x16.google.protobuf.Empty\"\x17\x82\xd3\xe4\x93\x02\x11:\x01*\"\f/setup/adminB2Z0github.com/yvvlee/kirby/server/api/admin;adminv1b\x06proto3"

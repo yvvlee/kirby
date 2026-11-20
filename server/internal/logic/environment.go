@@ -3,10 +3,9 @@ package logic
 import (
 	"context"
 
-	"errors"
-
-	kratoslog "github.com/go-kratos/kratos/v2/log"
-
+	commonv1 "github.com/yvvlee/kirby/server/api/common"
+	"github.com/yvvlee/kirby/server/internal/converter"
+	"github.com/yvvlee/kirby/server/internal/entity"
 	"github.com/yvvlee/kirby/server/internal/model"
 	"github.com/yvvlee/kirby/server/internal/permission"
 	"github.com/yvvlee/kirby/server/internal/repository"
@@ -20,11 +19,11 @@ type environmentAuthorizer interface {
 }
 
 type EnvironmentLogic struct {
-	environments repository.EnvironmentRepository
-	users        repository.UserRepository
-	members      repository.UserEnvironmentRoleRepository
-	permissions  environmentAuthorizer
-	transactions TransactionRunner
+	projectMembers repository.ProjectMemberRepository
+	environments   repository.EnvironmentRepository
+	users          repository.UserRepository
+	permissions    environmentAuthorizer
+	transactions   TransactionRunner
 }
 
 // NewEnvironmentLogic constructs the EnvironmentLogic with explicit application dependencies.
@@ -35,75 +34,95 @@ type EnvironmentLogic struct {
 func NewEnvironmentLogic(
 	environments repository.EnvironmentRepository,
 	users repository.UserRepository,
-	members repository.UserEnvironmentRoleRepository,
 	permissions environmentAuthorizer,
 	transactions TransactionRunner,
+	projectMembers repository.ProjectMemberRepository,
 ) *EnvironmentLogic {
 	return &EnvironmentLogic{
-		environments: environments,
-		users:        users,
-		members:      members,
-		permissions:  permissions,
-		transactions: transactions,
+		projectMembers: projectMembers,
+		environments:   environments,
+		users:          users,
+		permissions:    permissions,
+		transactions:   transactions,
 	}
 }
 
-// List gives system managers all environments and other accounts only their visible environments.
+// List returns only environments belonging to projects the requester has joined.
 //
 // Parameters: ctx controls reads; actor identifies the requester.
-// Returns: visible environments, or an authorization or database error.
+// Returns: visible environments, or an authorization, database, or conversion error.
 // Throws: none; failures are returned as errors.
-func (l *EnvironmentLogic) List(ctx context.Context, actor permission.Actor) ([]model.Environment, error) {
-	permissionErr := l.permissions.RequireSystem(ctx, actor.UserID, permission.SystemEnvironmentManage)
-	if permissionErr == nil {
-		return l.environments.List(ctx)
-	}
-	if !errors.Is(permissionErr, permission.ErrForbidden) {
-		return nil, permissionErr
-	}
+func (l *EnvironmentLogic) List(ctx context.Context, actor permission.Actor) ([]*commonv1.Environment, error) {
 	user, err := l.users.GetByID(ctx, actor.UserID)
 	if err != nil {
 		return nil, err
 	}
-	return l.users.ListEnvironments(ctx, user)
+	items, err := l.users.ListEnvironments(ctx, user)
+	if err != nil {
+		return nil, err
+	}
+	return environmentsToProto(items)
 }
 
-// Create authorizes a system manager before creating an environment with an audit.
+// Create authorizes a project Owner before creating an environment with an audit.
 //
-// Parameters: ctx controls the operation; actor identifies the creator; environment contains project ownership and requested fields.
-// Returns: the persisted environment, or an authorization or transaction error.
+// Parameters: ctx controls the operation; param carries the caller identity and the requested environment fields.
+// Returns: the persisted environment, or an authorization, transaction, or conversion error.
 // Throws: none; failures are returned as errors.
-func (l *EnvironmentLogic) Create(ctx context.Context, actor permission.Actor, environment *model.Environment) (*model.Environment, error) {
-	if err := l.permissions.RequireSystem(ctx, actor.UserID, permission.SystemEnvironmentManage); err != nil {
+func (l *EnvironmentLogic) Create(ctx context.Context, param *entity.CreateEnvironmentParam) (*commonv1.Environment, error) {
+	actor := param.Actor
+	if err := l.requireProjectOwner(ctx, actor.UserID, param.ProjectID); err != nil {
 		return nil, err
+	}
+	environment := &model.Environment{
+		ProjectID:   param.ProjectID,
+		Key:         param.Key,
+		Name:        param.Name,
+		Description: param.Description,
 	}
 	environment.CreatedBy = actor.UserID
 	environment.UpdatedBy = actor.UserID
 	environment.Enabled = true
 	if err := l.transactions.TX(ctx, func(txctx context.Context) error {
-		return l.environments.Create(txctx, environment, environmentAudit(actor, "environment.create", "environment"))
+		_, err := l.environments.Create(txctx, environment, environmentAudit(actor, "environment.create", "environment"))
+		return err
 	}); err != nil {
 		return nil, err
 	}
-	return l.environments.FindByID(ctx, environment.ID)
+	created, err := l.environments.FindByID(ctx, environment.ID)
+	if err != nil {
+		return nil, err
+	}
+	return converter.EnvironmentToProto(created)
 }
 
-// Update authorizes a system manager and records a version-guarded environment edit.
+// Update authorizes a project Owner and records a version-guarded environment edit.
 //
-// Parameters: ctx controls the operation; actor identifies the editor; environmentID selects the verified scope; update supplies fields and expected version.
-// Returns: the persisted environment, or an authorization, version, or transaction error.
+// Parameters: ctx controls the operation; param carries the caller identity, target environment, and guarded changes.
+// Returns: the persisted environment, or an authorization, version, transaction, or conversion error.
 // Throws: none; failures are returned as errors.
-func (l *EnvironmentLogic) Update(ctx context.Context, actor permission.Actor, environmentID int64, update repository.EnvironmentUpdate) (*model.Environment, error) {
-	if err := l.permissions.RequireSystem(ctx, actor.UserID, permission.SystemEnvironmentManage); err != nil {
+func (l *EnvironmentLogic) Update(ctx context.Context, param *entity.UpdateEnvironmentParam) (*commonv1.Environment, error) {
+	actor := param.Actor
+	current, err := l.environments.FindByID(ctx, param.EnvironmentID)
+	if err != nil {
 		return nil, err
 	}
+	if err := l.requireProjectOwner(ctx, actor.UserID, current.ProjectID); err != nil {
+		return nil, err
+	}
+	update := param.Update
 	update.UpdatedBy = actor.UserID
 	if err := l.transactions.TX(ctx, func(txctx context.Context) error {
-		return l.environments.Update(txctx, environmentID, update, environmentAudit(actor, "environment.update", "environment"))
+		_, err := l.environments.Update(txctx, param.EnvironmentID, update, environmentAudit(actor, "environment.update", "environment"))
+		return err
 	}); err != nil {
 		return nil, err
 	}
-	return l.environments.FindByID(ctx, environmentID)
+	updated, err := l.environments.FindByID(ctx, param.EnvironmentID)
+	if err != nil {
+		return nil, err
+	}
+	return converter.EnvironmentToProto(updated)
 }
 
 // VerifyProject rejects a route whose project does not own the requested environment.
@@ -132,45 +151,16 @@ func (l *EnvironmentLogic) Permissions(ctx context.Context, actor permission.Act
 	return keys, err
 }
 
-// ListMembers requires member-management permission before exposing environment membership.
-//
-// Parameters: ctx controls reads; actor identifies the requester; environmentID defines the scope.
-// Returns: member records, or an authorization or database error.
-// Throws: none; failures are returned as errors.
-func (l *EnvironmentLogic) ListMembers(ctx context.Context, actor permission.Actor, environmentID int64) ([]repository.EnvironmentMemberRecord, error) {
-	if err := l.permissions.Require(ctx, actor.UserID, environmentID, permission.EnvironmentMemberManage); err != nil {
-		return nil, err
+func environmentsToProto(items []model.Environment) ([]*commonv1.Environment, error) {
+	result := make([]*commonv1.Environment, 0, len(items))
+	for index := range items {
+		converted, err := converter.EnvironmentToProto(&items[index])
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, converted)
 	}
-	return l.members.ListMembers(ctx, environmentID)
-}
-
-// UpdateMemberRoles commits role assignment changes before observable cleanup of the previous cache generation.
-//
-// Parameters: ctx controls the operation; actor identifies the editor; environmentID and userID identify membership; roleIDs is the complete replacement set.
-// Returns: nil after the transaction commits; authorization and transaction errors are returned, while cache-cleanup errors are logged.
-// Throws: none; failures are returned as errors.
-func (l *EnvironmentLogic) UpdateMemberRoles(ctx context.Context, actor permission.Actor, environmentID, userID int64, roleIDs []int64) error {
-	if err := l.permissions.Require(ctx, actor.UserID, environmentID, permission.EnvironmentMemberManage); err != nil {
-		return err
-	}
-	if err := l.transactions.TX(ctx, func(txctx context.Context) error {
-		return l.members.ReplaceRoles(txctx, repository.MemberRoleUpdate{
-			EnvironmentID: environmentID,
-			UserID:        userID,
-			RoleIDs:       roleIDs,
-			ActorID:       actor.UserID,
-		},
-			environmentAudit(actor, "environment.member.roles.update", "user"))
-	}); err != nil {
-		return err
-	}
-	// The transaction already advanced environments.version. Redis deletion is
-	// only stale-key cleanup and must not turn a committed change into an API
-	// failure.
-	if err := l.permissions.Invalidate(ctx, userID, environmentID); err != nil {
-		kratoslog.Context(ctx).Warnw("operation", "invalidate member permissions", "user_id", userID, "environment_id", environmentID, "error", err)
-	}
-	return nil
+	return result, nil
 }
 
 func environmentAudit(actor permission.Actor, action, resourceType string) *model.AuditLog {
@@ -182,4 +172,15 @@ func environmentAudit(actor permission.Actor, action, resourceType string) *mode
 		Result:       model.AuditResultSucceeded,
 		RequestID:    actor.RequestID,
 	}
+}
+
+func (l *EnvironmentLogic) requireProjectOwner(ctx context.Context, userID, projectID int64) error {
+	member, err := l.projectMembers.Get(ctx, projectID, userID)
+	if err != nil {
+		return err
+	}
+	if member.Role != string(permission.ProjectRoleOwner) {
+		return permission.ErrForbidden
+	}
+	return nil
 }

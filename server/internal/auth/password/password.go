@@ -12,8 +12,6 @@ import (
 	"strings"
 
 	"golang.org/x/crypto/argon2"
-
-	"github.com/yvvlee/kirby/server/internal/util/safeint"
 )
 
 const (
@@ -71,13 +69,6 @@ func NewDefault() *Hasher {
 		random: rand.Reader,
 	}
 }
-
-// CurrentParams returns a copy of the fixed production password policy.
-//
-// Parameters: none.
-// Returns: the current Argon2id settings.
-// Throws: none.
-func CurrentParams() Params { return defaultParams }
 
 func newHasher(params Params, random io.Reader) (*Hasher, error) {
 	if err := validateParams(params); err != nil {
@@ -141,10 +132,7 @@ func (h *Hasher) Verify(encoded, plain string) (match bool, needsRehash bool, er
 	if err != nil {
 		return false, false, err
 	}
-	keyLength, err := safeint.Uint32FromInt(len(expected))
-	if err != nil {
-		return false, false, ErrInvalidHash
-	}
+	keyLength := uint32(len(expected))
 	actual := argon2.IDKey([]byte(plain), salt, params.Iterations, params.MemoryKiB, params.Parallelism, keyLength)
 	match = subtle.ConstantTimeCompare(actual, expected) == 1
 	return match, params != h.params, nil
@@ -172,14 +160,8 @@ func parse(encoded string) (Params, []byte, []byte, error) {
 	if err != nil {
 		return Params{}, nil, nil, ErrInvalidHash
 	}
-	params.SaltLength, err = safeint.Uint32FromInt(len(salt))
-	if err != nil {
-		return Params{}, nil, nil, ErrInvalidHash
-	}
-	params.KeyLength, err = safeint.Uint32FromInt(len(expected))
-	if err != nil {
-		return Params{}, nil, nil, ErrInvalidHash
-	}
+	params.SaltLength = uint32(len(salt))
+	params.KeyLength = uint32(len(expected))
 	if err := validateParams(params); err != nil {
 		return Params{}, nil, nil, errors.Join(ErrInvalidHash, err)
 	}

@@ -2,13 +2,13 @@ import { expect, test } from '@playwright/test'
 
 const administrator = {
   username: 'setup-owner',
-  display_name: '初始管理员',
+  nickname: '初始管理员',
   password: 'kirby-setup-admin-password',
 }
 
 async function fillSetup(page, username = administrator.username) {
   await page.getByRole('textbox', { name: '用户名' }).fill(username)
-  await page.getByRole('textbox', { name: '显示名' }).fill(administrator.display_name)
+  await page.getByRole('textbox', { name: '显示名' }).fill(administrator.nickname)
   await page.getByLabel('密码', { exact: true }).fill(administrator.password)
   await page.getByLabel('确认密码', { exact: true }).fill(administrator.password)
   await page.getByRole('button', { name: '创建管理员' }).click()

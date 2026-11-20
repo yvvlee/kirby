@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/yvvlee/kirby/server/internal/entity"
 	"github.com/yvvlee/kirby/server/internal/model"
 	"github.com/yvvlee/kirby/server/internal/permission"
 	"github.com/yvvlee/kirby/server/internal/repository"
@@ -26,16 +27,17 @@ func (f *fakeEnvironmentRepository) FindByID(_ context.Context, id int64) (*mode
 	}
 	return nil, errors.New("not found")
 }
-func (f *fakeEnvironmentRepository) Create(_ context.Context, item *model.Environment, audit *model.AuditLog) error {
+func (f *fakeEnvironmentRepository) Create(_ context.Context, item *model.Environment, audit *model.AuditLog) (rowsAffected int64, err error) {
 	item.ID = 99
 	f.items = append(f.items, *item)
 	if audit.Action != "environment.create" || audit.RequestID == "" {
-		return errors.New("invalid create audit")
+		err = errors.New("invalid create audit")
+		return
 	}
-	return nil
+	return
 }
-func (*fakeEnvironmentRepository) Update(context.Context, int64, repository.EnvironmentUpdate, *model.AuditLog) error {
-	return nil
+func (*fakeEnvironmentRepository) Update(context.Context, int64, repository.EnvironmentUpdate, *model.AuditLog) (rowsAffected int64, err error) {
+	return
 }
 
 type fakeEnvironmentUsers struct {
@@ -51,25 +53,6 @@ func (*fakeEnvironmentUsers) GetByID(_ context.Context, id int64) (*model.User, 
 }
 func (f *fakeEnvironmentUsers) ListEnvironments(context.Context, *model.User) ([]model.Environment, error) {
 	return append([]model.Environment(nil), f.assigned...), nil
-}
-
-type fakeMembers struct {
-	replaceCalls int
-	environment  int64
-	user         int64
-	roles        []int64
-	audit        *model.AuditLog
-}
-
-func (*fakeMembers) ListMembers(context.Context, int64) ([]repository.EnvironmentMemberRecord, error) {
-	return nil, nil
-}
-func (f *fakeMembers) ReplaceRoles(_ context.Context, update repository.MemberRoleUpdate, audit *model.AuditLog) error {
-	f.replaceCalls++
-	f.environment, f.user = update.EnvironmentID, update.UserID
-	f.roles = append([]int64(nil), update.RoleIDs...)
-	f.audit = audit
-	return nil
 }
 
 func environmentTestStorage() TransactionRunner {
@@ -103,74 +86,46 @@ func (f *fakeEnvironmentAuthorizer) Invalidate(_ context.Context, userID, enviro
 	return f.invalidateErr
 }
 
-func TestUpdateMemberRolesIsEnvironmentScopedAuditedAndInvalidated(t *testing.T) {
-	members := new(fakeMembers)
-	authorizer := &fakeEnvironmentAuthorizer{allowed: map[int64]bool{10: true}}
-	logic := NewEnvironmentLogic(&fakeEnvironmentRepository{}, &fakeEnvironmentUsers{}, members, authorizer, environmentTestStorage())
-	actor := permission.Actor{
-		UserID:    7,
-		RequestID: "request-1",
-	}
-	if err := logic.UpdateMemberRoles(context.Background(), actor, 10, 22, []int64{4}); err != nil {
-		t.Fatal(err)
-	}
-	if members.replaceCalls != 1 || members.environment != 10 || members.user != 22 || len(members.roles) != 1 || members.roles[0] != 4 {
-		t.Fatalf("unexpected member mutation: %#v", members)
-	}
-	if members.audit == nil || members.audit.Action != "environment.member.roles.update" || members.audit.RequestID != actor.RequestID || members.audit.ActorUserID == nil || *members.audit.ActorUserID != actor.UserID {
-		t.Fatalf("unexpected audit: %#v", members.audit)
-	}
-	if len(authorizer.invalidated) != 1 || authorizer.invalidated[0] != [2]int64{22, 10} {
-		t.Fatalf("unexpected invalidation: %#v", authorizer.invalidated)
-	}
-}
-
-func TestUpdateMemberRolesSucceedsWhenCacheCleanupFails(t *testing.T) {
-	members := new(fakeMembers)
-	authorizer := &fakeEnvironmentAuthorizer{
-		allowed:       map[int64]bool{10: true},
-		invalidateErr: errors.New("Redis delete failed"),
-	}
-	logic := NewEnvironmentLogic(&fakeEnvironmentRepository{}, &fakeEnvironmentUsers{}, members, authorizer, environmentTestStorage())
-	if err := logic.UpdateMemberRoles(context.Background(), permission.Actor{UserID: 7}, 10, 22, nil); err != nil {
-		t.Fatalf("committed member role update reported failure: %v", err)
-	}
-	if members.replaceCalls != 1 || len(authorizer.invalidated) != 1 {
-		t.Fatalf("update or cleanup was skipped: members=%d invalidations=%#v", members.replaceCalls, authorizer.invalidated)
-	}
-}
-
-func TestUpdateMemberRolesRejectsForeignEnvironmentBeforeRepository(t *testing.T) {
-	members := new(fakeMembers)
-	authorizer := &fakeEnvironmentAuthorizer{allowed: map[int64]bool{10: true}}
-	logic := NewEnvironmentLogic(&fakeEnvironmentRepository{}, &fakeEnvironmentUsers{}, members, authorizer, environmentTestStorage())
-	err := logic.UpdateMemberRoles(context.Background(), permission.Actor{
-		UserID:    7,
-		RequestID: "request-2",
-	}, 20, 22, []int64{4})
-	if !errors.Is(err, permission.ErrForbidden) {
-		t.Fatalf("foreign environment error = %v", err)
-	}
-	if members.replaceCalls != 0 || len(authorizer.invalidated) != 0 {
-		t.Fatal("foreign environment reached mutation or invalidation")
-	}
-}
-
-func TestListUsesAssignedEnvironmentsForOrdinaryUserAndAllForSystemAdmin(t *testing.T) {
+func TestListUsesMembershipForOrdinaryUsersAndSystemAdmins(t *testing.T) {
 	all := []model.Environment{{Meta: model.Meta{ID: 1}}, {Meta: model.Meta{ID: 2}}}
 	assigned := []model.Environment{{Meta: model.Meta{ID: 2}}}
 	environments := &fakeEnvironmentRepository{items: all}
 	users := &fakeEnvironmentUsers{assigned: assigned}
 	authorizer := &fakeEnvironmentAuthorizer{allowed: map[int64]bool{}}
-	logic := NewEnvironmentLogic(environments, users, new(fakeMembers), authorizer, environmentTestStorage())
+	logic := NewEnvironmentLogic(environments, users, authorizer, environmentTestStorage(), memberRejectRepo{actor: "OWNER"})
 
 	items, err := logic.List(context.Background(), permission.Actor{UserID: 7})
-	if err != nil || len(items) != 1 || items[0].ID != 2 {
+	if err != nil || len(items) != 1 || items[0].Id != 2 {
 		t.Fatalf("ordinary list = %#v, err=%v", items, err)
 	}
 	authorizer.system = true
 	items, err = logic.List(context.Background(), permission.Actor{UserID: 7})
-	if err != nil || len(items) != 2 {
+	if err != nil || len(items) != 1 || items[0].Id != 2 {
 		t.Fatalf("system list = %#v, err=%v", items, err)
+	}
+}
+
+func TestEnvironmentManagementRequiresProjectOwner(t *testing.T) {
+	for _, role := range []string{"MAINTAINER", "MEMBER", "GUEST", "UNKNOWN"} {
+		t.Run(role, func(t *testing.T) {
+			l := &EnvironmentLogic{
+				projectMembers: memberRejectRepo{
+					actor: role,
+				},
+			}
+			_, err := l.Create(context.Background(), &entity.CreateEnvironmentParam{
+				Actor:     permission.Actor{UserID: 7},
+				ProjectID: 1,
+			})
+			if !errors.Is(err, permission.ErrForbidden) {
+				t.Fatalf("create allowed for %s: %v", role, err)
+			}
+		})
+	}
+	l := &EnvironmentLogic{
+		projectMembers: memberRejectRepo{actor: "OWNER"},
+	}
+	if err := l.requireProjectOwner(context.Background(), 7, 2); err == nil {
+		t.Fatal("cross-project owner accepted")
 	}
 }

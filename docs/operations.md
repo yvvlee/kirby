@@ -68,42 +68,11 @@ backup. Expect cold caches after recovery.
 Do not use `deploy/schema.sql` to repair a restored database. The service only
 initializes an empty database; review any required schema change first.
 
-## PostgreSQL seed sequence repair
-
-PostgreSQL databases initialized before the lorm migration may have ID sequences
-behind the seeded `roles` and `permissions` rows. Explicit seed IDs do not advance
-`BIGSERIAL`; creating the first custom role can therefore fail with a primary-key
-conflict. New databases initialized by the corrected schema already advance both
-sequences. MySQL does not need this repair.
-
-For an existing PostgreSQL deployment:
-
-1. Take a database backup and pause management writes. Review
-   `deploy/migrations/20261015_postgresql_seed_sequences.sql`.
-2. Use a database owner account that can lock both tables and update their
-   sequences. Confirm that `search_path` resolves `roles` and `permissions` to the
-   Kirby application schema. For the default schema, run from the repository root:
-
-   ```sh
-   PGOPTIONS='-c search_path=public' psql "$KIRBY_DATABASE_DSN" \
-     -X -v ON_ERROR_STOP=1 \
-     -f deploy/migrations/20261015_postgresql_seed_sequences.sql
-   ```
-
-3. Create a custom role through the management UI, confirm that it appears in the
-   role list, and resume management writes.
-
-The repair locks both seeded tables in a transaction and only moves a sequence
-forward when its next generated ID could collide with an existing row. It retains
-larger sequence values and can be run again safely. PostgreSQL sequence changes
-are not rolled back on transaction failure; a partial forward adjustment only
-leaves harmless ID gaps. The server does not run this repair automatically.
-
 ## Administrator recovery
 
 Once the first administrator has been created, `application_secrets.admin_initialized`
 keeps `/setup` closed permanently. If every administrator is deleted, use
-`kirby create-admin --config /etc/kirby/config.yaml --username <name>` to create
+`kirby create-admin --config /etc/kirby/config.yaml --username <name> --email <email> --nickname <nickname>` to create
 a replacement. Do not clear the initialization flag to recover access.
 
 ## Routine maintenance

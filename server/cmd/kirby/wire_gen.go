@@ -22,32 +22,57 @@ import (
 
 // Injectors from wire.go:
 
-func wireServer(ctx context.Context, cfg *conf.Config, webHandler http.Handler) (*kratos.App, func(), error) {
-	logger, cleanup, err := infra.NewLogger(cfg)
+func wireServer(ctx context.Context, configPath string, webHandler http.Handler) (*kratos.App, func(), error) {
+	config, cleanup, err := conf.NewConfig(configPath)
 	if err != nil {
 		return nil, nil, err
 	}
-	dbLogger := infra.NewDBLogger(logger)
-	storage, cleanup2, err := infra.NewCoreStorage(ctx, cfg, dbLogger)
+	logger, cleanup2, err := infra.NewLogger(config)
 	if err != nil {
 		cleanup()
 		return nil, nil, err
 	}
-	objectStorage, cleanup3, err := infra.ProvideObjectStorage(ctx, cfg, logger)
+	dbLogger := infra.NewDBLogger(logger)
+	engine, cleanup3, err := infra.NewCoreEngine(ctx, config, dbLogger)
 	if err != nil {
 		cleanup2()
 		cleanup()
 		return nil, nil, err
 	}
-	applicationSecrets, err := infra.ProvideApplicationSecrets(ctx, storage)
+	store, cleanup4, err := infra.NewCache(ctx, config, logger)
 	if err != nil {
 		cleanup3()
 		cleanup2()
 		cleanup()
 		return nil, nil, err
 	}
-	manager, err := auth.ProvideJWTManager(cfg, applicationSecrets)
+	storage := infra.NewStorage(engine, store)
+	projectInvitationRepositoryImpl := repository.NewProjectInvitationRepository(storage)
+	projectMemberRepositoryImpl := repository.NewProjectMemberRepository(storage)
+	applicationSettingsRepositoryImpl := repository.NewApplicationSettingsRepository(storage)
+	projectRepositoryImpl := repository.NewProjectRepository(storage)
+	projectInvitationService := service.NewProjectInvitationService(projectInvitationRepositoryImpl, projectMemberRepositoryImpl, applicationSettingsRepositoryImpl, engine, projectRepositoryImpl)
+	objectStorage, cleanup5, err := infra.ProvideObjectStorage(ctx, config, logger)
 	if err != nil {
+		cleanup4()
+		cleanup3()
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	applicationSecrets, err := infra.ProvideApplicationSecrets(ctx, storage)
+	if err != nil {
+		cleanup5()
+		cleanup4()
+		cleanup3()
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	manager, err := auth.ProvideJWTManager(config, applicationSecrets)
+	if err != nil {
+		cleanup5()
+		cleanup4()
 		cleanup3()
 		cleanup2()
 		cleanup()
@@ -57,28 +82,31 @@ func wireServer(ctx context.Context, cfg *conf.Config, webHandler http.Handler) 
 	projectAPIKeyRepositoryImpl := repository.NewProjectAPIKeyRepository(storage)
 	apikeyManager, err := auth.ProvideCredentialManager(applicationSecrets)
 	if err != nil {
+		cleanup5()
+		cleanup4()
 		cleanup3()
 		cleanup2()
 		cleanup()
 		return nil, nil, err
 	}
 	permissionRepositoryImpl := repository.NewPermissionRepository(storage)
-	store := infra.ProvideCache(storage)
 	resolver := permission.NewResolver(permissionRepositoryImpl, store)
 	auditLogRepositoryImpl := repository.NewAuditLogRepository(storage)
-	engine := infra.ProvideCoreDB(storage)
 	apiKeyLogic := logic.NewAPIKeyLogic(projectAPIKeyRepositoryImpl, apikeyManager, resolver, auditLogRepositoryImpl, engine)
 	apiKeyService := service.NewAPIKeyService(apiKeyLogic)
-	projectRepositoryImpl := repository.NewProjectRepository(storage)
 	assetLogic, err := logic.ProvideAssetLogic(objectStorage, resolver, projectRepositoryImpl)
 	if err != nil {
+		cleanup5()
+		cleanup4()
 		cleanup3()
 		cleanup2()
 		cleanup()
 		return nil, nil, err
 	}
-	assetService, err := service.NewAssetService(cfg, assetLogic)
+	assetService, err := service.NewAssetService(config, assetLogic)
 	if err != nil {
+		cleanup5()
+		cleanup4()
 		cleanup3()
 		cleanup2()
 		cleanup()
@@ -86,15 +114,19 @@ func wireServer(ctx context.Context, cfg *conf.Config, webHandler http.Handler) 
 	}
 	refreshTokenRepositoryImpl := repository.NewRefreshTokenRepository(storage)
 	hasher := auth.ProvidePasswordHasher()
-	authLogic, err := logic.NewAuthLogic(cfg, userRepositoryImpl, refreshTokenRepositoryImpl, store, engine, hasher, manager)
+	authLogic, err := logic.NewAuthLogic(config, userRepositoryImpl, refreshTokenRepositoryImpl, store, engine, hasher, manager, applicationSettingsRepositoryImpl)
 	if err != nil {
+		cleanup5()
+		cleanup4()
 		cleanup3()
 		cleanup2()
 		cleanup()
 		return nil, nil, err
 	}
-	authService, err := service.NewAuthService(cfg, authLogic)
+	authService, err := service.NewAuthService(config, authLogic)
 	if err != nil {
+		cleanup5()
+		cleanup4()
 		cleanup3()
 		cleanup2()
 		cleanup()
@@ -102,8 +134,10 @@ func wireServer(ctx context.Context, cfg *conf.Config, webHandler http.Handler) 
 	}
 	setupRepositoryImpl := repository.NewSetupRepository(storage)
 	setupLogic := logic.NewSetupLogic(setupRepositoryImpl, hasher, engine)
-	setupService, err := service.NewSetupService(cfg, setupLogic)
+	setupService, err := service.NewSetupService(config, setupLogic)
 	if err != nil {
+		cleanup5()
+		cleanup4()
 		cleanup3()
 		cleanup2()
 		cleanup()
@@ -118,18 +152,17 @@ func wireServer(ctx context.Context, cfg *conf.Config, webHandler http.Handler) 
 	enumLogic := logic.NewEnumLogic(configEnumRepositoryImpl, configRepositoryImpl, structureRepositoryImpl, resolver, auditLogRepositoryImpl, engine)
 	enumService := service.NewEnumService(enumLogic)
 	environmentRepositoryImpl := repository.NewEnvironmentRepository(storage)
-	userEnvironmentRoleRepositoryImpl := repository.NewUserEnvironmentRoleRepository(storage)
-	environmentLogic := logic.NewEnvironmentLogic(environmentRepositoryImpl, userRepositoryImpl, userEnvironmentRoleRepositoryImpl, resolver, engine)
+	environmentLogic := logic.NewEnvironmentLogic(environmentRepositoryImpl, userRepositoryImpl, resolver, engine, projectMemberRepositoryImpl)
 	environmentService := service.NewEnvironmentService(environmentLogic)
-	projectLogic := logic.NewProjectLogic(projectRepositoryImpl, resolver, auditLogRepositoryImpl, engine)
+	environmentPermissionRepositoryImpl := repository.NewEnvironmentPermissionRepository(storage)
+	environmentPermissionLogic := logic.NewEnvironmentPermissionLogic(environmentPermissionRepositoryImpl, environmentRepositoryImpl, projectMemberRepositoryImpl, engine)
+	environmentPermissionService := service.NewEnvironmentPermissionService(environmentPermissionLogic)
+	projectLogic := logic.NewProjectLogicWithMembers(projectRepositoryImpl, resolver, auditLogRepositoryImpl, engine, projectMemberRepositoryImpl)
 	projectService := service.NewProjectService(projectLogic)
 	snapshotPublicationRepositoryImpl := repository.NewSnapshotPublicationRepository(storage)
 	contentCache := logic.NewContentCache(store)
 	publishLogic := logic.NewPublishLogic(configRepositoryImpl, structureRepositoryImpl, configEnumRepositoryImpl, snapshotRepositoryImpl, snapshotPublicationRepositoryImpl, resolver, auditLogRepositoryImpl, engine, contentCache, logger)
 	publishService := service.NewPublishService(publishLogic)
-	roleRepositoryImpl := repository.NewRoleRepository(storage)
-	roleLogic := logic.NewRoleLogic(roleRepositoryImpl, permissionRepositoryImpl, resolver, engine)
-	roleService := service.NewRoleService(roleLogic)
 	runtimeLogic := logic.NewRuntimeLogic(projectAPIKeyRepositoryImpl, apikeyManager, engine, contentCache)
 	runtimeService := service.NewRuntimeService(runtimeLogic, logger)
 	snapshotLogic := logic.NewSnapshotLogic(configRepositoryImpl, structureRepositoryImpl, configEnumRepositoryImpl, snapshotRepositoryImpl, resolver, auditLogRepositoryImpl, engine)
@@ -144,37 +177,48 @@ func wireServer(ctx context.Context, cfg *conf.Config, webHandler http.Handler) 
 	transferService := service.NewTransferService(exportService, importService)
 	userLogic := logic.NewUserLogic(userRepositoryImpl, resolver, hasher, engine)
 	userService := service.NewUserService(userLogic)
+	systemSettingsLogic := logic.NewSystemSettingsLogic(applicationSettingsRepositoryImpl, resolver)
+	systemSettingsService := service.NewSystemSettingsService(systemSettingsLogic)
+	projectMemberLogic := logic.NewProjectMemberLogic(projectMemberRepositoryImpl, userRepositoryImpl, engine, projectRepositoryImpl)
+	projectMemberService := service.NewProjectMemberService(projectMemberLogic)
 	dependencies := &server.Dependencies{
-		Config:       cfg,
-		Logger:       logger,
-		Store:        storage,
-		Object:       objectStorage,
-		Tokens:       manager,
-		Users:        userRepositoryImpl,
-		APIKeys:      apiKeyService,
-		Assets:       assetService,
-		Auth:         authService,
-		Setup:        setupService,
-		Configs:      configService,
-		Enums:        enumService,
-		Environments: environmentService,
-		Projects:     projectService,
-		Publications: publishService,
-		Roles:        roleService,
-		Runtime:      runtimeService,
-		Snapshots:    snapshotService,
-		Structures:   structureService,
-		Transfers:    transferService,
-		UsersService: userService,
+		ProjectInvitations:     projectInvitationService,
+		Config:                 config,
+		Logger:                 logger,
+		Store:                  storage,
+		Object:                 objectStorage,
+		Tokens:                 manager,
+		Users:                  userRepositoryImpl,
+		APIKeys:                apiKeyService,
+		Assets:                 assetService,
+		Auth:                   authService,
+		Setup:                  setupService,
+		Configs:                configService,
+		Enums:                  enumService,
+		Environments:           environmentService,
+		EnvironmentPermissions: environmentPermissionService,
+		Projects:               projectService,
+		Publications:           publishService,
+		Runtime:                runtimeService,
+		Snapshots:              snapshotService,
+		Structures:             structureService,
+		Transfers:              transferService,
+		UsersService:           userService,
+		SystemSettings:         systemSettingsService,
+		ProjectMembers:         projectMemberService,
 	}
 	app, err := server.NewApplication(ctx, dependencies, webHandler)
 	if err != nil {
+		cleanup5()
+		cleanup4()
 		cleanup3()
 		cleanup2()
 		cleanup()
 		return nil, nil, err
 	}
 	return app, func() {
+		cleanup5()
+		cleanup4()
 		cleanup3()
 		cleanup2()
 		cleanup()

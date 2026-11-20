@@ -3,6 +3,7 @@ syntax = "proto3";
 package kirby.common.v1;
 
 import "common/annotation.proto";
+import "google/protobuf/timestamp.proto";
 import "common/types.proto";
 
 option go_package = "github.com/yvvlee/kirby/server/api/common;commonv1";
@@ -14,45 +15,28 @@ message Environment {
   string description = 4;
   bool enabled = 5;
   int64 project_id = 6;
-  string created_at = 51;
-  string updated_at = 52;
+  google.protobuf.Timestamp created_at = 51;
+  google.protobuf.Timestamp updated_at = 52;
   uint32 version = 55;
 }
 
 message User {
   int64 id = 1;
   string username = 2;
-  string display_name = 3;
+  string nickname = 3;
+  string email = 7;
   bool enabled = 4;
   bool is_system_admin = 5;
-  string created_at = 51;
-  string updated_at = 52;
+  google.protobuf.Timestamp created_at = 51;
+  google.protobuf.Timestamp updated_at = 52;
   uint32 version = 55;
 }
 
-message Role {
-  int64 id = 1;
-  string key = 2;
-  string name = 3;
-  string description = 4;
-  bool builtin = 5;
-  repeated Permission permissions = 6;
-  string created_at = 51;
-  string updated_at = 52;
-  uint32 version = 55;
-}
 
-message Permission {
-  int64 id = 1;
-  string key = 2;
-  string name = 3;
-  string description = 4;
-}
 
-message EnvironmentMember {
-  User user = 1;
-  repeated Role roles = 2;
-}
+
+
+
 
 message Project {
   int64 id = 1;
@@ -61,8 +45,8 @@ message Project {
   string description = 5;
   string created_by = 51;
   string updated_by = 52;
-  string created_at = 53;
-  string updated_at = 54;
+  google.protobuf.Timestamp created_at = 53;
+  google.protobuf.Timestamp updated_at = 54;
   uint32 version = 55;
 }
 
@@ -77,8 +61,8 @@ message Config {
   uint64 runtime_version = 8;
   string created_by = 51;
   string updated_by = 52;
-  string created_at = 53;
-  string updated_at = 54;
+  google.protobuf.Timestamp created_at = 53;
+  google.protobuf.Timestamp updated_at = 54;
   uint32 version = 55;
 }
 
@@ -91,8 +75,8 @@ message ConfigEnum {
   repeated SelectOption values = 6;
   string created_by = 51;
   string updated_by = 52;
-  string created_at = 53;
-  string updated_at = 54;
+  google.protobuf.Timestamp created_at = 53;
+  google.protobuf.Timestamp updated_at = 54;
   uint32 version = 55;
 }
 
@@ -105,8 +89,8 @@ message Structure {
   repeated Field fields = 6;
   string created_by = 51;
   string updated_by = 52;
-  string created_at = 53;
-  string updated_at = 54;
+  google.protobuf.Timestamp created_at = 53;
+  google.protobuf.Timestamp updated_at = 54;
   uint32 version = 55;
 }
 
@@ -183,8 +167,8 @@ message Snapshot {
   bool is_using = 9;
   string created_by = 51;
   string updated_by = 52;
-  string created_at = 53;
-  string updated_at = 54;
+  google.protobuf.Timestamp created_at = 53;
+  google.protobuf.Timestamp updated_at = 54;
   uint32 version = 55;
 }
 
@@ -199,19 +183,20 @@ message SimpleSnapshot {
   bool is_using = 8;
   string created_by = 51;
   string updated_by = 52;
-  string created_at = 53;
-  string updated_at = 54;
+  google.protobuf.Timestamp created_at = 53;
+  google.protobuf.Timestamp updated_at = 54;
   uint32 version = 55;
 }
 
 message ProjectApiKey {
   int64 id = 1;
-  string public_id = 2;
+  reserved 2;
+  reserved "public_id";
   string name = 3;
   string created_by = 4;
-  string created_at = 5;
-  optional string last_used_at = 6;
-  optional string revoked_at = 7;
+  google.protobuf.Timestamp created_at = 5;
+  optional google.protobuf.Timestamp last_used_at = 6;
+  optional google.protobuf.Timestamp revoked_at = 7;
   // Only the trailing characters are stored and returned for identification.
   // This value is not the secret and cannot be used to authenticate.
   string secret_suffix = 8;

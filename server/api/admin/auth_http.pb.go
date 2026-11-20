@@ -24,17 +24,20 @@ const OperationAuthServiceLogin = "/kirby.admin.v1.AuthService/Login"
 const OperationAuthServiceLogout = "/kirby.admin.v1.AuthService/Logout"
 const OperationAuthServiceMe = "/kirby.admin.v1.AuthService/Me"
 const OperationAuthServiceRefresh = "/kirby.admin.v1.AuthService/Refresh"
+const OperationAuthServiceRegister = "/kirby.admin.v1.AuthService/Register"
 
 type AuthServiceHTTPServer interface {
 	Login(context.Context, *LoginRequest) (*LoginReply, error)
 	Logout(context.Context, *emptypb.Empty) (*emptypb.Empty, error)
 	Me(context.Context, *emptypb.Empty) (*MeReply, error)
 	Refresh(context.Context, *emptypb.Empty) (*LoginReply, error)
+	Register(context.Context, *RegisterRequest) (*LoginReply, error)
 }
 
 func RegisterAuthServiceHTTPServer(s *http.Server, srv AuthServiceHTTPServer) {
 	r := s.Route("/")
 	r.POST("/auth/login", _AuthService_Login0_HTTP_Handler(srv))
+	r.POST("/auth/register", _AuthService_Register0_HTTP_Handler(srv))
 	r.POST("/auth/refresh", _AuthService_Refresh0_HTTP_Handler(srv))
 	r.POST("/auth/logout", _AuthService_Logout0_HTTP_Handler(srv))
 	r.GET("/auth/me", _AuthService_Me0_HTTP_Handler(srv))
@@ -52,6 +55,28 @@ func _AuthService_Login0_HTTP_Handler(srv AuthServiceHTTPServer) func(ctx http.C
 		http.SetOperation(ctx, OperationAuthServiceLogin)
 		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
 			return srv.Login(ctx, req.(*LoginRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*LoginReply)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _AuthService_Register0_HTTP_Handler(srv AuthServiceHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in RegisterRequest
+		if err := ctx.Bind(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationAuthServiceRegister)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.Register(ctx, req.(*RegisterRequest))
 		})
 		out, err := h(ctx, &in)
 		if err != nil {
@@ -130,6 +155,7 @@ type AuthServiceHTTPClient interface {
 	Logout(ctx context.Context, req *emptypb.Empty, opts ...http.CallOption) (rsp *emptypb.Empty, err error)
 	Me(ctx context.Context, req *emptypb.Empty, opts ...http.CallOption) (rsp *MeReply, err error)
 	Refresh(ctx context.Context, req *emptypb.Empty, opts ...http.CallOption) (rsp *LoginReply, err error)
+	Register(ctx context.Context, req *RegisterRequest, opts ...http.CallOption) (rsp *LoginReply, err error)
 }
 
 type AuthServiceHTTPClientImpl struct {
@@ -184,6 +210,19 @@ func (c *AuthServiceHTTPClientImpl) Refresh(ctx context.Context, in *emptypb.Emp
 	pattern := "/auth/refresh"
 	path := binding.EncodeURL(pattern, in, false)
 	opts = append(opts, http.Operation(OperationAuthServiceRefresh))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *AuthServiceHTTPClientImpl) Register(ctx context.Context, in *RegisterRequest, opts ...http.CallOption) (*LoginReply, error) {
+	var out LoginReply
+	pattern := "/auth/register"
+	path := binding.EncodeURL(pattern, in, false)
+	opts = append(opts, http.Operation(OperationAuthServiceRegister))
 	opts = append(opts, http.PathTemplate(pattern))
 	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
 	if err != nil {

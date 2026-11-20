@@ -63,7 +63,8 @@ func verifyImportClaimReplay(t *testing.T, ctx context.Context, repo *ImportReco
 	require.True(t, created)
 	require.Positive(t, claimed.ID)
 	require.Equal(t, int64(1), claimed.Version)
-	require.NoError(t, repo.Complete(ctx, claimed.ID, 42, `{"target_snapshot_id":42}`))
+	_, err = repo.Complete(ctx, claimed.ID, 42, `{"target_snapshot_id":42}`)
+	require.NoError(t, err)
 
 	retry := claimRecordForSmoke()
 	retry.IdempotencyKey = request.IdempotencyKey

@@ -93,26 +93,26 @@ func TestMemoryIncrementIsAtomicUnderConcurrency(t *testing.T) {
 }
 
 func TestMemoryIncrementKeepsFirstTTL(t *testing.T) {
-	now := time.Date(2026, time.August, 17, 0, 0, 0, 0, time.UTC)
-	store := newMemory(func() time.Time { return now })
+	store := newMemory()
 	ctx := context.Background()
 
-	value, err := store.Increment(ctx, "login:user-1", time.Minute)
+	value, err := store.Increment(ctx, "login:user-1", 50*time.Millisecond)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), value)
 	firstExpiry := store.entries["login:user-1"].expiresAt
 
-	now = now.Add(30 * time.Second)
-	value, err = store.Increment(ctx, "login:user-1", time.Minute)
+	time.Sleep(10 * time.Millisecond)
+	value, err = store.Increment(ctx, "login:user-1", 50*time.Millisecond)
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), value)
 	assert.Equal(t, firstExpiry, store.entries["login:user-1"].expiresAt)
 
-	now = now.Add(31 * time.Second)
-	value, err = store.Increment(ctx, "login:user-1", time.Minute)
+	time.Sleep(50 * time.Millisecond)
+	before := time.Now()
+	value, err = store.Increment(ctx, "login:user-1", 50*time.Millisecond)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), value)
-	assert.Equal(t, now.Add(time.Minute), store.entries["login:user-1"].expiresAt)
+	assert.True(t, !store.entries["login:user-1"].expiresAt.Before(before), "expired entry must receive a fresh TTL")
 }
 
 func TestRedisIncrementIsAtomicAndKeepsFirstTTL(t *testing.T) {

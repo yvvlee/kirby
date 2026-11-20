@@ -1,3 +1,4 @@
+import { useTranslation } from '@/i18n'
 import { Alert, Button, Result, Spin } from 'antd'
 import type { PropsWithChildren } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
@@ -7,6 +8,7 @@ import { useAuth } from '@/auth/auth-state'
 import { useEnvironment } from '@/auth/environment-state'
 
 export function AuthGate({ children }: PropsWithChildren) {
+  const { t } = useTranslation()
   const auth = useAuth()
   const location = useLocation()
 
@@ -18,9 +20,9 @@ export function AuthGate({ children }: PropsWithChildren) {
       <main className="status-page">
         <Result
           status="error"
-          title="无法恢复会话"
+          title={t('无法恢复会话')}
           subTitle={getApiErrorMessage(auth.error)}
-          extra={<Button onClick={() => window.location.reload()}>重新加载</Button>}
+          extra={<Button onClick={() => window.location.reload()}>{t('重新加载')}</Button>}
         />
       </main>
     )
@@ -36,6 +38,7 @@ export function PermissionGate({
   permission,
   children,
 }: PropsWithChildren<{ permission: string }>) {
+  const { t } = useTranslation()
   const auth = useAuth()
   const environment = useEnvironment()
 
@@ -43,8 +46,9 @@ export function PermissionGate({
     return <div className="route-loading"><Spin size="large" /></div>
   }
   if (environment.error) {
-    return <Alert type="error" showIcon message="环境加载失败" description={getApiErrorMessage(environment.error)} />
+    return <Alert type="error" showIcon message={t('环境加载失败')} description={getApiErrorMessage(environment.error)} />
   }
-  if (auth.systemAdmin || environment.hasPermission(permission)) return children
+  if (permission.startsWith('system:')) return auth.systemAdmin ? children : <Navigate to="/403" replace />
+  if (environment.hasPermission(permission)) return children
   return <Navigate to="/403" replace />
 }

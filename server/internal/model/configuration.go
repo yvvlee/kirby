@@ -9,23 +9,16 @@ import (
 type Project struct {
 	lorm.UnimplementedTable `lorm:"projects"`
 	Meta
-	projectScope
 	Key         string `lorm:"key"`
 	Name        string `lorm:"name"`
 	Description string `lorm:"description"`
 }
 
-// lormgen excludes private embedded fields. EnvironmentID is request scope,
-// while the persisted project ownership lives in environments.project_id.
-type projectScope struct {
-	EnvironmentID int64
-}
-
 type ProjectAPIKey struct {
+	EnvironmentID           int64 `lorm:"environment_id"`
 	lorm.UnimplementedTable `lorm:"project_api_keys"`
 	RecordMeta
 	ProjectID    int64      `lorm:"project_id"`
-	PublicID     string     `lorm:"public_id"`
 	Name         string     `lorm:"name"`
 	SecretHash   []byte     `lorm:"secret_hash"`
 	SecretSuffix string     `lorm:"secret_suffix"`
@@ -35,6 +28,7 @@ type ProjectAPIKey struct {
 }
 
 type Config struct {
+	EnvironmentID           int64 `lorm:"environment_id"`
 	lorm.UnimplementedTable `lorm:"configs"`
 	Meta
 	ProjectID      int64  `lorm:"project_id"`

@@ -16,10 +16,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/emptypb"
 
-	"github.com/yvvlee/kirby/server/internal/converter"
 	"github.com/yvvlee/kirby/server/internal/middleware"
 
 	adminv1 "github.com/yvvlee/kirby/server/api/admin"
+	commonv1 "github.com/yvvlee/kirby/server/api/common"
 	authjwt "github.com/yvvlee/kirby/server/internal/auth/jwt"
 	"github.com/yvvlee/kirby/server/internal/auth/password"
 	authsession "github.com/yvvlee/kirby/server/internal/auth/session"
@@ -37,7 +37,7 @@ type fakeUsers struct {
 	environments []model.Environment
 }
 
-func (f *fakeUsers) FindByUsername(_ context.Context, username string) (*model.User, error) {
+func (f *fakeUsers) FindByIdentifier(_ context.Context, username string) (*model.User, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	user, ok := f.byName[username]
@@ -64,16 +64,17 @@ func (f *fakeUsers) ListEnvironments(context.Context, *model.User) ([]model.Envi
 	return append([]model.Environment(nil), f.environments...), nil
 }
 
-func (f *fakeUsers) UpdatePasswordHash(_ context.Context, id int64, previousHash, nextHash string) error {
+func (f *fakeUsers) UpdatePasswordHash(_ context.Context, id int64, previousHash, nextHash string) (rowsAffected int64, err error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for _, user := range f.byName {
 		if user.ID == id && user.PasswordHash == previousHash {
 			user.PasswordHash = nextHash
-			return nil
+			return
 		}
 	}
-	return repository.ErrUserVersionConflict
+	err = repository.ErrUserVersionConflict
+	return
 }
 
 type fakeRefreshTokens struct {
@@ -89,14 +90,14 @@ func newFakeRefreshTokens() *fakeRefreshTokens {
 
 func hashKey(hash []byte) string { return string(hash) }
 
-func (f *fakeRefreshTokens) CreateSession(_ context.Context, token *model.RefreshToken, _ time.Time) error {
+func (f *fakeRefreshTokens) CreateSession(_ context.Context, token *model.RefreshToken, _ time.Time) (rowsAffected int64, err error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	copy := *token
 	copy.ID = int64(len(f.records) + 1)
 	token.ID = copy.ID
 	f.records[hashKey(token.TokenHash)] = &copy
-	return nil
+	return
 }
 
 func (f *fakeRefreshTokens) Rotate(_ context.Context, hash []byte, next *model.RefreshToken, now time.Time) (*model.RefreshToken, error) {
@@ -133,12 +134,12 @@ func (f *fakeRefreshTokens) Rotate(_ context.Context, hash []byte, next *model.R
 	return next, nil
 }
 
-func (f *fakeRefreshTokens) RevokeSessionByTokenHash(_ context.Context, hash []byte, now time.Time) error {
+func (f *fakeRefreshTokens) RevokeSessionByTokenHash(_ context.Context, hash []byte, now time.Time) (rowsAffected int64, err error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	current, ok := f.records[hashKey(hash)]
 	if !ok {
-		return nil
+		return
 	}
 	for _, token := range f.records {
 		if token.UserID == current.UserID && token.SessionID == current.SessionID && token.RevokedAt == nil {
@@ -146,7 +147,7 @@ func (f *fakeRefreshTokens) RevokeSessionByTokenHash(_ context.Context, hash []b
 			token.RevokedAt = &revoked
 		}
 	}
-	return nil
+	return
 }
 
 func (f *fakeRefreshTokens) activeCount() int {
@@ -215,7 +216,7 @@ func testServiceWithTrustedProxies(t *testing.T, trustedProxies []string) (*Auth
 				Version: 1,
 			},
 			Username:     "alice",
-			DisplayName:  "Alice",
+			Nickname:     "Alice",
 			PasswordHash: hash,
 			Enabled:      true,
 		},
@@ -224,8 +225,8 @@ func testServiceWithTrustedProxies(t *testing.T, trustedProxies []string) (*Auth
 	cfg := &conf.Config{
 		JWT: conf.JWTConfig{
 			Issuer:     "auth-test",
-			AccessTTL:  conf.Duration{Duration: 15 * time.Minute},
-			RefreshTTL: conf.Duration{Duration: 7 * 24 * time.Hour},
+			AccessTTL:  15 * 60 * 1000,
+			RefreshTTL: 7 * 24 * 60 * 60 * 1000,
 		},
 		Security: conf.SecurityConfig{TrustedProxies: trustedProxies},
 	}
@@ -233,12 +234,12 @@ func testServiceWithTrustedProxies(t *testing.T, trustedProxies []string) (*Auth
 		Issuer:    "auth-test",
 		ActiveKID: "primary",
 		AccessTTL: 15 * time.Minute,
-		Keys:      map[string]conf.Secret{"primary": conf.NewSecret("01234567890123456789012345678901")},
+		Keys:      map[string]string{"primary": "01234567890123456789012345678901"},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	authLogic, err := logic.NewAuthLogic(cfg, users, refresh, cache.NewMemory(), serviceTransactions{}, hasher, tokens)
+	authLogic, err := logic.NewAuthLogic(cfg, users, refresh, cache.NewMemory(), serviceTransactions{}, hasher, tokens, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -526,15 +527,18 @@ func (l profileAuthLogic) Me(context.Context, int64) (*logic.AuthProfile, error)
 
 func TestAuthenticatedProfileKeepsEnvironmentProjectOwnership(t *testing.T) {
 	profile := &logic.AuthProfile{
-		User: &model.User{
-			Meta:    model.Meta{ID: 9},
-			Enabled: true,
+		User: &commonv1.User{
+			Id:       9,
+			Username: "alice",
+			Enabled:  true,
+			Version:  1,
 		},
-		Environments: []model.Environment{{
-			Meta:      model.Meta{ID: 2},
-			ProjectID: 40,
+		Environments: []*commonv1.Environment{{
+			Id:        2,
+			ProjectId: 40,
 			Key:       "prod",
 			Enabled:   true,
+			Version:   1,
 		}},
 	}
 	service := &AuthService{authLogic: profileAuthLogic{profile: profile}}
@@ -548,7 +552,20 @@ func TestAuthenticatedProfileKeepsEnvironmentProjectOwnership(t *testing.T) {
 	reply := response.(*adminv1.MeReply)
 	require.Len(t, reply.Environments, 1)
 	require.Equal(t, int64(40), reply.Environments[0].ProjectId)
-	want, err := converter.EnvironmentToProto(&profile.Environments[0])
-	require.NoError(t, err)
-	require.Equal(t, want, reply.Environments[0])
+	require.Equal(t, profile.Environments[0], reply.Environments[0])
+	require.Equal(t, profile.User, reply.User)
+}
+
+func TestRegisterRejectsForeignOriginBeforeCreatingUser(t *testing.T) {
+	service, _, _ := testService(t)
+	ctx, _ := requestContext(http.MethodPost, "https://attacker.example", "")
+	_, err := service.Register(ctx, &adminv1.RegisterRequest{
+		Username: "newuser",
+		Nickname: "New",
+		Email:    "new@example.com",
+		Password: "a-long-test-password",
+	})
+	if err == nil {
+		t.Fatal("registration accepted foreign origin")
+	}
 }

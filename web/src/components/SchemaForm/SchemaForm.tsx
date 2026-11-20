@@ -31,6 +31,7 @@ import {
   type ModelResource,
   type SchemaNode,
 } from '@/domain/schema'
+import { t, useTranslation } from '@/i18n'
 
 type FileFieldProps = {
   value?: string | string[]
@@ -56,8 +57,12 @@ export type SchemaFormProps = {
 }
 
 function MissingFileUpload(): never {
-  throw new Error('文件字段需要通过 fileUploadComponent 显式注入上传组件')
+  throw new Error(t('文件字段需要通过 fileUploadComponent 显式注入上传组件'))
 }
+
+// Stable empty resources prevent language-only renders from reapplying saved values.
+const emptyModels: ModelResource[] = []
+const emptyEnums: EnumResource[] = []
 
 const SchemaForm = forwardRef<SchemaFormHandle, SchemaFormProps>(
   function SchemaForm(
@@ -65,16 +70,19 @@ const SchemaForm = forwardRef<SchemaFormHandle, SchemaFormProps>(
       config,
       value = '',
       disabled = false,
-      models = [],
-      enums = [],
+      models = emptyModels,
+      enums = emptyEnums,
       fileUploadComponent = MissingFileUpload,
     },
     ref,
   ) {
+    const { locale } = useTranslation()
     const resources = useMemo(() => ({ models, enums }), [enums, models])
     const schema = useMemo(
       () => config ? createWrappedSchema(config, resources) : {},
-      [config, resources],
+      // createWrappedSchema reads the active locale through the shared translator.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      [config, locale, resources],
     )
     const form = useMemo(() => createForm(), [])
     const SchemaField = useMemo(

@@ -3,7 +3,6 @@ package converter
 import (
 	commonv1 "github.com/yvvlee/kirby/server/api/common"
 	"github.com/yvvlee/kirby/server/internal/model"
-	"github.com/yvvlee/kirby/server/internal/util/timeutil"
 )
 
 // StructureToProto converts persisted data to an API message without hiding conversion errors.
@@ -29,8 +28,8 @@ func StructureToProto(item *model.Structure) (*commonv1.Structure, error) {
 		Fields:      fields,
 		CreatedBy:   formatActor(item.CreatedBy),
 		UpdatedBy:   formatActor(item.UpdatedBy),
-		CreatedAt:   timeutil.FormatRFC3339(item.CreatedAt),
-		UpdatedAt:   timeutil.FormatRFC3339(item.UpdatedAt),
+		CreatedAt:   timestamp(item.CreatedAt),
+		UpdatedAt:   timestamp(item.UpdatedAt),
 		Version:     version,
 	}, nil
 }

@@ -34,3 +34,8 @@ export function getProject(
     : client.get<ApiEntity>(`/admin/projects/${projectId}`, { params: { environment_id: environmentId } })
   return request.then(({ data }) => data)
 }
+
+/** Deletes a project after the server verifies current Owner membership. */
+export function deleteProject(projectId: Identifier): Promise<void> {
+  return client.delete(`/admin/projects/${projectId}`).then(() => undefined)
+}

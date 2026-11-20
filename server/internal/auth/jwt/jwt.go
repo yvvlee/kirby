@@ -10,8 +10,6 @@ import (
 
 	jwtlib "github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
-
-	"github.com/yvvlee/kirby/server/internal/conf"
 )
 
 const Audience = "kirby-admin"
@@ -50,7 +48,6 @@ type Manager struct {
 	activeKID string
 	accessTTL time.Duration
 	keys      map[string][]byte
-	now       func() time.Time
 }
 
 // Config combines token policy with the signing keys loaded from shared storage.
@@ -58,7 +55,7 @@ type Config struct {
 	Issuer    string
 	ActiveKID string
 	AccessTTL time.Duration
-	Keys      map[string]conf.Secret
+	Keys      map[string]string
 }
 
 // New creates a manager whose signing keys remain stable across server restarts.
@@ -72,10 +69,10 @@ type Config struct {
 // Throws:
 //   - None. Invalid configuration is returned as an error.
 func New(cfg Config) (*Manager, error) {
-	return newManager(cfg, Audience, time.Now)
+	return newManager(cfg, Audience)
 }
 
-func newManager(cfg Config, audience string, now func() time.Time) (*Manager, error) {
+func newManager(cfg Config, audience string) (*Manager, error) {
 	if strings.TrimSpace(cfg.Issuer) == "" {
 		return nil, fmt.Errorf("JWT issuer is required")
 	}
@@ -93,10 +90,10 @@ func newManager(cfg Config, audience string, now func() time.Time) (*Manager, er
 	}
 	keys := make(map[string][]byte, len(cfg.Keys))
 	for kid, secret := range cfg.Keys {
-		if strings.TrimSpace(kid) == "" || len(secret.Value()) < 32 {
+		if strings.TrimSpace(kid) == "" || len(secret) < 32 {
 			return nil, fmt.Errorf("each JWT key must have a non-empty id and at least 32 bytes")
 		}
-		keys[kid] = append([]byte(nil), secret.Value()...)
+		keys[kid] = append([]byte(nil), secret...)
 	}
 	if _, ok := keys[cfg.ActiveKID]; !ok {
 		return nil, fmt.Errorf("active JWT key %q is absent", cfg.ActiveKID)
@@ -107,7 +104,6 @@ func newManager(cfg Config, audience string, now func() time.Time) (*Manager, er
 		activeKID: cfg.ActiveKID,
 		accessTTL: cfg.AccessTTL,
 		keys:      keys,
-		now:       now,
 	}, nil
 }
 
@@ -129,7 +125,7 @@ func (m *Manager) Issue(userID int64, sessionID string) (string, time.Time, erro
 	if userID <= 0 || strings.TrimSpace(sessionID) == "" {
 		return "", time.Time{}, fmt.Errorf("JWT user and session are required")
 	}
-	now := m.now().UTC()
+	now := time.Now().UTC()
 	expiresAt := now.Add(m.accessTTL)
 	claims := Claims{
 		SessionID: sessionID,
@@ -169,7 +165,7 @@ func (m *Manager) Verify(encoded string) (*Claims, error) {
 		jwtlib.WithAudience(m.audience),
 		jwtlib.WithExpirationRequired(),
 		jwtlib.WithIssuedAt(),
-		jwtlib.WithTimeFunc(m.now),
+		jwtlib.WithTimeFunc(time.Now),
 	)
 	token, err := parser.ParseWithClaims(encoded, claims, func(token *jwtlib.Token) (any, error) {
 		if token.Method != jwtlib.SigningMethodHS256 {

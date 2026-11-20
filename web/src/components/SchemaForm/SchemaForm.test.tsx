@@ -2,6 +2,7 @@ import { act, render, waitFor } from '@testing-library/react'
 import { createRef, StrictMode } from 'react'
 import { describe, expect, it } from 'vitest'
 
+import { setLocale } from '@/i18n'
 import type { SchemaNode } from '@/domain/schema'
 import SchemaForm, { type SchemaFormHandle } from './SchemaForm'
 
@@ -50,4 +51,19 @@ describe('SchemaForm', () => {
       '文件字段需要通过 fileUploadComponent 显式注入上传组件',
     )
   })
+})
+
+it('keeps unsaved configuration data when the language changes', async () => {
+  const ref = createRef<SchemaFormHandle>()
+  render(<SchemaForm ref={ref} config={config} value={'"saved"'} />)
+  await waitFor(() => expect(ref.current?.getValue()).toBe('saved'))
+  const originalForm = ref.current?.form
+  act(() => ref.current?.setValue('"未保存的内容"'))
+  try {
+    act(() => setLocale('en-US'))
+    expect(ref.current?.form).toBe(originalForm)
+    expect(ref.current?.getValue()).toBe('未保存的内容')
+  } finally {
+    act(() => setLocale('zh-CN'))
+  }
 })

@@ -35,20 +35,20 @@ repo_dir=$(CDPATH='' cd -- "$script_dir/.." && pwd)
 server_dir="$repo_dir/server"
 
 expected_tables='application_secrets
+application_settings
 audit_logs
 config_enums
 configs
+environment_permission_grants
 environments
 import_records
-permissions
 project_api_keys
+project_invitations
+project_members
 projects
 refresh_tokens
-role_permissions
-roles
 snapshots
 structures
-user_environment_roles
 users'
 
 tmp_dir=$(mktemp -d "${TMPDIR:-/tmp}/kirby-schema-check.XXXXXX")
@@ -71,16 +71,12 @@ fi
 required_patterns=(
   'UNIQUE KEY `ux_environments_project_key` \(`project_id`, `key`\)'
   'UNIQUE KEY `ux_users_username` \(`username`\)'
-  'UNIQUE KEY `ux_roles_key` \(`key`\)'
-  'UNIQUE KEY `ux_permissions_key` \(`key`\)'
-  'UNIQUE KEY `ux_user_environment_roles_assignment` \(`user_id`, `environment_id`, `role_id`\)'
-  'UNIQUE KEY `ux_role_permissions_assignment` \(`role_id`, `permission_id`\)'
   'UNIQUE KEY `ux_projects_key` \(`key`\)'
-  'UNIQUE KEY `ux_configs_project_key` \(`project_id`, `key`\)'
+  'UNIQUE KEY `ux_configs_environment_key` \(`environment_id`, `key`\)'
   'UNIQUE KEY `ux_structures_config_key` \(`config_id`, `key`\)'
   'UNIQUE KEY `ux_config_enums_config_key` \(`config_id`, `key`\)'
   'UNIQUE KEY `ux_refresh_tokens_hash` \(`token_hash`\)'
-  'UNIQUE KEY `ux_project_api_keys_public_id` \(`public_id`\)'
+  'UNIQUE KEY `ux_project_api_keys_secret_hash` \(`secret_hash`\)'
   'UNIQUE KEY `ux_import_records_idempotency` \(`user_id`, `target_environment_id`, `idempotency_key`\)'
   '`runtime_version` BIGINT NOT NULL DEFAULT 0'
   '`is_system_admin` BOOLEAN NOT NULL DEFAULT FALSE'
@@ -95,19 +91,6 @@ required_patterns=(
 
 for pattern in "${required_patterns[@]}"; do
   grep -Eq "$pattern" "$schema_file" || fail "missing required schema fragment: $pattern"
-done
-
-for permission in \
-  project:read project:write project:api_key:read project:api_key:manage \
-  config:read config:write structure:read structure:write enum:read enum:write \
-  snapshot:read snapshot:write snapshot:publish snapshot:export snapshot:import \
-  asset:write environment:member:manage system:user:manage system:role:manage \
-  system:environment:manage system:project:manage; do
-  grep -Fq "'$permission'" "$schema_file" || fail "missing seeded permission: $permission"
-done
-
-for role in viewer editor publisher admin; do
-  grep -Eq "\([0-9]+, '$role',[[:space:]]" "$schema_file" || fail "missing built-in role: $role"
 done
 
 grep -R -n --include='*.go' --exclude='*_test.go' \
@@ -154,10 +137,6 @@ mysql --batch --skip-column-names "${mysql_args[@]}" <"$schema_file" \
 created_tables=$(mysql --batch --skip-column-names "${mysql_args[@]}" \
   -e 'SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE()')
 [[ "$created_tables" = "16" ]] || fail "expected 16 created tables, found $created_tables"
-
-seed_counts=$(mysql --batch --skip-column-names "${mysql_args[@]}" \
-  -e "SELECT CONCAT((SELECT COUNT(*) FROM permissions), ':', (SELECT COUNT(*) FROM roles WHERE builtin = TRUE))")
-[[ "$seed_counts" = "21:4" ]] || fail "expected 21 permissions and 4 built-in roles, found $seed_counts"
 
 if mysql --batch --skip-column-names "${mysql_args[@]}" <"$schema_file" \
   >"$tmp_dir/second-run.out" 2>"$tmp_dir/second-run.err"; then

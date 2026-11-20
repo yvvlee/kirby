@@ -24,20 +24,20 @@ func TestAllModelsContainsFixedTableInventory(t *testing.T) {
 
 	want := []string{
 		"application_secrets",
+		"application_settings",
 		"audit_logs",
 		"config_enums",
 		"configs",
+		"environment_permission_grants",
 		"environments",
 		"import_records",
-		"permissions",
 		"project_api_keys",
+		"project_invitations",
+		"project_members",
 		"projects",
 		"refresh_tokens",
-		"role_permissions",
-		"roles",
 		"snapshots",
 		"structures",
-		"user_environment_roles",
 		"users",
 	}
 
@@ -131,7 +131,6 @@ func TestSchemaKeepsCriticalDatabaseGuarantees(t *testing.T) {
 		"`secret_hash` BINARY(32) NOT NULL",
 		"`secret_suffix` CHAR(4) CHARACTER SET ascii COLLATE ascii_bin NOT NULL",
 		"CONSTRAINT `ck_snapshots_status` CHECK (`status` IN (1, 3))",
-		"System permissions (18-21) are deliberately not assigned to an environment",
 	}
 	for _, fragment := range required {
 		if !strings.Contains(schema, fragment) {
@@ -174,6 +173,7 @@ func TestValidateSchemaAcceptsCompleteSchema(t *testing.T) {
 		WithArgs(schemaQueryArguments()...).
 		WillReturnRows(rows)
 
+	mock.ExpectQuery("SELECT table_name FROM information_schema.columns").WillReturnRows(sqlmock.NewRows([]string{"table_name"}).AddRow("configs").AddRow("project_api_keys"))
 	require.NoError(t, ValidateSchema(context.Background(), engine, false))
 	require.NoError(t, mock.ExpectationsWereMet())
 }
@@ -201,4 +201,13 @@ func schemaQueryArguments() []driver.Value {
 		arguments[index] = table
 	}
 	return arguments
+}
+
+func TestValidateEnvironmentColumnsRejectsLegacySchema(t *testing.T) {
+	database, mock := newSchemaMockDatabase(t)
+	mock.ExpectQuery("SELECT table_name FROM information_schema.columns").
+		WillReturnRows(sqlmock.NewRows([]string{"table_name"}))
+	err := validateEnvironmentColumns(context.Background(), database, "DATABASE()")
+	require.ErrorContains(t, err, "environment isolation migration")
+	require.NoError(t, mock.ExpectationsWereMet())
 }

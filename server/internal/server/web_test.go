@@ -91,6 +91,21 @@ func TestWebHandlerRejectsInvalidRootAndTraversal(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, response.Code)
 }
 
+func TestWebStaticRangeErrorFollowsAcceptLanguage(t *testing.T) {
+	root := t.TempDir()
+	writeWebTestFile(t, filepath.Join(root, "index.html"), "index")
+	writeWebTestFile(t, filepath.Join(root, "assets", "image.png"), "image")
+	handler, err := NewWebHandler(root)
+	require.NoError(t, err)
+	request := httptest.NewRequest(http.MethodGet, "/assets/image.png", nil)
+	request.Header.Set("Range", "bytes=20-30")
+	request.Header.Set("Accept-Language", "zh-CN")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	require.Equal(t, http.StatusRequestedRangeNotSatisfiable, response.Code)
+	require.Contains(t, response.Body.String(), "请求范围无效或无法满足")
+}
+
 func contextWithAPIRequest(request *http.Request) context.Context {
 	return context.WithValue(request.Context(), apiRequestContextKey{}, true)
 }

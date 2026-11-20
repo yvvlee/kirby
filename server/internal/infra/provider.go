@@ -12,53 +12,59 @@ import (
 	"github.com/yvvlee/kirby/server/internal/infra/object"
 )
 
-// ProviderSet provides shared infrastructure dependencies.
+// ProviderSet provides shared infrastructure dependencies. Each provider owns
+// and releases exactly the resources it creates.
 var ProviderSet = wire.NewSet(
 	NewLogger,
 	NewDBLogger,
-	NewCoreStorage,
+	NewCoreEngine,
+	NewCache,
+	NewStorage,
 	ProvideApplicationSecrets,
-	ProvideCoreDB,
-	ProvideCache,
 	ProvideObjectStorage,
 )
 
-// NewCoreStorage makes initialized persistence available to dependent providers.
+// NewCoreEngine 初始化共享数据库引擎，并返回只负责自身的 cleanup 函数。
 //
-// Parameters: ctx controls startup; cfg selects dependencies; logger records failures.
-// Returns: storage, its cleanup function, or an initialization error.
+// Parameters: ctx controls startup; cfg contains validated settings; logger records database events.
+// Returns: the shared lorm engine, its cleanup function, or an initialization error.
 // Throws: none.
-func NewCoreStorage(ctx context.Context, cfg *conf.Config, logger *DBLogger) (*Storage, func(), error) {
+func NewCoreEngine(ctx context.Context, cfg *conf.Config, logger *DBLogger) (*lorm.Engine, func(), error) {
+	if cfg == nil {
+		return nil, nil, fmt.Errorf("config is nil")
+	}
 	if err := cfg.Validate(); err != nil {
 		return nil, nil, fmt.Errorf("validate config: %w", err)
 	}
-	store, err := Open(ctx, cfg, logger)
+	engine, err := OpenEngine(ctx, cfg.Database, logger)
+	if err != nil {
+		return nil, nil, err
+	}
+	return engine, func() {
+		if err := engine.Close(); err != nil {
+			logger.Errorw("msg", "close database engine", "error", err)
+		}
+	}, nil
+}
+
+// NewCache 初始化配置指定的缓存，并返回只负责自身的 cleanup 函数。
+//
+// Parameters: ctx controls startup; cfg selects the cache backend; logger records close failures.
+// Returns: the cache store, its cleanup function, or an initialization error.
+// Throws: none.
+func NewCache(ctx context.Context, cfg *conf.Config, logger *Logger) (cache.Store, func(), error) {
+	if cfg == nil {
+		return nil, nil, fmt.Errorf("config is nil")
+	}
+	store, err := cache.Open(ctx, cfg.Cache)
 	if err != nil {
 		return nil, nil, err
 	}
 	return store, func() {
 		if err := store.Close(); err != nil {
-			logger.Errorw("msg", "close storage", "error", err)
+			logger.Errorw("msg", "close cache", "error", err)
 		}
 	}, nil
-}
-
-// ProvideCoreDB shares the engine used by repositories and transaction runners.
-//
-// Parameters: store contains the initialized database engine.
-// Returns: the shared lorm engine.
-// Throws: none.
-func ProvideCoreDB(store *Storage) *lorm.Engine {
-	return store.CoreDB
-}
-
-// ProvideCache shares the configured cache with application services.
-//
-// Parameters: store contains the initialized cache.
-// Returns: the shared cache client.
-// Throws: none.
-func ProvideCache(store *Storage) cache.Store {
-	return store.Cache
 }
 
 // ProvideObjectStorage opens the configured object store for uploaded assets.

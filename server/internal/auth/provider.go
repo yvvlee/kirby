@@ -1,6 +1,8 @@
 package auth
 
 import (
+	"time"
+
 	"github.com/google/wire"
 
 	credential "github.com/yvvlee/kirby/server/internal/auth/api_key"
@@ -26,9 +28,9 @@ func ProvideJWTManager(cfg *conf.Config, secrets *model.ApplicationSecrets) (*au
 	return authjwt.New(authjwt.Config{
 		Issuer:    cfg.JWT.Issuer,
 		ActiveKID: secrets.JWTKeyID,
-		AccessTTL: cfg.JWT.AccessTTL.Duration,
-		Keys: map[string]conf.Secret{
-			secrets.JWTKeyID: conf.NewSecret(secrets.JWTSigningKey),
+		AccessTTL: time.Duration(cfg.JWT.AccessTTL) * time.Millisecond,
+		Keys: map[string]string{
+			secrets.JWTKeyID: secrets.JWTSigningKey,
 		},
 	})
 }
@@ -39,7 +41,7 @@ func ProvideJWTManager(cfg *conf.Config, secrets *model.ApplicationSecrets) (*au
 // Returns: the credential manager, or an invalid pepper error.
 // Throws: none.
 func ProvideCredentialManager(secrets *model.ApplicationSecrets) (*credential.Manager, error) {
-	return credential.New(conf.NewSecret(secrets.APIKeyPepper))
+	return credential.New(secrets.APIKeyPepper)
 }
 
 // ProvidePasswordHasher shares the reviewed password policy with authentication services.

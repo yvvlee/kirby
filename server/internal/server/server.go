@@ -31,8 +31,12 @@ func NewApplication(ctx context.Context, deps *Dependencies, webHandler http.Han
 		return nil, err
 	}
 	grpcServer := NewGRPCServer(deps)
+	name := "kirby"
+	if deps.Config.App != nil && deps.Config.App.Name != "" {
+		name = deps.Config.App.Name
+	}
 	return kratos.New(
-		kratos.Name("kirby"), kratos.Version(version.Version), kratos.Context(ctx),
+		kratos.Name(name), kratos.Version(version.Version), kratos.Context(ctx),
 		kratos.Server(httpServer, grpcServer),
 		kratos.Logger(deps.Logger),
 		kratos.AfterStart(func(context.Context) error { probe.SetReady(true); return nil }),

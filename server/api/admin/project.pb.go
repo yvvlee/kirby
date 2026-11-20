@@ -12,6 +12,7 @@ import (
 	_ "google.golang.org/genproto/googleapis/api/annotations"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	emptypb "google.golang.org/protobuf/types/known/emptypb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -348,7 +349,7 @@ var File_admin_project_proto protoreflect.FileDescriptor
 
 const file_admin_project_proto_rawDesc = "" +
 	"\n" +
-	"\x13admin/project.proto\x12\x0ekirby.admin.v1\x1a\x1cgoogle/api/annotations.proto\x1a\x13common/entity.proto\x1a\x17validate/validate.proto\"s\n" +
+	"\x13admin/project.proto\x12\x0ekirby.admin.v1\x1a\x1cgoogle/api/annotations.proto\x1a\x13common/entity.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a\x17validate/validate.proto\"s\n" +
 	"\x10ProjectIDRequest\x12\x17\n" +
 	"\x02id\x18\x01 \x01(\x03B\a\xfaB\x04\"\x02 \x00R\x02id\x123\n" +
 	"\x0eenvironment_id\x18\x02 \x01(\x03B\a\xfaB\x04\"\x02 \x00H\x00R\renvironmentId\x88\x01\x01B\x11\n" +
@@ -369,8 +370,9 @@ const file_admin_project_proto_rawDesc = "" +
 	"\fProjectReply\x122\n" +
 	"\aproject\x18\x01 \x01(\v2\x18.kirby.common.v1.ProjectR\aproject\"@\n" +
 	"\x10ListProjectReply\x12,\n" +
-	"\x04list\x18\x01 \x03(\v2\x18.kirby.common.v1.ProjectR\x04list2\xd4\x03\n" +
-	"\x0eProjectService\x12o\n" +
+	"\x04list\x18\x01 \x03(\v2\x18.kirby.common.v1.ProjectR\x04list2\xbd\x04\n" +
+	"\x0eProjectService\x12g\n" +
+	"\rDeleteProject\x12 .kirby.admin.v1.ProjectIDRequest\x1a\x16.google.protobuf.Empty\"\x1c\x82\xd3\xe4\x93\x02\x16*\x14/admin/projects/{id}\x12o\n" +
 	"\rCreateProject\x12$.kirby.admin.v1.CreateProjectRequest\x1a\x1c.kirby.admin.v1.ProjectReply\"\x1a\x82\xd3\xe4\x93\x02\x14:\x01*\"\x0f/admin/projects\x12t\n" +
 	"\rUpdateProject\x12$.kirby.admin.v1.UpdateProjectRequest\x1a\x1c.kirby.admin.v1.ProjectReply\"\x1f\x82\xd3\xe4\x93\x02\x19:\x01*\x1a\x14/admin/projects/{id}\x12l\n" +
 	"\vListProject\x12\".kirby.admin.v1.ListProjectRequest\x1a .kirby.admin.v1.ListProjectReply\"\x17\x82\xd3\xe4\x93\x02\x11\x12\x0f/admin/projects\x12m\n" +
@@ -397,20 +399,23 @@ var file_admin_project_proto_goTypes = []any{
 	(*ProjectReply)(nil),         // 4: kirby.admin.v1.ProjectReply
 	(*ListProjectReply)(nil),     // 5: kirby.admin.v1.ListProjectReply
 	(*common.Project)(nil),       // 6: kirby.common.v1.Project
+	(*emptypb.Empty)(nil),        // 7: google.protobuf.Empty
 }
 var file_admin_project_proto_depIdxs = []int32{
 	6, // 0: kirby.admin.v1.ProjectReply.project:type_name -> kirby.common.v1.Project
 	6, // 1: kirby.admin.v1.ListProjectReply.list:type_name -> kirby.common.v1.Project
-	1, // 2: kirby.admin.v1.ProjectService.CreateProject:input_type -> kirby.admin.v1.CreateProjectRequest
-	2, // 3: kirby.admin.v1.ProjectService.UpdateProject:input_type -> kirby.admin.v1.UpdateProjectRequest
-	3, // 4: kirby.admin.v1.ProjectService.ListProject:input_type -> kirby.admin.v1.ListProjectRequest
-	0, // 5: kirby.admin.v1.ProjectService.ProjectDetail:input_type -> kirby.admin.v1.ProjectIDRequest
-	4, // 6: kirby.admin.v1.ProjectService.CreateProject:output_type -> kirby.admin.v1.ProjectReply
-	4, // 7: kirby.admin.v1.ProjectService.UpdateProject:output_type -> kirby.admin.v1.ProjectReply
-	5, // 8: kirby.admin.v1.ProjectService.ListProject:output_type -> kirby.admin.v1.ListProjectReply
-	4, // 9: kirby.admin.v1.ProjectService.ProjectDetail:output_type -> kirby.admin.v1.ProjectReply
-	6, // [6:10] is the sub-list for method output_type
-	2, // [2:6] is the sub-list for method input_type
+	0, // 2: kirby.admin.v1.ProjectService.DeleteProject:input_type -> kirby.admin.v1.ProjectIDRequest
+	1, // 3: kirby.admin.v1.ProjectService.CreateProject:input_type -> kirby.admin.v1.CreateProjectRequest
+	2, // 4: kirby.admin.v1.ProjectService.UpdateProject:input_type -> kirby.admin.v1.UpdateProjectRequest
+	3, // 5: kirby.admin.v1.ProjectService.ListProject:input_type -> kirby.admin.v1.ListProjectRequest
+	0, // 6: kirby.admin.v1.ProjectService.ProjectDetail:input_type -> kirby.admin.v1.ProjectIDRequest
+	7, // 7: kirby.admin.v1.ProjectService.DeleteProject:output_type -> google.protobuf.Empty
+	4, // 8: kirby.admin.v1.ProjectService.CreateProject:output_type -> kirby.admin.v1.ProjectReply
+	4, // 9: kirby.admin.v1.ProjectService.UpdateProject:output_type -> kirby.admin.v1.ProjectReply
+	5, // 10: kirby.admin.v1.ProjectService.ListProject:output_type -> kirby.admin.v1.ListProjectReply
+	4, // 11: kirby.admin.v1.ProjectService.ProjectDetail:output_type -> kirby.admin.v1.ProjectReply
+	7, // [7:12] is the sub-list for method output_type
+	2, // [2:7] is the sub-list for method input_type
 	2, // [2:2] is the sub-list for extension type_name
 	2, // [2:2] is the sub-list for extension extendee
 	0, // [0:2] is the sub-list for field type_name

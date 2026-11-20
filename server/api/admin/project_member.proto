@@ -1,0 +1,67 @@
+syntax = "proto3";
+
+package kirby.admin.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "common/entity.proto";
+import "validate/validate.proto";
+
+option go_package = "github.com/yvvlee/kirby/server/api/admin;adminv1";
+
+service ProjectMemberService {
+  rpc SearchProjectUsers(SearchProjectUsersRequest) returns (SearchProjectUsersReply) {
+    option (google.api.http) = {get: "/admin/projects/{project_id}/users"};
+  }
+  rpc ListProjectMembers(ProjectScopeRequest) returns (ListProjectMembersReply) {
+    option (google.api.http) = {get: "/admin/projects/{project_id}/members"};
+  }
+  rpc AddProjectMember(AddProjectMemberRequest) returns (ProjectMemberReply) {
+    option (google.api.http) = {post: "/admin/projects/{project_id}/members", body: "*"};
+  }
+  rpc UpdateProjectMemberRole(UpdateProjectMemberRoleRequest) returns (ProjectMemberReply) {
+    option (google.api.http) = {put: "/admin/projects/{project_id}/members/{user_id}", body: "*"};
+  }
+  rpc RemoveProjectMember(ProjectMemberTargetRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {delete: "/admin/projects/{project_id}/members/{user_id}"};
+  }
+}
+
+message ProjectScopeRequest {
+  int64 project_id = 1 [(validate.rules).int64 = {gt: 0}];
+}
+
+message ProjectMemberTargetRequest {
+  int64 project_id = 1 [(validate.rules).int64 = {gt: 0}];
+  int64 user_id = 2 [(validate.rules).int64 = {gt: 0}];
+}
+
+message AddProjectMemberRequest {
+  int64 project_id = 1 [(validate.rules).int64 = {gt: 0}];
+  int64 user_id = 2 [(validate.rules).int64 = {gt: 0}];
+  string role = 3 [(validate.rules).string = {min_len: 1, max_len: 16}];
+}
+
+message UpdateProjectMemberRoleRequest {
+  int64 project_id = 1 [(validate.rules).int64 = {gt: 0}];
+  int64 user_id = 2 [(validate.rules).int64 = {gt: 0}];
+  string role = 3 [(validate.rules).string = {min_len: 1, max_len: 16}];
+}
+
+message ProjectMemberReply {
+  kirby.common.v1.User user = 1;
+  string role = 2;
+}
+
+message ListProjectMembersReply {
+  repeated ProjectMemberReply list = 1;
+}
+
+message SearchProjectUsersRequest {
+  int64 project_id = 1 [(validate.rules).int64 = {gt: 0}];
+  string keyword = 2 [(validate.rules).string = {max_len: 128}];
+}
+
+message SearchProjectUsersReply {
+  repeated kirby.common.v1.User list = 1;
+}

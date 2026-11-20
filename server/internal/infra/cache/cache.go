@@ -48,7 +48,7 @@ func Open(ctx context.Context, cfg conf.CacheConfig) (Store, error) {
 		client := redis.NewClient(&redis.Options{
 			Addr:     cfg.Redis.Address,
 			Username: cfg.Redis.Username,
-			Password: cfg.Redis.Password.Value(),
+			Password: cfg.Redis.Password,
 			DB:       cfg.Redis.DB,
 		})
 		if err := client.Ping(ctx).Err(); err != nil {
@@ -72,7 +72,6 @@ type memoryEntry struct {
 type memoryStore struct {
 	mu      sync.RWMutex
 	entries map[string]memoryEntry
-	now     func() time.Time
 }
 
 // NewMemory creates an in-process cache for single-instance deployments.
@@ -81,13 +80,12 @@ type memoryStore struct {
 // Returns: an empty concurrency-safe cache.
 // Throws: none.
 func NewMemory() Store {
-	return newMemory(time.Now)
+	return newMemory()
 }
 
-func newMemory(now func() time.Time) *memoryStore {
+func newMemory() *memoryStore {
 	return &memoryStore{
 		entries: make(map[string]memoryEntry),
-		now:     now,
 	}
 }
 
@@ -106,7 +104,7 @@ func (s *memoryStore) Get(ctx context.Context, key string) ([]byte, error) {
 		s.mu.Unlock()
 		return nil, ErrNotFound
 	}
-	if !entry.expiresAt.IsZero() && !s.now().Before(entry.expiresAt) {
+	if !entry.expiresAt.IsZero() && !time.Now().Before(entry.expiresAt) {
 		delete(s.entries, key)
 		s.mu.Unlock()
 		return nil, ErrNotFound
@@ -129,7 +127,7 @@ func (s *memoryStore) Set(ctx context.Context, key string, value []byte, ttl tim
 	}
 	entry := memoryEntry{value: append([]byte(nil), value...)}
 	if ttl > 0 {
-		entry.expiresAt = s.now().Add(ttl)
+		entry.expiresAt = time.Now().Add(ttl)
 	}
 	s.mu.Lock()
 	s.entries[key] = entry
@@ -150,7 +148,7 @@ func (s *memoryStore) Increment(ctx context.Context, key string, ttl time.Durati
 		return 0, ErrInvalidTTL
 	}
 
-	now := s.now()
+	now := time.Now()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	entry, exists := s.entries[key]

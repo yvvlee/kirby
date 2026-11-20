@@ -4,6 +4,8 @@ import (
 	"context"
 	"unicode/utf8"
 
+	commonv1 "github.com/yvvlee/kirby/server/api/common"
+	"github.com/yvvlee/kirby/server/internal/converter"
 	"github.com/yvvlee/kirby/server/internal/entity"
 	"github.com/yvvlee/kirby/server/internal/model"
 	"github.com/yvvlee/kirby/server/internal/permission"
@@ -32,14 +34,14 @@ func NewExportLogic(
 
 // Export returns validated snapshot content after checking source permissions.
 //
-// Parameters: ctx carries cancellation and transaction state; actor identifies the authenticated caller; sourceEnvironmentID selects the source environment; snapshotID selects the snapshot.
-// Returns: the validated source snapshot, or a source-permission, missing-resource, or content-validation error.
+// Parameters: ctx carries cancellation and transaction state; param carries the caller identity, the source environment, and the snapshot.
+// Returns: the validated source snapshot, or a source-permission, missing-resource, content-validation, or conversion error.
 // Throws: none.
-func (l *ExportLogic) Export(ctx context.Context, actor permission.Actor, sourceEnvironmentID, snapshotID int64) (*model.Snapshot, error) {
-	if err := RequireSourceRead(ctx, l.permissions, actor.UserID, sourceEnvironmentID); err != nil {
+func (l *ExportLogic) Export(ctx context.Context, param *entity.ExportSnapshotParam) (*commonv1.Snapshot, error) {
+	if err := RequireSourceRead(ctx, l.permissions, param.Actor.UserID, param.SourceEnvironmentID); err != nil {
 		return nil, err
 	}
-	snapshot, err := l.snapshots.FindByID(ctx, sourceEnvironmentID, snapshotID)
+	snapshot, err := l.snapshots.FindByID(ctx, param.SourceEnvironmentID, param.SnapshotID)
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +55,7 @@ func (l *ExportLogic) Export(ctx context.Context, actor permission.Actor, source
 	}
 	result := *snapshot
 	result.Content = canonical
-	return &result, nil
+	return converter.SnapshotToProto(&result)
 }
 
 // RequireSourceRead requires every permission needed to expose snapshot content.

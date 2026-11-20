@@ -126,7 +126,7 @@ func roleMatrixSource() *fakeSource {
 	viewer := []string{ProjectRead, ProjectAPIKeyRead, ConfigRead, StructureRead, EnumRead, SnapshotRead, SnapshotExport}
 	editor := append(append([]string(nil), viewer...), ProjectWrite, ConfigWrite, StructureWrite, EnumWrite, SnapshotWrite, SnapshotImport, AssetWrite)
 	publisher := append(append([]string(nil), editor...), SnapshotPublish)
-	admin := append(append([]string(nil), publisher...), ProjectAPIKeyManage, EnvironmentMemberManage)
+	admin := append(append([]string(nil), publisher...), ProjectAPIKeyManage)
 	return &fakeSource{
 		identities: map[[2]int64]repository.PermissionIdentity{
 			{1, 10}: {
@@ -191,8 +191,8 @@ func TestBuiltinRolePermissionMatrix(t *testing.T) {
 	}{
 		{name: "viewer", userID: 1, allowed: []string{ProjectRead, SnapshotExport}, denied: ConfigWrite},
 		{name: "editor", userID: 2, allowed: []string{ConfigWrite, SnapshotImport}, denied: SnapshotPublish},
-		{name: "publisher", userID: 3, allowed: []string{SnapshotPublish, ConfigWrite}, denied: EnvironmentMemberManage},
-		{name: "admin", userID: 4, allowed: []string{EnvironmentMemberManage, ProjectAPIKeyManage}, denied: SystemUserManage},
+		{name: "publisher", userID: 3, allowed: []string{SnapshotPublish, ConfigWrite}, denied: ProjectAPIKeyManage},
+		{name: "admin", userID: 4, allowed: []string{ProjectAPIKeyManage}, denied: SystemUserManage},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -206,9 +206,9 @@ func TestBuiltinRolePermissionMatrix(t *testing.T) {
 	}
 }
 
-func TestSystemAdminBypassesEnvironmentRoleButEnvironmentMustExist(t *testing.T) {
+func TestSystemAdminDoesNotBypassProjectMembership(t *testing.T) {
 	resolver := newResolver(roleMatrixSource(), cache.NewMemory())
-	if err := resolver.Require(context.Background(), 9, 10, SystemUserManage, SnapshotPublish); err != nil {
+	if err := resolver.Require(context.Background(), 9, 10, SnapshotPublish); !errors.Is(err, ErrForbidden) {
 		t.Fatal(err)
 	}
 	source := roleMatrixSource()
@@ -412,5 +412,38 @@ func TestRedisFailuresCannotPreserveStaleAuthorization(t *testing.T) {
 	}
 	if store.getCalls == 0 || store.setCalls == 0 || store.deleteCalls == 0 {
 		t.Fatalf("Redis fault paths were not exercised: get=%d set=%d delete=%d", store.getCalls, store.setCalls, store.deleteCalls)
+	}
+}
+
+func TestOwnerHasAllEnvironmentPermissionsWithoutGrants(t *testing.T) {
+	source := roleMatrixSource()
+	identity := source.identities[[2]int64{1, 10}]
+	identity.ProjectRole = "OWNER"
+	source.identities[[2]int64{1, 10}] = identity
+	source.keys[[2]int64{1, 10}] = nil
+	resolver := newResolver(source, cache.NewMemory())
+	if err := resolver.Require(context.Background(), 1, 10, ConfigWrite, SnapshotPublish, ProjectAPIKeyManage); err != nil {
+		t.Fatal(err)
+	}
+	if err := resolver.Require(context.Background(), 1, 10, SystemUserManage); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("owner unexpectedly obtained system permission: %v", err)
+	}
+}
+
+func TestRoleDowngradeDoesNotReuseCachedPermissions(t *testing.T) {
+	source := roleMatrixSource()
+	identity := source.identities[[2]int64{1, 10}]
+	identity.ProjectRole = "MAINTAINER"
+	source.identities[[2]int64{1, 10}] = identity
+	source.keys[[2]int64{1, 10}] = []string{ConfigWrite}
+	resolver := newResolver(source, cache.NewMemory())
+	if err := resolver.Require(context.Background(), 1, 10, ConfigWrite); err != nil {
+		t.Fatal(err)
+	}
+	identity.ProjectRole = "GUEST"
+	source.identities[[2]int64{1, 10}] = identity
+	source.keys[[2]int64{1, 10}] = []string{ConfigRead}
+	if err := resolver.Require(context.Background(), 1, 10, ConfigWrite); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("downgrade retained write permission: %v", err)
 	}
 }

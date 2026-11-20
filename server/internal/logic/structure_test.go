@@ -60,22 +60,26 @@ func TestUpdateAllowsSchemaFirstValueSecondEvolution(t *testing.T) {
 		Name: "Age",
 		Type: baseType(commonv1.Field_INT),
 	})
-	_, err = logicLayer.Update(context.Background(), permission.Actor{UserID: 9}, 1, StructureUpdateInput{
-		StructureID: 8,
-		Key:         "User",
-		Name:        "User",
-		Description: "",
-		Fields:      newFields,
-		Version:     2,
+	_, err = logicLayer.Update(context.Background(), &entity.UpdateStructureParam{
+		Actor:         permission.Actor{UserID: 9},
+		EnvironmentID: 1,
+		StructureID:   8,
+		Key:           "User",
+		Name:          "User",
+		Description:   "",
+		Fields:        newFields,
+		Version:       2,
 	})
 	require.NoError(t, err, "adding a required field must not force an impossible simultaneous value update")
 	assert.Equal(t, []string{"structure.find", "config.lock", "structure.lock", "enum.lock", "structure.update", "audit", "structure.find"}, order)
 	order = order[:0]
-	_, err = logicLayer.Update(context.Background(), permission.Actor{UserID: 9}, 1, StructureUpdateInput{
-		StructureID: 8,
-		Key:         "UserRenamed",
-		Name:        "User",
-		Version:     3,
+	_, err = logicLayer.Update(context.Background(), &entity.UpdateStructureParam{
+		Actor:         permission.Actor{UserID: 9},
+		EnvironmentID: 1,
+		StructureID:   8,
+		Key:           "UserRenamed",
+		Name:          "User",
+		Version:       3,
 	})
 	require.ErrorIs(t, err, entity.ErrConflict)
 	assert.Equal(t, []string{"structure.find", "config.lock", "structure.lock", "enum.lock"}, order)
@@ -95,9 +99,9 @@ type structureAuditRepositoryFake struct {
 	order *[]string
 }
 
-func (f *structureAuditRepositoryFake) RecordForEnvironment(context.Context, int64, *model.AuditLog) error {
+func (f *structureAuditRepositoryFake) RecordForEnvironment(context.Context, int64, *model.AuditLog) (rowsAffected int64, err error) {
 	*f.order = append(*f.order, "audit")
-	return nil
+	return
 }
 
 type structureConfigRepositoryFake struct {
@@ -122,8 +126,8 @@ type structureRepositoryFake struct {
 	item  *model.Structure
 }
 
-func (f *structureRepositoryFake) Create(context.Context, int64, int64, *model.Structure) error {
-	return nil
+func (f *structureRepositoryFake) Create(context.Context, int64, int64, *model.Structure) (rowsAffected int64, err error) {
+	return
 }
 func (f *structureRepositoryFake) FindByID(context.Context, int64, int64) (*model.Structure, error) {
 	*f.order = append(*f.order, "structure.find")
@@ -137,14 +141,14 @@ func (f *structureRepositoryFake) ListForConfig(context.Context, int64, int64) (
 	*f.order = append(*f.order, "structure.lock")
 	return []model.Structure{*f.item}, nil
 }
-func (f *structureRepositoryFake) Update(_ context.Context, _, _ int64, update repository.StructureUpdate) error {
+func (f *structureRepositoryFake) Update(_ context.Context, _, _ int64, update repository.StructureUpdate) (rowsAffected int64, err error) {
 	*f.order = append(*f.order, "structure.update")
 	f.item.Key, f.item.Name, f.item.Description, f.item.FieldsJSON = update.Key, update.Name, update.Description, update.FieldsJSON
 	f.item.Version++
-	return nil
+	return
 }
-func (f *structureRepositoryFake) Delete(context.Context, int64, int64, int64) error {
-	return nil
+func (f *structureRepositoryFake) Delete(context.Context, int64, int64) (rowsAffected int64, err error) {
+	return
 }
 
 type structureEnumRepositoryFake struct {

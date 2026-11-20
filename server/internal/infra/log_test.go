@@ -44,7 +44,7 @@ func TestLoggerPassesMessagesAndFieldsThrough(t *testing.T) {
 	require.NoError(t, err)
 	logger.Infow("msg", "password=message-value", "password", "field-value",
 		"details", map[string]any{"access_token": "nested-value"},
-		"error", errors.New("dsn=database-value"), "config", conf.NewSecret("configured-value"))
+		"error", errors.New("dsn=database-value"), "config", "configured-value")
 	var record map[string]any
 	require.NoError(t, json.Unmarshal(output.Bytes(), &record))
 	assert.Equal(t, "password=message-value", record["_MSG_"])

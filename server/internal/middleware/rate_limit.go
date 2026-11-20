@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net"
-	"strings"
 	"time"
 
 	kratosmiddleware "github.com/go-kratos/kratos/v2/middleware"
@@ -73,10 +72,10 @@ func AuthorizationIdentity(ctx context.Context) string {
 	return ClientIdentity(ctx)
 }
 
-// RuntimeIdentity groups runtime requests by public API-key identifier.
+// RuntimeIdentity groups runtime requests by a digest of the presented credential.
 //
 // Parameters: ctx contains the transport request.
-// Returns: the public key identifier, falling back to the peer identity when absent.
+// Returns: the credential digest, falling back to the peer identity when absent.
 // Throws: none.
 func RuntimeIdentity(ctx context.Context) string {
 	if serverTransport, ok := transport.FromServerContext(ctx); ok {
@@ -84,8 +83,8 @@ func RuntimeIdentity(ctx context.Context) string {
 		if value == "" {
 			value = serverTransport.RequestHeader().Get("x-kirby-api-key")
 		}
-		if publicID, _, ok := strings.Cut(value, "."); ok && publicID != "" {
-			return publicID
+		if value != "" {
+			return digestIdentity(value)
 		}
 	}
 	return ClientIdentity(ctx)

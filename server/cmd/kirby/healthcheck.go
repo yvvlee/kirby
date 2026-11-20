@@ -4,12 +4,15 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	grpc_health_v1 "google.golang.org/grpc/health/grpc_health_v1"
+
+	"github.com/yvvlee/kirby/server/internal/i18n"
 )
 
 const defaultHealthcheckTimeout = 3 * time.Second
@@ -21,18 +24,21 @@ type healthcheckOptions struct {
 }
 
 func newHealthcheckCommand() *cobra.Command {
+	locale := i18n.FromLANG(os.Getenv("LANG"))
 	options := healthcheckOptions{}
 	command := &cobra.Command{
 		Use:          "healthcheck",
-		Short:        "Check the local HTTP and gRPC listeners",
+		Short:        cliText(locale, "Check the local HTTP and gRPC listeners"),
+		Long:         cliText(locale, "Check readiness through the HTTP endpoint and gRPC health service."),
+		Example:      "  kirby healthcheck --http-endpoint http://127.0.0.1:8080/readyz --grpc-address 127.0.0.1:9090",
 		SilenceUsage: true,
 		RunE: func(command *cobra.Command, _ []string) error {
 			return runHealthcheck(command.Context(), options)
 		},
 	}
-	command.Flags().StringVar(&options.httpEndpoint, "http-endpoint", "http://127.0.0.1:8080/readyz", "HTTP readiness endpoint")
-	command.Flags().StringVar(&options.grpcAddress, "grpc-address", "127.0.0.1:9090", "gRPC health service address")
-	command.Flags().DurationVar(&options.timeout, "timeout", defaultHealthcheckTimeout, "total probe timeout")
+	command.Flags().StringVar(&options.httpEndpoint, "http-endpoint", "http://127.0.0.1:8080/readyz", cliText(locale, "HTTP readiness endpoint"))
+	command.Flags().StringVar(&options.grpcAddress, "grpc-address", "127.0.0.1:9090", cliText(locale, "gRPC health service address"))
+	command.Flags().DurationVar(&options.timeout, "timeout", defaultHealthcheckTimeout, cliText(locale, "total probe timeout"))
 	return command
 }
 

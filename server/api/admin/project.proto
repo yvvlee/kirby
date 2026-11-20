@@ -4,11 +4,15 @@ package kirby.admin.v1;
 
 import "google/api/annotations.proto";
 import "common/entity.proto";
+import "google/protobuf/empty.proto";
 import "validate/validate.proto";
 
 option go_package = "github.com/yvvlee/kirby/server/api/admin;adminv1";
 
 service ProjectService {
+  rpc DeleteProject(ProjectIDRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {delete: "/admin/projects/{id}"};
+  }
   rpc CreateProject(CreateProjectRequest) returns (ProjectReply) {
     option (google.api.http) = {
       post: "/admin/projects"

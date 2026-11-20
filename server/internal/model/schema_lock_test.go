@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -37,6 +38,7 @@ func assertExistingSchemaInitialization(t *testing.T, postgres bool) {
 	}
 	query := "SELECT table_name FROM information_schema.tables WHERE table_schema = " + schemaExpr + " AND table_type = 'BASE TABLE' AND table_name IN (" + schemaPlaceholders(postgres) + ")"
 	mock.ExpectQuery(regexp.QuoteMeta(query)).WithArgs(schemaQueryArguments()...).WillReturnRows(rows)
+	mock.ExpectQuery("SELECT table_name FROM information_schema.columns").WillReturnRows(sqlmock.NewRows([]string{"table_name"}).AddRow("configs").AddRow("project_api_keys"))
 	mock.ExpectExec("ROLLBACK").WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec(regexp.QuoteMeta(unlock)).WillReturnResult(sqlmock.NewResult(0, 0))
 
@@ -69,4 +71,49 @@ func schemaDialectName(postgres bool) string {
 		return "postgres"
 	}
 	return "mysql"
+}
+
+func TestFreshSchemaPersistsInstallationSecretsWithoutLegacySeeds(t *testing.T) {
+	for _, postgres := range []bool{false, true} {
+		t.Run(schemaDialectName(postgres), func(t *testing.T) {
+			assertFreshSchemaSecrets(t, postgres)
+		})
+	}
+}
+
+func assertFreshSchemaSecrets(t *testing.T, postgres bool) {
+	t.Helper()
+	database, mock := newSchemaMockDatabase(t)
+	expectSchemaLock(mock, postgres)
+	mock.ExpectQuery("SELECT COUNT").WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	file := "sql/schema_mysql.sql"
+	unlock := mysqlSchemaUnlock
+	if postgres {
+		file = "sql/schema_pgsql.sql"
+		unlock = pgSchemaUnlock
+	}
+	data, err := schemaSQL.ReadFile(file)
+	require.NoError(t, err)
+	expectFreshStatements(mock, string(data))
+	mock.ExpectExec("INSERT INTO application_secrets").WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(1, 1))
+	rows := sqlmock.NewRows([]string{"table_name"})
+	for _, table := range RequiredTables() {
+		rows.AddRow(table)
+	}
+	mock.ExpectQuery("SELECT table_name FROM information_schema.tables").WillReturnRows(rows)
+	mock.ExpectQuery("SELECT table_name FROM information_schema.columns").WillReturnRows(sqlmock.NewRows([]string{"table_name"}).AddRow("configs").AddRow("project_api_keys"))
+	mock.ExpectExec("ROLLBACK").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec(regexp.QuoteMeta(unlock)).WillReturnResult(sqlmock.NewResult(0, 0))
+	require.NoError(t, InitializeDatabase(context.Background(), database, postgres))
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func expectFreshStatements(mock sqlmock.Sqlmock, schema string) {
+	for _, part := range strings.Split(schema, ";") {
+		statement := schemaStatement(part)
+		if statement == "" {
+			continue
+		}
+		mock.ExpectExec(regexp.QuoteMeta(statement)).WillReturnResult(sqlmock.NewResult(0, 0))
+	}
 }

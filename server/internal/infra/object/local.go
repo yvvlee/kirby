@@ -19,8 +19,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/yvvlee/kirby/server/internal/i18n"
 	"github.com/yvvlee/kirby/server/internal/util/safefile"
-	"github.com/yvvlee/kirby/server/internal/util/safeint"
 )
 
 const localMetadataSuffix = ".kirby-metadata"
@@ -44,7 +44,6 @@ type localMetadata struct {
 type LocalStorage struct {
 	root       string
 	signingKey []byte
-	now        func() time.Time
 }
 
 // NewLocal creates a local adapter and a process-local upload signing key.
@@ -57,10 +56,10 @@ func NewLocal(directory string) (*LocalStorage, error) {
 	if _, err := rand.Read(key); err != nil {
 		return nil, fmt.Errorf("generate local upload signing key: %w", err)
 	}
-	return newLocal(directory, key, time.Now)
+	return newLocal(directory, key)
 }
 
-func newLocal(directory string, signingKey []byte, now func() time.Time) (*LocalStorage, error) {
+func newLocal(directory string, signingKey []byte) (*LocalStorage, error) {
 	if strings.TrimSpace(directory) == "" {
 		return nil, fmt.Errorf("local object storage directory is required")
 	}
@@ -81,7 +80,6 @@ func newLocal(directory string, signingKey []byte, now func() time.Time) (*Local
 	return &LocalStorage{
 		root:       root,
 		signingKey: append([]byte(nil), signingKey...),
-		now:        now,
 	}, nil
 }
 
@@ -99,7 +97,7 @@ func (s *LocalStorage) PresignUpload(ctx context.Context, input PresignUploadInp
 	if err != nil {
 		return nil, err
 	}
-	expiresAt := s.now().UTC().Add(input.ExpiresIn)
+	expiresAt := time.Now().UTC().Add(input.ExpiresIn)
 	claims := localUploadClaims{
 		Key:         input.Key,
 		ContentType: contentType,
@@ -182,10 +180,7 @@ func (s *LocalStorage) ReadMetadata(ctx context.Context, key string) (*Metadata,
 	if info.Size() < 0 {
 		return nil, fmt.Errorf("%w: local object size is invalid", ErrObjectIntegrity)
 	}
-	size, err := safeint.Uint64FromInt64(info.Size())
-	if err != nil {
-		return nil, fmt.Errorf("%w: local object size is invalid", ErrObjectIntegrity)
-	}
+	size := uint64(info.Size())
 	return &Metadata{
 		Key:                 key,
 		URL:                 LocalObjectPathPrefix + key,
@@ -243,34 +238,33 @@ func (s *LocalStorage) ServeHTTP(writer http.ResponseWriter, request *http.Reque
 	case strings.HasPrefix(request.URL.Path, LocalObjectPathPrefix):
 		s.handleObject(writer, request)
 	default:
-		http.NotFound(writer, request)
+		writeLocalizedObjectError(writer, request, http.StatusNotFound, "resource not found")
 	}
 }
 
 func (s *LocalStorage) handleUpload(writer http.ResponseWriter, request *http.Request) {
 	if request.Method != http.MethodPut {
 		writer.Header().Set("Allow", http.MethodPut)
-		http.Error(writer, "method not allowed", http.StatusMethodNotAllowed)
+		writeLocalizedObjectError(writer, request, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 	if request.Header.Get("Authorization") != "" || request.Header.Get("X-Kirby-API-Key") != "" || request.Header.Get("Cookie") != "" {
-		http.Error(writer, "management credentials are not accepted by object storage", http.StatusBadRequest)
+		writeLocalizedObjectError(writer, request, http.StatusBadRequest, "management credentials are not accepted by object storage")
 		return
 	}
 	claims, err := s.verifyToken(request.URL.Query().Get("token"))
 	if err != nil {
-		http.Error(writer, "invalid or expired upload ticket", http.StatusUnauthorized)
+		writeLocalizedObjectError(writer, request, http.StatusUnauthorized, "invalid or expired upload ticket")
 		return
 	}
 	requestType, _, err := mime.ParseMediaType(request.Header.Get("Content-Type"))
 	if err != nil || strings.ToLower(requestType) != claims.ContentType {
-		http.Error(writer, "content type does not match upload ticket", http.StatusBadRequest)
+		writeLocalizedObjectError(writer, request, http.StatusBadRequest, "content type does not match upload ticket")
 		return
 	}
 	if request.ContentLength >= 0 {
-		contentLength, conversionErr := safeint.Uint64FromInt64(request.ContentLength)
-		if conversionErr != nil || contentLength != claims.Size {
-			http.Error(writer, "content length does not match upload ticket", http.StatusBadRequest)
+		if uint64(request.ContentLength) != claims.Size {
+			writeLocalizedObjectError(writer, request, http.StatusBadRequest, "content length does not match upload ticket")
 			return
 		}
 	}
@@ -279,7 +273,7 @@ func (s *LocalStorage) handleUpload(writer http.ResponseWriter, request *http.Re
 		if errors.Is(err, ErrInvalidInput) || errors.Is(err, ErrObjectIntegrity) {
 			status = http.StatusBadRequest
 		}
-		http.Error(writer, http.StatusText(status), status)
+		writeLocalizedObjectError(writer, request, status, http.StatusText(status))
 		return
 	}
 	writer.WriteHeader(http.StatusNoContent)
@@ -288,35 +282,76 @@ func (s *LocalStorage) handleUpload(writer http.ResponseWriter, request *http.Re
 func (s *LocalStorage) handleObject(writer http.ResponseWriter, request *http.Request) {
 	if request.Method != http.MethodGet && request.Method != http.MethodHead {
 		writer.Header().Set("Allow", http.MethodGet+", "+http.MethodHead)
-		http.Error(writer, "method not allowed", http.StatusMethodNotAllowed)
+		writeLocalizedObjectError(writer, request, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 	key := strings.TrimPrefix(request.URL.Path, LocalObjectPathPrefix)
 	metadata, err := s.CompleteUpload(request.Context(), key)
 	if err != nil {
 		if errors.Is(err, ErrObjectNotFound) || errors.Is(err, ErrInvalidInput) {
-			http.NotFound(writer, request)
+			writeLocalizedObjectError(writer, request, http.StatusNotFound, "resource not found")
 			return
 		}
-		http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		writeLocalizedObjectError(writer, request, http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError))
 		return
 	}
 	directory, err := os.OpenRoot(s.root)
 	if err != nil {
-		http.NotFound(writer, request)
+		writeLocalizedObjectError(writer, request, http.StatusNotFound, "resource not found")
 		return
 	}
 	defer directory.Close()
 	file, err := directory.Open(key)
 	if err != nil {
-		http.NotFound(writer, request)
+		writeLocalizedObjectError(writer, request, http.StatusNotFound, "resource not found")
 		return
 	}
 	defer file.Close()
 	writer.Header().Set("Content-Type", metadata.ContentType)
 	writer.Header().Set("Content-Length", strconv.FormatUint(metadata.Size, 10))
 	writer.Header().Set("X-Content-Type-Options", "nosniff")
-	http.ServeContent(writer, request, filepath.Base(key), metadata.LastModified, file)
+	localizedWriter := localizedContentWriter{
+		ResponseWriter: writer,
+		request:        request,
+	}
+	http.ServeContent(&localizedWriter, request, filepath.Base(key), metadata.LastModified, file)
+}
+
+func writeLocalizedObjectError(writer http.ResponseWriter, request *http.Request, status int, message string) {
+	locale := i18n.Negotiate(request.Header.Get("Accept-Language"))
+	writer.Header().Del("Content-Length")
+	writer.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	http.Error(writer, i18n.Translate(locale, message), status)
+}
+
+type localizedContentWriter struct {
+	http.ResponseWriter
+	request *http.Request
+	failed  bool
+}
+
+// WriteHeader localizes the error body emitted by http.ServeContent.
+// Parameters: status is the response status from ServeContent.
+// Returns: none.
+// Throws: none; the response is written to the underlying writer.
+func (w *localizedContentWriter) WriteHeader(status int) {
+	if status >= http.StatusBadRequest {
+		w.failed = true
+		writeLocalizedObjectError(w.ResponseWriter, w.request, status, http.StatusText(status))
+		return
+	}
+	w.ResponseWriter.WriteHeader(status)
+}
+
+// Write forwards successful object bytes and discards ServeContent's English error text.
+// Parameters: value contains response bytes.
+// Returns: the number of bytes handled and any underlying write error.
+// Throws: none; write failures are returned.
+func (w *localizedContentWriter) Write(value []byte) (int, error) {
+	if w.failed {
+		return len(value), nil
+	}
+	return w.ResponseWriter.Write(value)
 }
 
 func (s *LocalStorage) writeUpload(ctx context.Context, claims localUploadClaims, source io.Reader) error {
@@ -342,8 +377,8 @@ func (s *LocalStorage) writeUpload(ctx context.Context, claims localUploadClaims
 		_ = temporary.Close()
 		return fmt.Errorf("secure local upload: %w", ErrStorageUnavailable)
 	}
-	limit, err := safeint.Int64FromUint64(claims.Size)
-	if err != nil || limit == math.MaxInt64 {
+	limit := int64(claims.Size)
+	if limit < 0 || limit == math.MaxInt64 {
 		_ = temporary.Close()
 		return fmt.Errorf("%w: upload size is invalid", ErrInvalidInput)
 	}
@@ -352,8 +387,7 @@ func (s *LocalStorage) writeUpload(ctx context.Context, claims localUploadClaims
 	if copyErr != nil || closeErr != nil {
 		return fmt.Errorf("write local upload: %w", ErrStorageUnavailable)
 	}
-	writtenSize, conversionErr := safeint.Uint64FromInt64(written)
-	if conversionErr != nil || writtenSize != claims.Size {
+	if uint64(written) != claims.Size {
 		return fmt.Errorf("%w: uploaded size does not match declaration", ErrObjectIntegrity)
 	}
 	if err := os.Link(temporaryPath, objectPath); err != nil {
@@ -363,7 +397,7 @@ func (s *LocalStorage) writeUpload(ctx context.Context, claims localUploadClaims
 		ContentType:         claims.ContentType,
 		DeclaredContentType: claims.ContentType,
 		DeclaredSize:        claims.Size,
-		CreatedAt:           s.now().UTC(),
+		CreatedAt:           time.Now().UTC(),
 	}
 	encoded, err := json.Marshal(stored)
 	if err != nil {
@@ -486,7 +520,7 @@ func (s *LocalStorage) verifyToken(token string) (localUploadClaims, error) {
 	}); err != nil {
 		return localUploadClaims{}, fmt.Errorf("invalid upload ticket")
 	}
-	if !s.now().Before(time.Unix(claims.ExpiresAt, 0)) {
+	if !time.Now().Before(time.Unix(claims.ExpiresAt, 0)) {
 		return localUploadClaims{}, fmt.Errorf("expired upload ticket")
 	}
 	return claims, nil

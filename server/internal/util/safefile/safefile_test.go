@@ -16,11 +16,11 @@ func TestOpenAndReadFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := file.Close(); err != nil {
+	contents := make([]byte, len("value"))
+	if _, err := file.Read(contents); err != nil {
 		t.Fatal(err)
 	}
-	contents, err := ReadFile(path)
-	if err != nil {
+	if err := file.Close(); err != nil {
 		t.Fatal(err)
 	}
 	if string(contents) != "value" {

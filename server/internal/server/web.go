@@ -53,7 +53,7 @@ func NewWebHandler(root string) (http.Handler, error) {
 func serveWebRequest(writer http.ResponseWriter, request *http.Request, root string) {
 	if request.Method != http.MethodGet && request.Method != http.MethodHead {
 		writer.Header().Set("Allow", "GET, HEAD")
-		http.Error(writer, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		writeLocalizedHTTPError(writer, request, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 	cleanPath := path.Clean("/" + request.URL.Path)
@@ -62,18 +62,18 @@ func serveWebRequest(writer http.ResponseWriter, request *http.Request, root str
 		normalizedRequestPath = strings.TrimSuffix(normalizedRequestPath, "/")
 	}
 	if cleanPath != normalizedRequestPath || strings.ContainsRune(request.URL.Path, '\x00') {
-		http.Error(writer, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		writeLocalizedHTTPError(writer, request, http.StatusBadRequest, "invalid request")
 		return
 	}
 	if isAPIRequest(request) || reservedServerPath(cleanPath) {
-		http.NotFound(writer, request)
+		writeLocalizedHTTPError(writer, request, http.StatusNotFound, "resource not found")
 		return
 	}
 
 	// Root confines stat and file serving even if a symlink changes during a request.
 	directory, err := os.OpenRoot(root)
 	if err != nil {
-		http.Error(writer, "unable to read web content", http.StatusInternalServerError)
+		writeLocalizedHTTPError(writer, request, http.StatusInternalServerError, "unable to read web content")
 		return
 	}
 	defer directory.Close()
@@ -89,11 +89,15 @@ func serveWebRequest(writer http.ResponseWriter, request *http.Request, root str
 		} else {
 			writer.Header().Set("Cache-Control", "no-cache")
 		}
-		http.FileServerFS(directory.FS()).ServeHTTP(writer, request)
+		localizedWriter := localizedHTTPResponseWriter{
+			ResponseWriter: writer,
+			request:        request,
+		}
+		http.FileServerFS(directory.FS()).ServeHTTP(&localizedWriter, request)
 	case err != nil && !errors.Is(err, os.ErrNotExist):
-		http.Error(writer, "unable to read web content", http.StatusInternalServerError)
+		writeLocalizedHTTPError(writer, request, http.StatusInternalServerError, "unable to read web content")
 	case strings.HasPrefix(cleanPath, "/assets/") || path.Ext(cleanPath) != "":
-		http.NotFound(writer, request)
+		writeLocalizedHTTPError(writer, request, http.StatusNotFound, "resource not found")
 	default:
 		writer.Header().Set("Cache-Control", "no-cache")
 		serveWebIndex(writer, request, directory)
@@ -103,16 +107,20 @@ func serveWebRequest(writer http.ResponseWriter, request *http.Request, root str
 func serveWebIndex(writer http.ResponseWriter, request *http.Request, directory *os.Root) {
 	index, err := directory.Open("index.html")
 	if err != nil {
-		http.Error(writer, "unable to read web content", http.StatusInternalServerError)
+		writeLocalizedHTTPError(writer, request, http.StatusInternalServerError, "unable to read web content")
 		return
 	}
 	defer index.Close()
 	info, err := index.Stat()
 	if err != nil {
-		http.Error(writer, "unable to read web content", http.StatusInternalServerError)
+		writeLocalizedHTTPError(writer, request, http.StatusInternalServerError, "unable to read web content")
 		return
 	}
-	http.ServeContent(writer, request, "index.html", info.ModTime(), index)
+	localizedWriter := localizedHTTPResponseWriter{
+		ResponseWriter: writer,
+		request:        request,
+	}
+	http.ServeContent(&localizedWriter, request, "index.html", info.ModTime(), index)
 }
 
 func reservedServerPath(requestPath string) bool {

@@ -5,6 +5,9 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/samber/lo"
+
+	adminv1 "github.com/yvvlee/kirby/server/api/admin"
 	commonv1 "github.com/yvvlee/kirby/server/api/common"
 	"github.com/yvvlee/kirby/server/internal/converter"
 	"github.com/yvvlee/kirby/server/internal/entity"
@@ -12,26 +15,6 @@ import (
 	"github.com/yvvlee/kirby/server/internal/permission"
 	"github.com/yvvlee/kirby/server/internal/repository"
 )
-
-type ConfigCreateInput struct {
-	ProjectID   int64
-	Key         string
-	Description string
-}
-
-type ConfigUpdateInput struct {
-	ConfigID    int64
-	Description string
-	FieldType   *commonv1.Field_Type
-	IsArray     bool
-	Version     int64
-}
-
-type ConfigValueInput struct {
-	ConfigID int64
-	Value    string
-	Version  int64
-}
 
 type ConfigLogic struct {
 	configs      repository.ConfigRepository
@@ -70,10 +53,11 @@ func NewConfigLogic(
 
 // Create creates the resource within the authorized scope.
 //
-// Parameters: ctx carries cancellation and transaction state; actor identifies the authenticated caller; environmentID selects the authorized environment; input contains the project ID, new configuration key, and description.
+// Parameters: ctx carries cancellation and transaction state; param carries the caller identity, scope, and the project ID, new configuration key, and description.
 // Returns: the created resource; returns permission, schema-validation, or transactional write failures.
 // Throws: none.
-func (l *ConfigLogic) Create(ctx context.Context, actor permission.Actor, environmentID int64, input ConfigCreateInput) (*model.Config, error) {
+func (l *ConfigLogic) Create(ctx context.Context, param *entity.CreateConfigParam) (*commonv1.Config, error) {
+	actor, environmentID := param.Actor, param.EnvironmentID
 	if err := l.permissions.Require(ctx, actor.UserID, environmentID, permission.ConfigWrite); err != nil {
 		return nil, err
 	}
@@ -83,9 +67,9 @@ func (l *ConfigLogic) Create(ctx context.Context, actor permission.Actor, enviro
 		return nil, err
 	}
 	item := &model.Config{
-		ProjectID:   input.ProjectID,
-		Key:         input.Key,
-		Description: input.Description,
+		ProjectID:   param.ProjectID,
+		Key:         param.Key,
+		Description: param.Description,
 		TypeJSON:    typeJSON,
 		Value:       `""`,
 		Meta: model.Meta{
@@ -94,10 +78,11 @@ func (l *ConfigLogic) Create(ctx context.Context, actor permission.Actor, enviro
 		},
 	}
 	err = l.transactions.TX(ctx, func(txctx context.Context) error {
-		if err := l.configs.Create(txctx, environmentID, input.ProjectID, item); err != nil {
+		if _, err := l.configs.Create(txctx, environmentID, param.ProjectID, item); err != nil {
 			return err
 		}
-		return l.audits.RecordForEnvironment(txctx, environmentID, configAudit(actor, "config.create", item.ID))
+		_, err := l.audits.RecordForEnvironment(txctx, environmentID, configAudit(actor, "config.create", item.ID))
+		return err
 	})
 	if err != nil {
 		return nil, err
@@ -105,24 +90,25 @@ func (l *ConfigLogic) Create(ctx context.Context, actor permission.Actor, enviro
 	// A write-only role may create a config because the returned value is the
 	// known empty initial value. Do not re-read after commit and accidentally
 	// expose a value changed concurrently by a reader/editor.
-	return item, nil
+	return converter.ConfigToProto(item)
 }
 
 // Update applies changes using the expected version to reject stale writes.
 //
-// Parameters: ctx carries cancellation and transaction state; actor identifies the authenticated caller; environmentID selects the authorized environment; input contains the configuration ID, replacement schema metadata, and expected version.
+// Parameters: ctx carries cancellation and transaction state; param carries the caller identity, scope, the configuration ID, replacement schema metadata, and expected version.
 // Returns: the reloaded resource after commit; returns permission, schema, dependency-conflict, or stale-version errors.
 // Throws: none.
-func (l *ConfigLogic) Update(ctx context.Context, actor permission.Actor, environmentID int64, input ConfigUpdateInput) (*model.Config, error) {
+func (l *ConfigLogic) Update(ctx context.Context, param *entity.UpdateConfigParam) (*commonv1.Config, error) {
+	actor, environmentID := param.Actor, param.EnvironmentID
 	if err := l.permissions.Require(ctx, actor.UserID, environmentID, permission.ConfigWrite, permission.ConfigRead); err != nil {
 		return nil, err
 	}
-	typeJSON, err := converter.EncodeFieldType(input.FieldType)
+	typeJSON, err := converter.EncodeFieldType(param.FieldType)
 	if err != nil {
 		return nil, entity.Invalid("invalid config type")
 	}
 	err = l.transactions.TX(ctx, func(txctx context.Context) error {
-		_, structures, enums, err := l.lockedResources(txctx, environmentID, input.ConfigID)
+		_, structures, enums, err := l.lockedResources(txctx, environmentID, param.ConfigID)
 		if err != nil {
 			return err
 		}
@@ -132,37 +118,43 @@ func (l *ConfigLogic) Update(ctx context.Context, actor permission.Actor, enviro
 		}
 		// Type changes may intentionally make the current draft value invalid.
 		// UpdateValue and snapshot creation are the explicit validation gates.
-		if _, err := schema.DefaultValue(input.FieldType, input.IsArray); err != nil {
+		if _, err := schema.DefaultValue(param.FieldType, param.IsArray); err != nil {
 			return err
 		}
-		if err := l.configs.Update(txctx, environmentID, input.ConfigID, repository.ConfigUpdate{
-			Description: input.Description,
-			IsArray:     input.IsArray,
+		if _, err := l.configs.Update(txctx, environmentID, param.ConfigID, repository.ConfigUpdate{
+			Description: param.Description,
+			IsArray:     param.IsArray,
 			TypeJSON:    typeJSON,
 			UpdatedBy:   actor.UserID,
-			Version:     input.Version,
+			Version:     param.Version,
 		}); err != nil {
 			return err
 		}
-		return l.audits.RecordForEnvironment(txctx, environmentID, configAudit(actor, "config.update", input.ConfigID))
+		_, err = l.audits.RecordForEnvironment(txctx, environmentID, configAudit(actor, "config.update", param.ConfigID))
+		return err
 	})
 	if err != nil {
 		return nil, err
 	}
-	return l.configs.FindByID(ctx, environmentID, input.ConfigID)
+	updated, err := l.configs.FindByID(ctx, environmentID, param.ConfigID)
+	if err != nil {
+		return nil, err
+	}
+	return converter.ConfigToProto(updated)
 }
 
 // UpdateValue validates and updates the draft configuration value.
 //
-// Parameters: ctx carries cancellation and transaction state; actor identifies the authenticated caller; environmentID selects the authorized environment; input contains the configuration ID, replacement JSON value, and expected version.
+// Parameters: ctx carries cancellation and transaction state; param carries the caller identity, scope, the configuration ID, replacement JSON value, and expected version.
 // Returns: the reloaded configuration after validation and commit, or a permission, value-validation, or stale-version error.
 // Throws: none.
-func (l *ConfigLogic) UpdateValue(ctx context.Context, actor permission.Actor, environmentID int64, input ConfigValueInput) (*model.Config, error) {
+func (l *ConfigLogic) UpdateValue(ctx context.Context, param *entity.UpdateConfigValueParam) (*commonv1.Config, error) {
+	actor, environmentID := param.Actor, param.EnvironmentID
 	if err := l.permissions.Require(ctx, actor.UserID, environmentID, permission.ConfigWrite, permission.ConfigRead); err != nil {
 		return nil, err
 	}
 	err := l.transactions.TX(ctx, func(txctx context.Context) error {
-		current, structures, enums, err := l.lockedResources(txctx, environmentID, input.ConfigID)
+		current, structures, enums, err := l.lockedResources(txctx, environmentID, param.ConfigID)
 		if err != nil {
 			return err
 		}
@@ -174,42 +166,48 @@ func (l *ConfigLogic) UpdateValue(ctx context.Context, actor permission.Actor, e
 		if err != nil {
 			return err
 		}
-		candidate.Value = input.Value
+		candidate.Value = param.Value
 		if err := schema.ValidateConfig(candidate); err != nil {
 			return err
 		}
-		if err := l.configs.UpdateValue(txctx, environmentID, input.ConfigID, repository.ConfigValueUpdate{
-			Value:     input.Value,
+		if _, err := l.configs.UpdateValue(txctx, environmentID, param.ConfigID, repository.ConfigValueUpdate{
+			Value:     param.Value,
 			UpdatedBy: actor.UserID,
-			Version:   input.Version,
+			Version:   param.Version,
 		}); err != nil {
 			return err
 		}
-		return l.audits.RecordForEnvironment(txctx, environmentID, configAudit(actor, "config.value.update", input.ConfigID))
+		_, err = l.audits.RecordForEnvironment(txctx, environmentID, configAudit(actor, "config.value.update", param.ConfigID))
+		return err
 	})
 	if err != nil {
 		return nil, err
 	}
-	return l.configs.FindByID(ctx, environmentID, input.ConfigID)
+	updated, err := l.configs.FindByID(ctx, environmentID, param.ConfigID)
+	if err != nil {
+		return nil, err
+	}
+	return converter.ConfigToProto(updated)
 }
 
 // List returns the resources visible in the selected scope.
 //
-// Parameters: ctx carries cancellation and transaction state; actor identifies the authenticated caller; environmentID selects the authorized environment; filter restricts the returned rows.
-// Returns: the authorized records, or a permission or repository error.
+// Parameters: ctx carries cancellation and transaction state; param carries the caller identity, scope, and the filter restricting the returned rows.
+// Returns: the authorized records with their release markers, or a permission, repository, or conversion error.
 // Throws: none.
-func (l *ConfigLogic) List(ctx context.Context, actor permission.Actor, environmentID int64, filter repository.ConfigFilter) ([]model.Config, map[int64]bool, error) {
-	if err := l.permissions.Require(ctx, actor.UserID, environmentID, permission.ConfigRead); err != nil {
-		return nil, nil, err
+func (l *ConfigLogic) List(ctx context.Context, param *entity.ListConfigParam) ([]*adminv1.ListConfigItem, error) {
+	environmentID := param.EnvironmentID
+	if err := l.permissions.Require(ctx, param.Actor.UserID, environmentID, permission.ConfigRead); err != nil {
+		return nil, err
 	}
 	items := make([]model.Config, 0)
 	for offset := 0; ; offset += repository.MaxPageSize {
-		page, err := l.configs.List(ctx, environmentID, filter, repository.PageRequest{
+		page, err := l.configs.List(ctx, environmentID, param.Filter, repository.PageRequest{
 			Offset: offset,
 			Limit:  repository.MaxPageSize,
 		})
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		items = append(items, page.Items...)
 		if len(items) >= int(page.Total) || len(page.Items) == 0 {
@@ -217,20 +215,28 @@ func (l *ConfigLogic) List(ctx context.Context, actor permission.Actor, environm
 		}
 	}
 	released := make(map[int64]bool)
-	projects := make(map[int64]struct{})
-	for _, item := range items {
-		projects[item.ProjectID] = struct{}{}
-	}
-	for projectID := range projects {
+	projectIDs := lo.Uniq(lo.Map(items, func(item model.Config, _ int) int64 { return item.ProjectID }))
+	for _, projectID := range projectIDs {
 		ids, err := l.snapshots.ListReleasedConfigIDs(ctx, environmentID, projectID)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		for _, id := range ids {
 			released[id] = true
 		}
 	}
-	return items, released, nil
+	result := make([]*adminv1.ListConfigItem, 0, len(items))
+	for index := range items {
+		converted, err := converter.ConfigToProto(&items[index])
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, &adminv1.ListConfigItem{
+			Config:     converted,
+			IsReleased: released[items[index].ID],
+		})
+	}
+	return result, nil
 }
 
 // Delete removes the resource after checking ownership and dependent state.
@@ -251,10 +257,11 @@ func (l *ConfigLogic) Delete(ctx context.Context, actor permission.Actor, enviro
 		} else if !errors.Is(err, repository.ErrNotFound) {
 			return err
 		}
-		if err := l.configs.Delete(txctx, environmentID, configID, actor.UserID); err != nil {
+		if _, err := l.configs.Delete(txctx, environmentID, configID); err != nil {
 			return err
 		}
-		return l.audits.RecordForEnvironment(txctx, environmentID, configAudit(actor, "config.delete", configID))
+		_, err := l.audits.RecordForEnvironment(txctx, environmentID, configAudit(actor, "config.delete", configID))
+		return err
 	})
 }
 
@@ -274,7 +281,7 @@ func (l *ConfigLogic) lockedResources(ctx context.Context, environmentID, config
 // Parameters: ctx carries cancellation and transaction state; actor identifies the authenticated caller; environmentID selects the authorized environment; configID selects the configuration.
 // Returns: the authorized resource and derived detail data, or an access, decoding, or schema error.
 // Throws: none.
-func (l *ConfigLogic) Detail(ctx context.Context, actor permission.Actor, environmentID, configID int64) (*model.Config, *commonv1.TreeNode, error) {
+func (l *ConfigLogic) Detail(ctx context.Context, actor permission.Actor, environmentID, configID int64) (*commonv1.Config, *commonv1.TreeNode, error) {
 	if err := l.permissions.Require(ctx, actor.UserID, environmentID, permission.ConfigRead, permission.StructureRead, permission.EnumRead); err != nil {
 		return nil, nil, err
 	}
@@ -298,7 +305,7 @@ func (l *ConfigLogic) Detail(ctx context.Context, actor permission.Actor, enviro
 	if err != nil {
 		return nil, nil, err
 	}
-	return current, tree, nil
+	return converted, tree, nil
 }
 
 func (l *ConfigLogic) resources(ctx context.Context, environmentID, projectID, configID int64) ([]*commonv1.Structure, []*commonv1.ConfigEnum, error) {

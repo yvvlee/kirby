@@ -32,12 +32,12 @@ type ConfigValueUpdate struct {
 }
 
 type ConfigRepository interface {
-	Create(ctx context.Context, environmentID, projectID int64, config *model.Config) error
+	Create(ctx context.Context, environmentID, projectID int64, config *model.Config) (rowsAffected int64, err error)
 	FindByID(ctx context.Context, environmentID, configID int64) (*model.Config, error)
 	List(ctx context.Context, environmentID int64, filter ConfigFilter, page PageRequest) (PageResult[model.Config], error)
-	Update(ctx context.Context, environmentID, configID int64, update ConfigUpdate) error
-	UpdateValue(ctx context.Context, environmentID, configID int64, update ConfigValueUpdate) error
-	Delete(ctx context.Context, environmentID, configID, updatedBy int64) error
+	Update(ctx context.Context, environmentID, configID int64, update ConfigUpdate) (rowsAffected int64, err error)
+	UpdateValue(ctx context.Context, environmentID, configID int64, update ConfigValueUpdate) (rowsAffected int64, err error)
+	Delete(ctx context.Context, environmentID, configID int64) (rowsAffected int64, err error)
 	LockByID(ctx context.Context, environmentID, configID int64) (*model.Config, error)
 }
 
@@ -56,97 +56,20 @@ func NewConfigRepository(storage *infra.Storage) *ConfigRepositoryImpl {
 	}
 }
 
-// Create 创建配置。软删除的同key记录会被恢复，其下结构与枚举被一并软删除重置。
+// Create 创建配置，同名 key 冲突由唯一键约束拒绝。
 //
 // Parameters: ctx carries cancellation and transaction state; environmentID selects the authorized environment; projectID selects the project; config contains the new configuration key, schema, and value.
-// Returns: nil after insertion or restoration; IDs, version, and timestamps are copied into the supplied record. Key conflicts and database failures are returned.
+// Returns: rowsAffected from the insert; IDs, version, and timestamps are copied into the supplied record. Key conflicts and database failures are returned.
 // Throws: none.
-func (r *ConfigRepositoryImpl) Create(ctx context.Context, environmentID, projectID int64, config *model.Config) error {
-	if err := lockScopedProject(ctx, r.Engine, environmentID, projectID); err != nil {
-		return err
+func (r *ConfigRepositoryImpl) Create(ctx context.Context, environmentID, projectID int64, config *model.Config) (rowsAffected int64, err error) {
+	if err = lockScopedProject(ctx, r.Engine, environmentID, projectID); err != nil {
+		return
 	}
-	existing, err := lockConfigByKey(ctx, r.Engine, projectID, config.Key)
-	if err != nil {
-		return err
-	}
-	if existing != nil {
-		return r.restore(ctx, existing, config)
-	}
-	config.PrepareInsert()
-	_, err = r.Insert(ctx, config)
-	return classifyKeyWriteError("config", err)
-}
-
-func (r *ConfigRepositoryImpl) restore(ctx context.Context, existing, config *model.Config) error {
-	fields := new(model.Config).LormCols()
-	if existing.DeletedAt == nil {
-		return keyConflict("config")
-	}
-	if err := resetConfigChildren(ctx, r.Engine, existing.ID, config.UpdatedBy); err != nil {
-		return err
-	}
-	now := time.Now().UTC()
-	affected, err := r.Engine.Update[*model.Config]().ID(existing.ID).SetMap(map[string]any{
-		fields.Description():    config.Description,
-		fields.IsArray():        config.IsArray,
-		fields.TypeJSON():       config.TypeJSON,
-		fields.Value():          config.Value,
-		fields.RuntimeVersion(): config.RuntimeVersion,
-		fields.CreatedBy():      config.CreatedBy,
-		fields.UpdatedBy():      config.UpdatedBy,
-		fields.CreatedAt():      now,
-		fields.UpdatedAt():      now,
-		fields.Version():        existing.Version + 1,
-		fields.DeletedAt():      nil,
-	}).Exec(ctx)
-	if err != nil {
-		return classifyKeyWriteError("config", err)
-	}
-	if affected == 0 {
-		return Unchanged("config")
-	}
-	config.ID = existing.ID
-	config.Version = existing.Version + 1
-	config.CreatedAt = now
-	config.UpdatedAt = now
-	return nil
-}
-
-// lockConfigByKey 锁定(project_id, key)对应的配置行，包含软删除记录。
-func lockConfigByKey(ctx context.Context, engine *lorm.Engine, projectID int64, key string) (*model.Config, error) {
-	fields := new(model.Config).LormCols()
-	existing, has, err := engine.Query[*model.Config]().
-		Where(builder.Eq{
-			fields.ProjectID(): projectID,
-			fields.Key():       key,
-		}).
-		Suffix("FOR UPDATE").Get(ctx)
-	if err != nil {
-		return nil, WrapDatabaseError(err)
-	}
-	if !has {
-		return nil, nil
-	}
-	return existing, nil
-}
-
-// resetConfigChildren 软删除配置下所有存活的结构与枚举。
-func resetConfigChildren(ctx context.Context, engine *lorm.Engine, configID, updatedBy int64) error {
-	now := time.Now().UTC()
-	values := map[string]any{
-		"deleted_at": now,
-		"updated_by": updatedBy,
-		"updated_at": now,
-		"version":    builder.Expr("version + 1"),
-	}
-	_, err := engine.Update[*model.Structure]().Where(builder.IsNull("deleted_at")).
-		Where(builder.Eq{"config_id": configID}).SetMap(values).Exec(ctx)
-	if err != nil {
-		return WrapDatabaseError(err)
-	}
-	_, err = engine.Update[*model.ConfigEnum]().Where(builder.IsNull("deleted_at")).
-		Where(builder.Eq{"config_id": configID}).SetMap(values).Exec(ctx)
-	return WrapDatabaseError(err)
+	config.EnvironmentID = environmentID
+	config.ProjectID = projectID
+	rowsAffected, err = r.Insert(ctx, config)
+	err = classifyKeyWriteError("config", err)
+	return
 }
 
 // FindByID loads a resource only when it belongs to the requested scope.
@@ -188,83 +111,95 @@ func (r *ConfigRepositoryImpl) List(ctx context.Context, environmentID int64, fi
 // Update applies changes using the expected version to reject stale writes.
 //
 // Parameters: ctx carries cancellation and transaction state; environmentID selects the authorized environment; configID selects the configuration; update contains the guarded changes and expected version.
-// Returns: nil after one matching live row changes; ErrNoRowsAffected if the expected version is stale.
+// Returns: rowsAffected after one matching live row changes; ErrNoRowsAffected if the expected version is stale.
 // Throws: none.
-func (r *ConfigRepositoryImpl) Update(ctx context.Context, environmentID, configID int64, update ConfigUpdate) error {
+func (r *ConfigRepositoryImpl) Update(ctx context.Context, environmentID, configID int64, update ConfigUpdate) (rowsAffected int64, err error) {
 	fields := new(model.Config).LormCols()
-	if _, err := r.FindByID(ctx, environmentID, configID); err != nil {
-		return err
+	if _, err = r.FindByID(ctx, environmentID, configID); err != nil {
+		return
 	}
-	affected, err := r.Engine.Update[*model.Config]().Where(builder.IsNull(fields.DeletedAt())).ID(configID).
+	rowsAffected, err = r.Engine.Update[*model.Config]().ID(configID).
 		Where(builder.Eq{fields.Version(): update.Version}).
 		SetMap(map[string]any{
 			fields.Description(): update.Description,
 			fields.IsArray():     update.IsArray,
 			fields.TypeJSON():    update.TypeJSON,
 			fields.UpdatedBy():   update.UpdatedBy,
-			fields.UpdatedAt():   time.Now().UTC(),
+			fields.UpdatedAt():   time.Now(),
 			fields.Version():     update.Version + 1,
 		}).Exec(ctx)
 	if err != nil {
-		return WrapDatabaseError(err)
+		err = WrapDatabaseError(err)
+		return
 	}
-	if affected == 0 {
-		return Unchanged("config")
+	if rowsAffected == 0 {
+		err = Unchanged("config")
+		return
 	}
-	return nil
+	return
 }
 
 // UpdateValue validates and updates the draft configuration value.
 //
 // Parameters: ctx carries cancellation and transaction state; environmentID selects the authorized environment; configID selects the configuration; update contains the guarded changes and expected version.
-// Returns: nil after the guarded value write; ErrNoRowsAffected if the row was deleted or its version changed.
+// Returns: rowsAffected after the guarded value write; ErrNoRowsAffected if the row was deleted or its version changed.
 // Throws: none.
-func (r *ConfigRepositoryImpl) UpdateValue(ctx context.Context, environmentID, configID int64, update ConfigValueUpdate) error {
+func (r *ConfigRepositoryImpl) UpdateValue(ctx context.Context, environmentID, configID int64, update ConfigValueUpdate) (rowsAffected int64, err error) {
 	fields := new(model.Config).LormCols()
-	if _, err := r.FindByID(ctx, environmentID, configID); err != nil {
-		return err
+	if _, err = r.FindByID(ctx, environmentID, configID); err != nil {
+		return
 	}
-	affected, err := r.Engine.Update[*model.Config]().Where(builder.IsNull(fields.DeletedAt())).ID(configID).
+	rowsAffected, err = r.Engine.Update[*model.Config]().ID(configID).
 		Where(builder.Eq{fields.Version(): update.Version}).
 		SetMap(map[string]any{
 			fields.Value():     update.Value,
 			fields.UpdatedBy(): update.UpdatedBy,
-			fields.UpdatedAt(): time.Now().UTC(),
+			fields.UpdatedAt(): time.Now(),
 			fields.Version():   update.Version + 1,
 		}).Exec(ctx)
 	if err != nil {
-		return WrapDatabaseError(err)
+		err = WrapDatabaseError(err)
+		return
 	}
-	if affected == 0 {
-		return Unchanged("config")
+	if rowsAffected == 0 {
+		err = Unchanged("config")
+		return
 	}
-	return nil
+	return
 }
 
-// Delete removes the resource after checking ownership and dependent state.
+// Delete 物理删除配置并级联删除其下全部结构与枚举。
 //
-// Parameters: ctx carries cancellation and transaction state; environmentID selects the authorized environment; configID selects the configuration; updatedBy identifies the actor recorded on the write.
-// Returns: nil after soft deletion; ErrNotFound for an inaccessible row or ErrNoRowsAffected for a rejected write.
+// Parameters: ctx carries cancellation and transaction state; environmentID selects the authorized environment; configID selects the configuration.
+// Returns: rowsAffected from deleting the configuration row; ErrNotFound for an inaccessible row.
 // Throws: none.
-func (r *ConfigRepositoryImpl) Delete(ctx context.Context, environmentID, configID, updatedBy int64) error {
-	fields := new(model.Config).LormCols()
-	if _, err := r.FindByID(ctx, environmentID, configID); err != nil {
-		return err
+func (r *ConfigRepositoryImpl) Delete(ctx context.Context, environmentID, configID int64) (rowsAffected int64, err error) {
+	if _, err = r.FindByID(ctx, environmentID, configID); err != nil {
+		return
 	}
-	affected, err := r.Engine.Update[*model.Config]().Where(builder.IsNull(fields.DeletedAt())).ID(configID).
-		Set(fields.Version(), builder.Expr("version + 1")).
-		SetMap(map[string]any{
-			fields.DeletedAt(): time.Now().UTC(),
-			fields.UpdatedBy(): updatedBy,
-			fields.UpdatedAt(): time.Now().UTC(),
-		}).Exec(ctx)
+	if err = deleteConfigChildren(ctx, r.Engine, configID); err != nil {
+		return
+	}
+	rowsAffected, err = r.Engine.Delete[*model.Config]().ID(configID).Exec(ctx)
+	if err != nil {
+		err = WrapDatabaseError(err)
+		return
+	}
+	if rowsAffected == 0 {
+		err = Unchanged("config")
+		return
+	}
+	return
+}
+
+// deleteConfigChildren 物理删除配置下所有结构与枚举。
+func deleteConfigChildren(ctx context.Context, engine *lorm.Engine, configID int64) error {
+	_, err := engine.Delete[*model.Structure]().Where(builder.Eq{"config_id": configID}).Exec(ctx)
 	if err != nil {
 		return WrapDatabaseError(err)
 	}
-	if affected == 0 {
-		return Unchanged("config")
-	}
-	return nil
+	_, err = engine.Delete[*model.ConfigEnum]().Where(builder.Eq{"config_id": configID}).Exec(ctx)
+	return WrapDatabaseError(err)
 }
 
 // LockByID locks a scoped resource so concurrent writes share the same order.

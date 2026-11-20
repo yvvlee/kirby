@@ -19,16 +19,16 @@ type SnapshotFilter struct {
 }
 
 type SnapshotRepository interface {
-	Create(ctx context.Context, environmentID, projectID, configID int64, snapshot *model.Snapshot) error
+	Create(ctx context.Context, environmentID, projectID, configID int64, snapshot *model.Snapshot) (rowsAffected int64, err error)
 	FindByID(ctx context.Context, environmentID, snapshotID int64) (*model.Snapshot, error)
 	List(ctx context.Context, environmentID int64, filter SnapshotFilter, page PageRequest) (PageResult[model.Snapshot], error)
 	FindReleasedForConfig(ctx context.Context, environmentID, configID int64) (*model.Snapshot, error)
 	FindCurrentForConfig(ctx context.Context, environmentID, configID int64) (*model.Snapshot, error)
 	FindAnyForConfig(ctx context.Context, environmentID, configID int64) (*model.Snapshot, error)
 	ListReleasedConfigIDs(ctx context.Context, environmentID, projectID int64) ([]int64, error)
-	Delete(ctx context.Context, environmentID, snapshotID, updatedBy int64) error
+	Delete(ctx context.Context, environmentID, snapshotID int64) (rowsAffected int64, err error)
 	LockByID(ctx context.Context, environmentID, snapshotID int64) (*model.Snapshot, error)
-	SetCurrent(ctx context.Context, environmentID, configID, snapshotID, updatedBy int64) error
+	SetCurrent(ctx context.Context, environmentID, configID, snapshotID, updatedBy int64) (rowsAffected int64, err error)
 }
 
 type SnapshotRepositoryImpl struct {
@@ -49,16 +49,15 @@ func NewSnapshotRepository(storage *infra.Storage) *SnapshotRepositoryImpl {
 // Create 创建快照，初始状态为未发布且未启用。
 //
 // Parameters: ctx carries cancellation and transaction state; projectID selects the project; configID selects the configuration; snapshot contains the snapshot content and metadata.
-// Returns: nil after inserting an unreleased, unselected snapshot with its ID, version, and timestamps; insertion failures are returned.
+// Returns: rowsAffected from the snapshot insert with its ID, version, and timestamps set; insertion failures are returned.
 // Throws: none.
-func (r *SnapshotRepositoryImpl) Create(ctx context.Context, _, projectID, configID int64, snapshot *model.Snapshot) error {
+func (r *SnapshotRepositoryImpl) Create(ctx context.Context, _, projectID, configID int64, snapshot *model.Snapshot) (rowsAffected int64, err error) {
 	snapshot.ProjectID = projectID
 	snapshot.ConfigID = configID
 	snapshot.Status = model.SnapshotStatusUnreleased
 	snapshot.IsUsing = false
-	snapshot.PrepareInsert()
-	_, err := r.Insert(ctx, snapshot)
-	return err
+	rowsAffected, err = r.Insert(ctx, snapshot)
+	return
 }
 
 // FindByID loads a resource only when it belongs to the requested scope.
@@ -162,31 +161,27 @@ func (r *SnapshotRepositoryImpl) ListReleasedConfigIDs(ctx context.Context, envi
 	return ids, nil
 }
 
-// Delete removes the resource after checking ownership and dependent state.
+// Delete 物理删除未发布快照，删除前检查归属。
 //
-// Parameters: ctx carries cancellation and transaction state; environmentID selects the authorized environment; snapshotID selects the snapshot; updatedBy identifies the actor recorded on the write.
-// Returns: nil after soft deletion; ErrNotFound for an inaccessible row or ErrNoRowsAffected for a rejected write.
+// Parameters: ctx carries cancellation and transaction state; environmentID selects the authorized environment; snapshotID selects the snapshot.
+// Returns: rowsAffected after the physical delete; ErrNotFound for an inaccessible row or ErrNoRowsAffected when the snapshot is not unreleased.
 // Throws: none.
-func (r *SnapshotRepositoryImpl) Delete(ctx context.Context, environmentID, snapshotID, updatedBy int64) error {
+func (r *SnapshotRepositoryImpl) Delete(ctx context.Context, environmentID, snapshotID int64) (rowsAffected int64, err error) {
 	fields := new(model.Snapshot).LormCols()
-	if _, err := r.FindByID(ctx, environmentID, snapshotID); err != nil {
-		return err
+	if _, err = r.FindByID(ctx, environmentID, snapshotID); err != nil {
+		return
 	}
-	affected, err := r.Engine.Update[*model.Snapshot]().Where(builder.IsNull(fields.DeletedAt())).ID(snapshotID).
-		Where(builder.Eq{fields.Status(): model.SnapshotStatusUnreleased}).
-		Set(fields.Version(), builder.Expr("version + 1")).
-		SetMap(map[string]any{
-			fields.DeletedAt(): time.Now().UTC(),
-			fields.UpdatedBy(): updatedBy,
-			fields.UpdatedAt(): time.Now().UTC(),
-		}).Exec(ctx)
+	rowsAffected, err = r.Engine.Delete[*model.Snapshot]().ID(snapshotID).
+		Where(builder.Eq{fields.Status(): model.SnapshotStatusUnreleased}).Exec(ctx)
 	if err != nil {
-		return WrapDatabaseError(err)
+		err = WrapDatabaseError(err)
+		return
 	}
-	if affected == 0 {
-		return Unchanged("snapshot")
+	if rowsAffected == 0 {
+		err = Unchanged("snapshot")
+		return
 	}
-	return nil
+	return
 }
 
 // LockByID locks a scoped resource so concurrent writes share the same order.
@@ -213,15 +208,15 @@ func (r *SnapshotRepositoryImpl) LockByID(ctx context.Context, environmentID, sn
 // SetCurrent 将目标快照标记为使用中，同配置下其余快照取消使用。
 //
 // Parameters: ctx carries cancellation and transaction state; environmentID selects the authorized environment; configID selects the configuration; snapshotID selects the snapshot; updatedBy identifies the actor recorded on the write.
-// Returns: nil after clearing the previous selection and selecting the target; returns ownership or write failures.
+// Returns: rowsAffected from the final selection write after clearing the previous selection; returns ownership or write failures.
 // Throws: none.
-func (r *SnapshotRepositoryImpl) SetCurrent(ctx context.Context, environmentID, configID, snapshotID, updatedBy int64) error {
+func (r *SnapshotRepositoryImpl) SetCurrent(ctx context.Context, environmentID, configID, snapshotID, updatedBy int64) (rowsAffected int64, err error) {
 	fields := new(model.Snapshot).LormCols()
 	config, err := r.findScopedConfig(ctx, environmentID, configID)
 	if err != nil {
-		return err
+		return
 	}
-	_, has, err := r.Engine.Query[*model.Snapshot]().Where(builder.IsNull(fields.DeletedAt())).
+	_, has, err := r.Engine.Query[*model.Snapshot]().
 		Where(builder.Eq{
 			fields.ID():        snapshotID,
 			fields.ConfigID():  configID,
@@ -229,13 +224,15 @@ func (r *SnapshotRepositoryImpl) SetCurrent(ctx context.Context, environmentID, 
 		}).
 		Get(ctx)
 	if err != nil {
-		return WrapDatabaseError(err)
+		err = WrapDatabaseError(err)
+		return
 	}
 	if !has {
-		return Missing("snapshot")
+		err = Missing("snapshot")
+		return
 	}
-	now := time.Now().UTC()
-	if _, err = r.Engine.Update[*model.Snapshot]().Where(builder.IsNull(fields.DeletedAt())).
+	now := time.Now()
+	if _, err = r.Engine.Update[*model.Snapshot]().
 		Where(builder.Eq{
 			fields.ConfigID():  configID,
 			fields.ProjectID(): config.ProjectID,
@@ -248,9 +245,10 @@ func (r *SnapshotRepositoryImpl) SetCurrent(ctx context.Context, environmentID, 
 			fields.UpdatedBy(): updatedBy,
 			fields.UpdatedAt(): now,
 		}).Exec(ctx); err != nil {
-		return WrapDatabaseError(err)
+		err = WrapDatabaseError(err)
+		return
 	}
-	affected, err := r.Engine.Update[*model.Snapshot]().Where(builder.IsNull(fields.DeletedAt())).ID(snapshotID).
+	rowsAffected, err = r.Engine.Update[*model.Snapshot]().ID(snapshotID).
 		Where(builder.Eq{
 			fields.ConfigID():  configID,
 			fields.ProjectID(): config.ProjectID,
@@ -262,12 +260,14 @@ func (r *SnapshotRepositoryImpl) SetCurrent(ctx context.Context, environmentID, 
 			fields.UpdatedAt(): now,
 		}).Exec(ctx)
 	if err != nil {
-		return WrapDatabaseError(err)
+		err = WrapDatabaseError(err)
+		return
 	}
-	if affected == 0 {
-		return Unchanged("current snapshot")
+	if rowsAffected == 0 {
+		err = Unchanged("current snapshot")
+		return
 	}
-	return nil
+	return
 }
 
 func (r *SnapshotRepositoryImpl) findScopedConfig(ctx context.Context, environmentID, configID int64) (*model.Config, error) {

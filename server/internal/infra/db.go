@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -24,7 +25,7 @@ func OpenEngine(ctx context.Context, cfg conf.DatabaseConfig, logger *DBLogger) 
 	if err != nil {
 		return nil, err
 	}
-	if err := initializeDatabase(ctx, driver, cfg.DSN.Value()); err != nil {
+	if err := initializeDatabase(ctx, driver, cfg.DSN); err != nil {
 		return nil, err
 	}
 	return connectEngine(ctx, cfg, driver, logger)
@@ -57,13 +58,13 @@ func initializeDatabase(ctx context.Context, driver, dsn string) (err error) {
 }
 
 func connectEngine(ctx context.Context, cfg conf.DatabaseConfig, driver string, logger lorm.Logger) (*lorm.Engine, error) {
-	engine, err := lorm.NewEngineContext(ctx, driver, cfg.DSN.Value(),
+	engine, err := lorm.NewEngineContext(ctx, driver, cfg.DSN,
 		lorm.WithLogger(logger),
 		// Installation secrets and credential hashes are SQL parameters.
 		lorm.WithLogSQLArgs(false),
 		lorm.WithMaxOpenConns(cfg.MaxOpenConns),
 		lorm.WithMaxIdleConns(cfg.MaxIdleConns),
-		lorm.WithConnMaxLifetime(cfg.ConnMaxLifetime.Duration),
+		lorm.WithConnMaxLifetime(time.Duration(cfg.ConnMaxLifetime)*time.Millisecond),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("connect to %s: %w", cfg.Driver, err)

@@ -1,12 +1,14 @@
+import { localizedError } from '@/i18n/errors'
 import { getApiErrorMessage } from '@/api/errors'
+import { t } from '@/i18n'
 
 export const SNAPSHOT_TAG_OPTIONS = Object.freeze([
-  { label: 'Release', value: 'RELEASE' },
-  { label: 'Hotfix', value: 'HOTFIX' },
-  { label: 'Review', value: 'REVIEW' },
-  { label: 'Debug', value: 'DEBUG' },
-  { label: 'Demo', value: 'DEMO' },
-  { label: 'Reuse', value: 'REUSE' },
+  { label: '发布版本', value: 'RELEASE' },
+  { label: '热修复', value: 'HOTFIX' },
+  { label: '评审', value: 'REVIEW' },
+  { label: '调试', value: 'DEBUG' },
+  { label: '演示', value: 'DEMO' },
+  { label: '复用', value: 'REUSE' },
 ])
 
 const STATUS_LABELS = {
@@ -21,11 +23,11 @@ export type SnapshotListItem = Record<string, unknown> & {
 }
 
 export function snapshotStatusLabel(status: string): string {
-  const label = STATUS_LABELS[status as SnapshotStatus]
-  if (!label) {
-    throw new Error(`不支持的快照状态: ${status}`)
+  const sourceLabel = STATUS_LABELS[status as SnapshotStatus]
+  if (!sourceLabel) {
+    throw localizedError('不支持的快照状态: {{status}}', { status })
   }
-  return label
+  return t(sourceLabel)
 }
 
 export function normalizeSnapshotList(reply: unknown): {
@@ -33,18 +35,18 @@ export function normalizeSnapshotList(reply: unknown): {
   page: Record<string, unknown>
 } {
   if (typeof reply !== 'object' || reply === null || Array.isArray(reply)) {
-    throw new TypeError('快照列表响应缺少 list')
+    throw localizedError('快照列表响应缺少 list', {}, TypeError)
   }
   const source = reply as Record<string, unknown>
   if (!Array.isArray(source.list)) {
-    throw new TypeError('快照列表响应缺少 list')
+    throw localizedError('快照列表响应缺少 list', {}, TypeError)
   }
   if (
     typeof source.page !== 'object' ||
     source.page === null ||
     Array.isArray(source.page)
   ) {
-    throw new TypeError('快照列表响应缺少 page')
+    throw localizedError('快照列表响应缺少 page', {}, TypeError)
   }
   const list = source.list.map((snapshot) => {
     if (
@@ -52,15 +54,15 @@ export function normalizeSnapshotList(reply: unknown): {
       snapshot === null ||
       Array.isArray(snapshot)
     ) {
-      throw new TypeError('快照列表项必须是对象')
+      throw localizedError('快照列表项必须是对象', {}, TypeError)
     }
     const item = snapshot as Record<string, unknown>
     if (typeof item.status !== 'string') {
-      throw new TypeError('快照列表项缺少 status')
+      throw localizedError('快照列表项缺少 status', {}, TypeError)
     }
     snapshotStatusLabel(item.status)
     if (!Array.isArray(item.tags)) {
-      throw new TypeError('快照列表项缺少 tags')
+      throw localizedError('快照列表项缺少 tags', {}, TypeError)
     }
     return item as SnapshotListItem
   })
@@ -69,22 +71,26 @@ export function normalizeSnapshotList(reply: unknown): {
 
 export function parseSnapshotContent(content: string): unknown {
   if (content.length === 0) {
-    throw new TypeError('快照内容必须是非空 JSON 字符串')
+    throw localizedError('快照内容必须是非空 JSON 字符串', {}, TypeError)
   }
   try {
     return JSON.parse(content) as unknown
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error)
-    throw new SyntaxError(`快照内容不是合法 JSON: ${message}`, {
-      cause: error,
-    })
+    const localized = localizedError(
+      '快照内容不是合法 JSON: {{message}}',
+      { message },
+      SyntaxError,
+    )
+    Object.defineProperty(localized, 'cause', { value: error })
+    throw localized
   }
 }
 
 export function snapshotActionError(
   error: unknown,
   action: string,
-  suffix = '当前页面已保留。',
+  suffix = t('当前页面已保留。'),
 ): string {
   if (
     typeof error === 'object' &&
@@ -95,7 +101,7 @@ export function snapshotActionError(
     'status' in error.response &&
     error.response.status === 403
   ) {
-    return `没有权限${action}。${suffix}`
+    return t('没有权限{{action}}。{{suffix}}', { action, suffix })
   }
-  return getApiErrorMessage(error, `${action}失败`)
+  return getApiErrorMessage(error, t('{{action}}失败', { action }))
 }

@@ -14,7 +14,7 @@ import (
 )
 
 type runtimeLogic interface {
-	Read(ctx context.Context, fullCredential, requestedProject, configKey string) (*logic.RuntimeResult, error)
+	Read(ctx context.Context, fullCredential, configKey string) (*logic.RuntimeResult, error)
 }
 
 type RuntimeService struct {
@@ -50,7 +50,7 @@ func (s *RuntimeService) Config(ctx context.Context, request *runtimev1.ConfigRe
 	if !ok {
 		return nil, errorsv1.ErrorUnauthorized("API key authentication failed")
 	}
-	result, err := s.runtimeLogic.Read(ctx, credential, request.Project, request.Key)
+	result, err := s.runtimeLogic.Read(ctx, credential, request.Key)
 	if err != nil {
 		if isInternalError(err) {
 			s.logger.WithContext(ctx).Errorw("msg", "runtime config read failed", "error", err)
@@ -68,7 +68,6 @@ func (s *RuntimeService) Config(ctx context.Context, request *runtimev1.ConfigRe
 
 func isInternalError(err error) bool {
 	return !errors.Is(err, logic.ErrUnauthenticated) &&
-		!errors.Is(err, logic.ErrProjectMismatch) &&
 		!errors.Is(err, repository.ErrInvalidArgument) &&
 		!errors.Is(err, repository.ErrNotFound)
 }
@@ -77,8 +76,6 @@ func runtimePublicError(err error) error {
 	switch {
 	case errors.Is(err, logic.ErrUnauthenticated):
 		return errorsv1.ErrorUnauthorized("API key authentication failed")
-	case errors.Is(err, logic.ErrProjectMismatch):
-		return errorsv1.ErrorForbidden("API key does not belong to requested project")
 	case errors.Is(err, repository.ErrInvalidArgument):
 		return errorsv1.ErrorBadRequest("invalid runtime config request")
 	case errors.Is(err, repository.ErrNotFound):

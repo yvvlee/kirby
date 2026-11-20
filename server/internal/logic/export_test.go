@@ -59,6 +59,8 @@ func exportSnapshot(t *testing.T) *model.Snapshot {
 		ConfigID:  10,
 		ConfigKey: "feature",
 		Content:   content,
+		Status:    model.SnapshotStatusUnreleased,
+		TagsJSON:  "[]",
 	}
 }
 
@@ -66,7 +68,11 @@ func TestExportRequiresAllSourceReadPermissionsAndRebuildsTree(t *testing.T) {
 	permissions := &permissionFake{}
 	logicLayer := NewExportLogic(snapshotFake{item: exportSnapshot(t)}, permissions)
 
-	result, err := logicLayer.Export(context.Background(), permission.Actor{UserID: 9}, 1, 12)
+	result, err := logicLayer.Export(context.Background(), &entity.ExportSnapshotParam{
+		Actor:               permission.Actor{UserID: 9},
+		SourceEnvironmentID: 1,
+		SnapshotID:          12,
+	})
 	require.NoError(t, err)
 	assert.Equal(t, []string{permission.SnapshotExport, permission.SnapshotRead, permission.ConfigRead, permission.StructureRead, permission.EnumRead}, permissions.required)
 	decoded, err := entity.DecodeConfigSnapshot(result.Content)
@@ -84,7 +90,11 @@ func TestValidateSnapshotRejectsMismatchedEmbeddedScope(t *testing.T) {
 func TestExportStopsBeforeReadingWhenPermissionIsDenied(t *testing.T) {
 	permissions := &permissionFake{err: permission.ErrForbidden}
 	logicLayer := NewExportLogic(snapshotFake{item: exportSnapshot(t)}, permissions)
-	_, err := logicLayer.Export(context.Background(), permission.Actor{UserID: 9}, 1, 12)
+	_, err := logicLayer.Export(context.Background(), &entity.ExportSnapshotParam{
+		Actor:               permission.Actor{UserID: 9},
+		SourceEnvironmentID: 1,
+		SnapshotID:          12,
+	})
 	assert.ErrorIs(t, err, permission.ErrForbidden)
 }
 

@@ -12,24 +12,24 @@ import (
 )
 
 type APIKeyMutation struct {
-	EnvironmentID   int64
-	ProjectID       int64
-	KeyID           int64
-	CurrentPublicID string
+	EnvironmentID     int64
+	ProjectID         int64
+	KeyID             int64
+	CurrentSecretHash []byte
 }
 
 type ProjectAPIKeyRepository interface {
-	Create(ctx context.Context, environmentID, projectID int64, key *model.ProjectAPIKey) error
+	Create(ctx context.Context, environmentID, projectID int64, key *model.ProjectAPIKey) (rowsAffected int64, err error)
 	List(ctx context.Context, environmentID, projectID int64) ([]model.ProjectAPIKey, error)
 	FindByID(ctx context.Context, environmentID, projectID, keyID int64) (*model.ProjectAPIKey, error)
 	LockByID(ctx context.Context, environmentID, projectID, keyID int64) (*model.ProjectAPIKey, error)
-	Rotate(ctx context.Context, mutation APIKeyMutation, replacement *model.ProjectAPIKey) error
-	Revoke(ctx context.Context, mutation APIKeyMutation, revokedAt time.Time) error
-	LockRuntimeCredential(ctx context.Context, publicID string) (*model.ProjectAPIKey, error)
-	FindRuntimeProject(ctx context.Context, projectID int64) (*model.Project, error)
-	FindRuntimeConfig(ctx context.Context, projectID int64, configKey string) (*model.Config, error)
+	Rotate(ctx context.Context, mutation APIKeyMutation, replacement *model.ProjectAPIKey) (rowsAffected int64, err error)
+	Revoke(ctx context.Context, mutation APIKeyMutation, revokedAt time.Time) (rowsAffected int64, err error)
+	LockRuntimeCredential(ctx context.Context, secretHash []byte) (*model.ProjectAPIKey, error)
+	FindRuntimeProject(ctx context.Context, environmentID, projectID int64) (*model.Project, error)
+	FindRuntimeConfig(ctx context.Context, environmentID, projectID int64, configKey string) (*model.Config, error)
 	FindReleasedSnapshot(ctx context.Context, projectID, configID int64) (*model.Snapshot, error)
-	MarkUsed(ctx context.Context, publicID string, usedAt time.Time) error
+	MarkUsed(ctx context.Context, secretHash []byte, usedAt time.Time) (rowsAffected int64, err error)
 }
 
 type ProjectAPIKeyRepositoryImpl struct {
@@ -49,17 +49,18 @@ func NewProjectAPIKeyRepository(storage *infra.Storage) *ProjectAPIKeyRepository
 
 // Create locks project ownership before storing a new API credential.
 //
-// Parameters: ctx carries the transaction; environmentID and projectID define ownership; key supplies the generated public ID and digest.
-// Returns: nil after insertion, ErrNotFound for an invalid scope, ErrKeyConflict, or a database error.
+// Parameters: ctx carries the transaction; environmentID and projectID define ownership; key supplies the generated credential digest and digest.
+// Returns: rowsAffected from the credential insert, ErrNotFound for an invalid scope, ErrKeyConflict, or a database error.
 // Throws: none; failures are returned as errors.
-func (r *ProjectAPIKeyRepositoryImpl) Create(ctx context.Context, environmentID, projectID int64, key *model.ProjectAPIKey) error {
-	if err := lockScopedProject(ctx, r.Engine, environmentID, projectID); err != nil {
-		return err
+func (r *ProjectAPIKeyRepositoryImpl) Create(ctx context.Context, environmentID, projectID int64, key *model.ProjectAPIKey) (rowsAffected int64, err error) {
+	if err = lockScopedProject(ctx, r.Engine, environmentID, projectID); err != nil {
+		return
 	}
+	key.EnvironmentID = environmentID
 	key.ProjectID = projectID
-	key.PrepareInsert()
-	_, err := r.Insert(ctx, key)
-	return classifyKeyWriteError("project API key", err)
+	rowsAffected, err = r.Insert(ctx, key)
+	err = classifyKeyWriteError("project API key", err)
+	return
 }
 
 // List lists credentials only through a live project and environment association.
@@ -118,75 +119,79 @@ func (r *ProjectAPIKeyRepositoryImpl) LockByID(ctx context.Context, environmentI
 	return key, nil
 }
 
-// Rotate replaces credentials only when the public ID and live ownership still match.
+// Rotate replaces credentials only when the credential digest and live ownership still match.
 //
-// Parameters: ctx carries the transaction; mutation identifies the scope and expected public ID; replacement supplies the new credential fields.
-// Returns: nil after one unrevoked credential changes, ErrNoRowsAffected, ErrKeyConflict, or a database error.
+// Parameters: ctx carries the transaction; mutation identifies the scope and expected credential digest; replacement supplies the new credential fields.
+// Returns: rowsAffected after one unrevoked credential changes, ErrNoRowsAffected, ErrKeyConflict, or a database error.
 // Throws: none; failures are returned as errors.
-func (r *ProjectAPIKeyRepositoryImpl) Rotate(ctx context.Context, mutation APIKeyMutation, replacement *model.ProjectAPIKey) error {
+func (r *ProjectAPIKeyRepositoryImpl) Rotate(ctx context.Context, mutation APIKeyMutation, replacement *model.ProjectAPIKey) (rowsAffected int64, err error) {
 	fields := new(model.ProjectAPIKey).LormCols()
-	affected, err := r.Engine.Update[*model.ProjectAPIKey]().ID(mutation.KeyID).
-		Where(apiKeyWriteScope(mutation.EnvironmentID, mutation.ProjectID, mutation.CurrentPublicID)).SetMap(map[string]any{
-		fields.PublicID():     replacement.PublicID,
+	rowsAffected, err = r.Engine.Update[*model.ProjectAPIKey]().ID(mutation.KeyID).
+		Where(apiKeyWriteScope(mutation.EnvironmentID, mutation.ProjectID, mutation.CurrentSecretHash)).SetMap(map[string]any{
 		fields.SecretHash():   replacement.SecretHash,
 		fields.SecretSuffix(): replacement.SecretSuffix,
 		fields.LastUsedAt():   nil,
 		fields.UpdatedAt():    replacement.UpdatedAt.UTC(),
 	}).Exec(ctx)
 	if err != nil {
-		return classifyKeyWriteError("project API key", err)
+		err = classifyKeyWriteError("project API key", err)
+		return
 	}
-	if affected == 0 {
-		return Unchanged("project API key rotation")
+	if rowsAffected == 0 {
+		err = Unchanged("project API key rotation")
+		return
 	}
-	return nil
+	return
 }
 
-// Revoke revokes a credential only when its public ID and live ownership still match.
+// Revoke revokes a credential only when its credential digest and live ownership still match.
 //
-// Parameters: ctx carries the transaction; mutation identifies the scope and expected public ID; revokedAt is the revocation time.
-// Returns: nil after one credential changes, ErrNoRowsAffected, or a database error.
+// Parameters: ctx carries the transaction; mutation identifies the scope and expected credential digest; revokedAt is the revocation time.
+// Returns: rowsAffected after one credential changes, ErrNoRowsAffected, or a database error.
 // Throws: none; failures are returned as errors.
-func (r *ProjectAPIKeyRepositoryImpl) Revoke(ctx context.Context, mutation APIKeyMutation, revokedAt time.Time) error {
+func (r *ProjectAPIKeyRepositoryImpl) Revoke(ctx context.Context, mutation APIKeyMutation, revokedAt time.Time) (rowsAffected int64, err error) {
 	revokedAt = revokedAt.UTC()
 	fields := new(model.ProjectAPIKey).LormCols()
-	affected, err := r.Engine.Update[*model.ProjectAPIKey]().ID(mutation.KeyID).
-		Where(apiKeyWriteScope(mutation.EnvironmentID, mutation.ProjectID, mutation.CurrentPublicID)).SetMap(map[string]any{
+	rowsAffected, err = r.Engine.Update[*model.ProjectAPIKey]().ID(mutation.KeyID).
+		Where(apiKeyWriteScope(mutation.EnvironmentID, mutation.ProjectID, mutation.CurrentSecretHash)).SetMap(map[string]any{
 		fields.RevokedAt(): revokedAt,
 		fields.UpdatedAt(): revokedAt,
 	}).Exec(ctx)
 	if err != nil {
-		return WrapDatabaseError(err)
+		err = WrapDatabaseError(err)
+		return
 	}
-	if affected == 0 {
-		return Unchanged("project API key revocation")
+	if rowsAffected == 0 {
+		err = Unchanged("project API key revocation")
+		return
 	}
-	return nil
+	return
 }
 
 // Keep the environment constraint in the write, even when the caller has already locked the key.
-func apiKeyWriteScope(environmentID, projectID int64, publicID string) builder.Sqlizer {
+func apiKeyWriteScope(environmentID, projectID int64, secretHash []byte) builder.Sqlizer {
 	fields := new(model.ProjectAPIKey).LormCols()
 	return builder.And{
 		builder.And{
 			builder.Eq{
-				fields.ProjectID(): projectID,
-				fields.PublicID():  publicID,
+				fields.ProjectID():     projectID,
+				fields.SecretHash():    secretHash,
+				fields.EnvironmentID(): environmentID,
 			},
 			builder.IsNull(fields.RevokedAt()),
 		},
-		builder.Expr("EXISTS (SELECT 1 FROM projects p JOIN environments e ON e.project_id = p.id WHERE p.id = ? AND e.id = ? AND p.deleted_at IS NULL AND e.deleted_at IS NULL)", projectID, environmentID),
+		builder.Expr("EXISTS (SELECT 1 FROM projects p JOIN environments e ON e.project_id = p.id WHERE p.id = ? AND e.id = ?)", projectID, environmentID),
 	}
 }
 
 // LockRuntimeCredential prevents rotation and revocation from racing an authenticated runtime read.
 //
-// Parameters: ctx carries the runtime transaction; publicID selects the credential.
+// Parameters: ctx carries the runtime transaction; secretHash selects the credential.
 // Returns: the locked credential, ErrNotFound, or a database error.
 // Throws: none; failures are returned as errors.
-func (r *ProjectAPIKeyRepositoryImpl) LockRuntimeCredential(ctx context.Context, publicID string) (*model.ProjectAPIKey, error) {
+func (r *ProjectAPIKeyRepositoryImpl) LockRuntimeCredential(ctx context.Context, secretHash []byte) (*model.ProjectAPIKey, error) {
 	key, found, err := r.Engine.Query[*model.ProjectAPIKey]().
-		Where(builder.Eq{new(model.ProjectAPIKey).LormCols().PublicID(): publicID}).Suffix("FOR UPDATE").Get(ctx)
+		Where(builder.Eq{new(model.ProjectAPIKey).LormCols().SecretHash(): secretHash}).Suffix("FOR UPDATE").Get(ctx)
 	if err != nil {
 		return nil, WrapDatabaseError(err)
 	}
@@ -198,17 +203,15 @@ func (r *ProjectAPIKeyRepositoryImpl) LockRuntimeCredential(ctx context.Context,
 
 // FindRuntimeProject requires a live project with an enabled environment before runtime access.
 //
-// Parameters: ctx carries the runtime transaction; projectID selects the authenticated project.
+// Parameters: ctx carries the runtime transaction; environmentID and projectID select the credential’s environment and project.
 // Returns: the locked project, ErrNotFound, or a database error.
 // Throws: none; failures are returned as errors.
-func (r *ProjectAPIKeyRepositoryImpl) FindRuntimeProject(ctx context.Context, projectID int64) (*model.Project, error) {
+func (r *ProjectAPIKeyRepositoryImpl) FindRuntimeProject(ctx context.Context, environmentID, projectID int64) (*model.Project, error) {
 	project, found, err := r.Engine.Query[*model.Project]().From("projects p").Select("p.*").
-		InnerJoin("environments e ON e.project_id = p.id AND e.enabled = TRUE AND e.deleted_at IS NULL").
-		Where(builder.And{
-			builder.Eq{
-				"p.id": projectID,
-			},
-			builder.IsNull("p.deleted_at"),
+		InnerJoin("environments e ON e.project_id = p.id AND e.enabled = TRUE").
+		Where(builder.Eq{
+			"p.id": projectID,
+			"e.id": environmentID,
 		}).Suffix("FOR UPDATE").Get(ctx)
 	if err != nil {
 		return nil, WrapDatabaseError(err)
@@ -221,17 +224,15 @@ func (r *ProjectAPIKeyRepositoryImpl) FindRuntimeProject(ctx context.Context, pr
 
 // FindRuntimeConfig locks a live configuration within the authenticated project.
 //
-// Parameters: ctx carries the runtime transaction; projectID defines ownership; configKey selects the configuration.
+// Parameters: ctx carries the runtime transaction; environmentID and projectID define ownership; configKey selects the configuration.
 // Returns: the locked configuration, ErrNotFound, or a database error.
 // Throws: none; failures are returned as errors.
-func (r *ProjectAPIKeyRepositoryImpl) FindRuntimeConfig(ctx context.Context, projectID int64, configKey string) (*model.Config, error) {
+func (r *ProjectAPIKeyRepositoryImpl) FindRuntimeConfig(ctx context.Context, environmentID, projectID int64, configKey string) (*model.Config, error) {
 	fields := new(model.Config).LormCols()
-	config, found, err := r.Engine.Query[*model.Config]().Where(builder.And{
-		builder.Eq{
-			fields.ProjectID(): projectID,
-			fields.Key():       configKey,
-		},
-		builder.IsNull(fields.DeletedAt()),
+	config, found, err := r.Engine.Query[*model.Config]().Where(builder.Eq{
+		fields.ProjectID():     projectID,
+		fields.Key():           configKey,
+		fields.EnvironmentID(): environmentID,
 	}).Suffix("FOR UPDATE").Get(ctx)
 	if err != nil {
 		return nil, WrapDatabaseError(err)
@@ -249,13 +250,10 @@ func (r *ProjectAPIKeyRepositoryImpl) FindRuntimeConfig(ctx context.Context, pro
 // Throws: none; failures are returned as errors.
 func (r *ProjectAPIKeyRepositoryImpl) FindReleasedSnapshot(ctx context.Context, projectID, configID int64) (*model.Snapshot, error) {
 	fields := new(model.Snapshot).LormCols()
-	snapshot, found, err := r.Engine.Query[*model.Snapshot]().Where(builder.And{
-		builder.Eq{
-			fields.ProjectID(): projectID,
-			fields.ConfigID():  configID,
-			fields.Status():    model.SnapshotStatusReleased,
-		},
-		builder.IsNull(fields.DeletedAt()),
+	snapshot, found, err := r.Engine.Query[*model.Snapshot]().Where(builder.Eq{
+		fields.ProjectID(): projectID,
+		fields.ConfigID():  configID,
+		fields.Status():    model.SnapshotStatusReleased,
 	}).Desc(fields.ID()).Suffix("FOR UPDATE").Get(ctx)
 	if err != nil {
 		return nil, WrapDatabaseError(err)
@@ -268,15 +266,15 @@ func (r *ProjectAPIKeyRepositoryImpl) FindReleasedSnapshot(ctx context.Context, 
 
 // MarkUsed keeps usage timestamps monotonic without reviving revoked credentials.
 //
-// Parameters: ctx controls the write; publicID selects the credential; usedAt is the observed access time.
-// Returns: nil when updated or already newer/revoked, or a database error.
+// Parameters: ctx controls the write; secretHash selects the credential; usedAt is the observed access time.
+// Returns: rowsAffected when the timestamp advanced, 0 when already newer or revoked, or a database error.
 // Throws: none; failures are returned as errors.
-func (r *ProjectAPIKeyRepositoryImpl) MarkUsed(ctx context.Context, publicID string, usedAt time.Time) error {
+func (r *ProjectAPIKeyRepositoryImpl) MarkUsed(ctx context.Context, secretHash []byte, usedAt time.Time) (rowsAffected int64, err error) {
 	usedAt = usedAt.UTC()
 	fields := new(model.ProjectAPIKey).LormCols()
-	_, err := r.Engine.Update[*model.ProjectAPIKey]().Where(builder.And{
+	rowsAffected, err = r.Engine.Update[*model.ProjectAPIKey]().Where(builder.And{
 		builder.Eq{
-			fields.PublicID(): publicID,
+			fields.SecretHash(): secretHash,
 		},
 		builder.IsNull(fields.RevokedAt()),
 	}).Where(builder.Or{
@@ -286,7 +284,10 @@ func (r *ProjectAPIKeyRepositoryImpl) MarkUsed(ctx context.Context, publicID str
 		fields.LastUsedAt(): usedAt,
 		fields.UpdatedAt():  usedAt,
 	}).Exec(ctx)
-	return WrapDatabaseError(err)
+	if err != nil {
+		err = WrapDatabaseError(err)
+	}
+	return
 }
 
 var _ ProjectAPIKeyRepository = (*ProjectAPIKeyRepositoryImpl)(nil)

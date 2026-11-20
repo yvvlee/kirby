@@ -4,14 +4,14 @@ import (
 	"context"
 
 	adminv1 "github.com/yvvlee/kirby/server/api/admin"
-	"github.com/yvvlee/kirby/server/internal/converter"
+	commonv1 "github.com/yvvlee/kirby/server/api/common"
+	"github.com/yvvlee/kirby/server/internal/entity"
 	"github.com/yvvlee/kirby/server/internal/logic"
-	"github.com/yvvlee/kirby/server/internal/model"
 	"github.com/yvvlee/kirby/server/internal/permission"
 )
 
 type exportLogic interface {
-	Export(ctx context.Context, actor permission.Actor, sourceEnvironmentID, snapshotID int64) (*model.Snapshot, error)
+	Export(ctx context.Context, param *entity.ExportSnapshotParam) (*commonv1.Snapshot, error)
 }
 
 type ExportService struct {
@@ -37,16 +37,16 @@ func (s *ExportService) ExportSnapshot(ctx context.Context, request *adminv1.Exp
 	if err != nil {
 		return nil, apiError(err)
 	}
-	item, err := s.exportLogic.Export(ctx, actor, request.SourceEnvironmentId, request.SnapshotId)
-	if err != nil {
-		return nil, apiError(err)
-	}
-	converted, err := converter.SnapshotToProto(item)
+	item, err := s.exportLogic.Export(ctx, &entity.ExportSnapshotParam{
+		Actor:               actor,
+		SourceEnvironmentID: request.SourceEnvironmentId,
+		SnapshotID:          request.SnapshotId,
+	})
 	if err != nil {
 		return nil, apiError(err)
 	}
 	return &adminv1.ExportSnapshotReply{
 		SourceEnvironmentId: request.SourceEnvironmentId,
-		Snapshot:            converted,
+		Snapshot:            item,
 	}, nil
 }

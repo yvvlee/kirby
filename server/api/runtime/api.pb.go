@@ -25,7 +25,6 @@ const (
 
 type ConfigRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Project       string                 `protobuf:"bytes,1,opt,name=project,proto3" json:"project,omitempty"`
 	Key           string                 `protobuf:"bytes,2,opt,name=key,proto3" json:"key,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -59,13 +58,6 @@ func (x *ConfigRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ConfigRequest.ProtoReflect.Descriptor instead.
 func (*ConfigRequest) Descriptor() ([]byte, []int) {
 	return file_runtime_api_proto_rawDescGZIP(), []int{0}
-}
-
-func (x *ConfigRequest) GetProject() string {
-	if x != nil {
-		return x.Project
-	}
-	return ""
 }
 
 func (x *ConfigRequest) GetKey() string {
@@ -131,10 +123,9 @@ var File_runtime_api_proto protoreflect.FileDescriptor
 
 const file_runtime_api_proto_rawDesc = "" +
 	"\n" +
-	"\x11runtime/api.proto\x12\x10kirby.runtime.v1\x1a\x1cgoogle/api/annotations.proto\x1a\x17validate/validate.proto\"Q\n" +
-	"\rConfigRequest\x12#\n" +
-	"\aproject\x18\x01 \x01(\tB\t\xfaB\x06r\x04\x10\x01\x18@R\aproject\x12\x1b\n" +
-	"\x03key\x18\x02 \x01(\tB\t\xfaB\x06r\x04\x10\x01\x18@R\x03key\"A\n" +
+	"\x11runtime/api.proto\x12\x10kirby.runtime.v1\x1a\x1cgoogle/api/annotations.proto\x1a\x17validate/validate.proto\";\n" +
+	"\rConfigRequest\x12\x1b\n" +
+	"\x03key\x18\x02 \x01(\tB\t\xfaB\x06r\x04\x10\x01\x18@R\x03keyJ\x04\b\x01\x10\x02R\aproject\"A\n" +
 	"\vConfigReply\x12\x18\n" +
 	"\acontent\x18\x01 \x01(\tR\acontent\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\x04R\aversion2c\n" +

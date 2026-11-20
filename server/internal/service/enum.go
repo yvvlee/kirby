@@ -7,16 +7,15 @@ import (
 
 	adminv1 "github.com/yvvlee/kirby/server/api/admin"
 	commonv1 "github.com/yvvlee/kirby/server/api/common"
-	"github.com/yvvlee/kirby/server/internal/converter"
+	"github.com/yvvlee/kirby/server/internal/entity"
 	"github.com/yvvlee/kirby/server/internal/logic"
-	"github.com/yvvlee/kirby/server/internal/model"
 	"github.com/yvvlee/kirby/server/internal/permission"
 )
 
 type enumLogic interface {
-	Create(ctx context.Context, actor permission.Actor, environmentID int64, input logic.EnumCreateInput) (*model.ConfigEnum, error)
-	Update(ctx context.Context, actor permission.Actor, environmentID int64, input logic.EnumUpdateInput) (*model.ConfigEnum, error)
-	List(ctx context.Context, actor permission.Actor, environmentID, projectID, configID int64) ([]model.ConfigEnum, error)
+	Create(ctx context.Context, param *entity.CreateEnumParam) (*commonv1.ConfigEnum, error)
+	Update(ctx context.Context, param *entity.UpdateEnumParam) (*commonv1.ConfigEnum, error)
+	List(ctx context.Context, actor permission.Actor, environmentID, projectID, configID int64) ([]*commonv1.ConfigEnum, error)
 	Delete(ctx context.Context, actor permission.Actor, environmentID, enumID int64) error
 }
 type EnumService struct{ enumLogic enumLogic }
@@ -42,14 +41,19 @@ func (s *EnumService) CreateEnum(ctx context.Context, request *adminv1.CreateEnu
 	if err != nil {
 		return nil, apiError(err)
 	}
-	item, err := s.enumLogic.Create(ctx, actor, request.EnvironmentId, logic.EnumCreateInput{
-		ConfigID:    request.ConfigId,
-		Key:         request.Key,
-		Name:        request.Name,
-		Description: request.Description,
-		Values:      request.Values,
+	item, err := s.enumLogic.Create(ctx, &entity.CreateEnumParam{
+		Actor:         actor,
+		EnvironmentID: request.EnvironmentId,
+		ConfigID:      request.ConfigId,
+		Key:           request.Key,
+		Name:          request.Name,
+		Description:   request.Description,
+		Values:        request.Values,
 	})
-	return enumReply(item, err)
+	if err != nil {
+		return nil, apiError(err)
+	}
+	return &adminv1.EnumReply{Enum: item}, nil
 }
 
 // UpdateEnum maps the authenticated API request to the application operation.
@@ -62,15 +66,20 @@ func (s *EnumService) UpdateEnum(ctx context.Context, request *adminv1.UpdateEnu
 	if err != nil {
 		return nil, apiError(err)
 	}
-	item, err := s.enumLogic.Update(ctx, actor, request.EnvironmentId, logic.EnumUpdateInput{
-		EnumID:      request.Id,
-		Key:         request.Key,
-		Name:        request.Name,
-		Description: request.Description,
-		Values:      request.Values,
-		Version:     int64(request.Version),
+	item, err := s.enumLogic.Update(ctx, &entity.UpdateEnumParam{
+		Actor:         actor,
+		EnvironmentID: request.EnvironmentId,
+		EnumID:        request.Id,
+		Key:           request.Key,
+		Name:          request.Name,
+		Description:   request.Description,
+		Values:        request.Values,
+		Version:       int64(request.Version),
 	})
-	return enumReply(item, err)
+	if err != nil {
+		return nil, apiError(err)
+	}
+	return &adminv1.EnumReply{Enum: item}, nil
 }
 
 // ListEnum maps the authenticated API request to the application operation.
@@ -87,15 +96,7 @@ func (s *EnumService) ListEnum(ctx context.Context, request *adminv1.ListEnumReq
 	if err != nil {
 		return nil, apiError(err)
 	}
-	result := make([]*commonv1.ConfigEnum, 0, len(items))
-	for index := range items {
-		converted, err := converter.EnumToProto(&items[index])
-		if err != nil {
-			return nil, apiError(err)
-		}
-		result = append(result, converted)
-	}
-	return &adminv1.ListEnumReply{List: result}, nil
+	return &adminv1.ListEnumReply{List: items}, nil
 }
 
 // DeleteEnum maps the authenticated API request to the application operation.
@@ -112,15 +113,4 @@ func (s *EnumService) DeleteEnum(ctx context.Context, request *adminv1.EnumIDReq
 		return nil, apiError(err)
 	}
 	return &emptypb.Empty{}, nil
-}
-
-func enumReply(item *model.ConfigEnum, err error) (*adminv1.EnumReply, error) {
-	if err != nil {
-		return nil, apiError(err)
-	}
-	converted, err := converter.EnumToProto(item)
-	if err != nil {
-		return nil, apiError(err)
-	}
-	return &adminv1.EnumReply{Enum: converted}, nil
 }

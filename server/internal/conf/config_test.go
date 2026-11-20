@@ -7,42 +7,45 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestLoadFileStrictAndComplete(t *testing.T) {
-	path := writeConfig(t, validConfig("single", "memory", "local"))
-	cfg, err := LoadFile(path)
+func TestNewConfigLoadsFileSource(t *testing.T) {
+	t.Setenv(ConfigFileEnvironment, writeConfig(t, validConfig("single", "memory", "local")))
+	cfg, cleanup, err := NewConfig("")
 	require.NoError(t, err)
+	t.Cleanup(cleanup)
 	assert.Equal(t, ModeSingle, cfg.Mode)
-	assert.Equal(t, 15*time.Minute, cfg.JWT.AccessTTL.Duration)
-	assert.Equal(t, "mysql-secret", cfg.MySQL.DSN.Value())
+	assert.Equal(t, 15*60*1000, cfg.JWT.AccessTTL)
+	assert.Equal(t, "mysql-secret", cfg.Database.DSN)
 }
 
 func TestExampleConfigurationNeedsOnlyDependencyCredentials(t *testing.T) {
-	path := filepath.Join("..", "..", "..", "deploy", "config.example.yaml")
-	cfg, err := LoadFile(path)
+	t.Setenv(ConfigFileEnvironment, filepath.Join("..", "..", "..", "deploy", "config.example.yaml"))
+	cfg, cleanup, err := NewConfig("")
 	require.NoError(t, err)
+	t.Cleanup(cleanup)
 	assert.Equal(t, ModeMulti, cfg.Mode)
 	assert.Equal(t, "kirby", cfg.JWT.Issuer)
 	require.NoError(t, cfg.Validate())
 }
 
-func TestLoadFileRejectsUnknownField(t *testing.T) {
-	path := writeConfig(t, validConfig("single", "memory", "local")+"unknown: true\n")
-	_, err := LoadFile(path)
+func TestNewConfigRejectsMissingRequiredField(t *testing.T) {
+	content := strings.Replace(validConfig("single", "memory", "local"), "  dsn: mysql-secret\n", "", 1)
+	t.Setenv(ConfigFileEnvironment, writeConfig(t, content))
+	_, _, err := NewConfig("")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "field unknown not found")
+	assert.Contains(t, err.Error(), "database.dsn is required")
 }
 
-func TestLoadFileRejectsMissingRequiredField(t *testing.T) {
-	content := strings.Replace(validConfig("single", "memory", "local"), "  dsn: mysql-secret\n", "", 1)
-	_, err := LoadFile(writeConfig(t, content))
+func TestNewConfigRejectsLegacyMySQLSection(t *testing.T) {
+	content := strings.Replace(validConfig("single", "memory", "local"), "\ndatabase:\n", "\nmysql:\n", 1)
+	t.Setenv(ConfigFileEnvironment, writeConfig(t, content))
+	_, _, err := NewConfig("")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "mysql.dsn is required")
+	assert.Contains(t, err.Error(), "database.driver")
 }
 
 func TestListenerAddressesMustNotConflict(t *testing.T) {
@@ -53,7 +56,8 @@ func TestListenerAddressesMustNotConflict(t *testing.T) {
 			`address: "`+grpcAddress+`"`,
 			1,
 		)
-		_, err := LoadFile(writeConfig(t, content))
+		t.Setenv(ConfigFileEnvironment, writeConfig(t, content))
+		_, _, err := NewConfig("")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "different listeners")
 	}
@@ -71,8 +75,10 @@ func TestTrustedProxiesDefaultToReverseProxySupport(t *testing.T) {
 		netip.MustParsePrefix("::/0"),
 	}
 	for _, content := range configs {
-		cfg, err := LoadFile(writeConfig(t, content))
+		t.Setenv(ConfigFileEnvironment, writeConfig(t, content))
+		cfg, cleanup, err := NewConfig("")
 		require.NoError(t, err)
+		t.Cleanup(cleanup)
 		prefixes, err := ParseTrustedProxyCIDRs(cfg.Security.TrustedProxies)
 		require.NoError(t, err)
 		assert.Equal(t, want, prefixes)
@@ -90,7 +96,8 @@ func TestTrustedProxiesAreStrictCanonicalCIDRs(t *testing.T) {
 	} {
 		t.Run(value, func(t *testing.T) {
 			content := strings.Replace(base, "  trusted_proxies: []", "  trusted_proxies:\n    - "+value, 1)
-			_, err := LoadFile(writeConfig(t, content))
+			t.Setenv(ConfigFileEnvironment, writeConfig(t, content))
+			_, _, err := NewConfig("")
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "security.trusted_proxies")
 		})
@@ -102,7 +109,8 @@ func TestTrustedProxiesAreStrictCanonicalCIDRs(t *testing.T) {
 		"  trusted_proxies:\n    - \"10.0.0.0/8\"\n    - \"10.0.0.0/8\"",
 		1,
 	)
-	_, err := LoadFile(writeConfig(t, duplicate))
+	t.Setenv(ConfigFileEnvironment, writeConfig(t, duplicate))
+	_, _, err := NewConfig("")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "duplicate CIDR")
 }
@@ -114,24 +122,21 @@ func TestTrustedProxiesAllowEmptyAndExactNetworks(t *testing.T) {
 		"  trusted_proxies:\n    - \"10.0.0.0/8\"\n    - \"2001:db8::/32\"",
 		1,
 	)
-	cfg, err := LoadFile(writeConfig(t, content))
+	t.Setenv(ConfigFileEnvironment, writeConfig(t, content))
+	cfg, cleanup, err := NewConfig("")
 	require.NoError(t, err)
+	t.Cleanup(cleanup)
 	assert.Equal(t, []string{"10.0.0.0/8", "2001:db8::/32"}, cfg.Security.TrustedProxies)
 
-	cfg, err = LoadFile(writeConfig(t, validConfig("single", "memory", "local")))
+	t.Setenv(ConfigFileEnvironment, writeConfig(t, validConfig("single", "memory", "local")))
+	cfg, cleanup, err = NewConfig("")
 	require.NoError(t, err)
+	t.Cleanup(cleanup)
 	assert.NotNil(t, cfg.Security.TrustedProxies)
 	assert.Empty(t, cfg.Security.TrustedProxies)
 	prefixes, err := ParseTrustedProxyCIDRs(cfg.Security.TrustedProxies)
 	require.NoError(t, err)
 	assert.Empty(t, prefixes)
-}
-
-func TestLoadFileRejectsMultipleDocuments(t *testing.T) {
-	path := writeConfig(t, validConfig("single", "memory", "local")+"---\nmode: single\n")
-	_, err := LoadFile(path)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "multiple YAML documents")
 }
 
 func TestMultiModeRequiresSharedDependencies(t *testing.T) {
@@ -156,7 +161,8 @@ func TestMultiModeRequiresSharedDependencies(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := LoadFile(writeConfig(t, validConfig("multi", test.cache, test.storage)))
+			t.Setenv(ConfigFileEnvironment, writeConfig(t, validConfig("multi", test.cache, test.storage)))
+			_, _, err := NewConfig("")
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), test.want)
 		})
@@ -219,7 +225,8 @@ func TestS3ConfigurationRequiresInternalConnection(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			content := strings.Replace(base, test.previous, test.next, 1)
-			_, err := LoadFile(writeConfig(t, content))
+			t.Setenv(ConfigFileEnvironment, writeConfig(t, content))
+			_, _, err := NewConfig("")
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), test.want)
 		})
@@ -235,8 +242,10 @@ func TestS3ConfigurationLoadsWithoutPublicDomain(t *testing.T) {
 	base := validConfig("multi", "redis", "s3")
 	for _, replacement := range []string{"", "    public_base_url: \"\"\n"} {
 		content := strings.Replace(base, "    public_base_url: \"https://cdn.example.com/kirby/assets\"\n", replacement, 1)
-		cfg, err := LoadFile(writeConfig(t, content))
+		t.Setenv(ConfigFileEnvironment, writeConfig(t, content))
+		cfg, cleanup, err := NewConfig("")
 		require.NoError(t, err)
+		t.Cleanup(cleanup)
 		assert.Equal(t, "minio:9000", cfg.ObjectStorage.S3.Endpoint)
 		assert.Empty(t, cfg.ObjectStorage.S3.PublicBaseURL)
 	}
@@ -265,7 +274,8 @@ func TestS3PublicBaseURLIsStrictAndAllowsFixedPath(t *testing.T) {
 				value,
 				1,
 			)
-			_, err := LoadFile(writeConfig(t, content))
+			t.Setenv(ConfigFileEnvironment, writeConfig(t, content))
+			_, _, err := NewConfig("")
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "object_storage.s3.public_base_url")
 		})
@@ -282,39 +292,30 @@ func TestS3PublicBaseURLIsStrictAndAllowsFixedPath(t *testing.T) {
 				value,
 				1,
 			)
-			_, err := LoadFile(writeConfig(t, content))
+			t.Setenv(ConfigFileEnvironment, writeConfig(t, content))
+			_, cleanup, err := NewConfig("")
 			require.NoError(t, err)
+			t.Cleanup(cleanup)
 		})
 	}
 }
 
 func TestResolvePathPrefersFlag(t *testing.T) {
-	path, err := ResolvePath("./flag.yaml", func(string) (string, bool) {
+	path := ResolvePath("./flag.yaml", func(string) (string, bool) {
 		return "/environment.yaml", true
 	})
-	require.NoError(t, err)
 	assert.Equal(t, "flag.yaml", path)
 }
 
 func TestResolvePathUsesOnlyNamedEnvironmentVariable(t *testing.T) {
-	path, err := ResolvePath("", func(key string) (string, bool) {
+	path := ResolvePath("", func(key string) (string, bool) {
 		assert.Equal(t, ConfigFileEnvironment, key)
 		return "/environment.yaml", true
 	})
-	require.NoError(t, err)
 	assert.Equal(t, "/environment.yaml", path)
 
-	_, err = ResolvePath("", func(string) (string, bool) { return "", false })
-	require.Error(t, err)
-}
-
-func TestSecretPreservesConfiguredValue(t *testing.T) {
-	secret := NewSecret("configured-value")
-	assert.Equal(t, "configured-value", fmt.Sprint(secret))
-	assert.Equal(t, `"configured-value"`, fmt.Sprintf("%#v", secret))
-	encoded, err := secret.MarshalYAML()
-	require.NoError(t, err)
-	assert.Equal(t, "configured-value", encoded)
+	path = ResolvePath("", func(string) (string, bool) { return "", false })
+	assert.Equal(t, "", path)
 }
 
 func writeConfig(t *testing.T, content string) string {
@@ -328,15 +329,16 @@ func validConfig(mode, cacheDriver, storageDriver string) string {
 	return fmt.Sprintf(`mode: %s
 http:
   address: ":8000"
-  timeout: 10s
+  timeout: 10000
 grpc:
   address: ":9000"
-  timeout: 10s
-mysql:
+  timeout: 10000
+database:
+  driver: mysql
   dsn: mysql-secret
   max_open_conns: 20
   max_idle_conns: 10
-  conn_max_lifetime: 5m
+  conn_max_lifetime: 300000
 cache:
   driver: %s
   redis:
@@ -347,8 +349,8 @@ cache:
     key_prefix: "kirby:"
 jwt:
   issuer: kirby
-  access_ttl: 15m
-  refresh_ttl: 168h
+  access_ttl: 900000
+  refresh_ttl: 604800000
 security:
   trusted_proxies: []
 object_storage:

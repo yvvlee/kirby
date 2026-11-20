@@ -23,10 +23,11 @@ func (r *setupTestRepository) IsInitialized(context.Context) (bool, error) {
 	return r.initialized, r.statusErr
 }
 
-func (r *setupTestRepository) CreateInitialAdmin(ctx context.Context, user *model.User) error {
+func (r *setupTestRepository) CreateInitialAdmin(ctx context.Context, user *model.User) (rowsAffected int64, err error) {
 	r.created = user
 	r.createCtx = ctx
-	return r.createErr
+	err = r.createErr
+	return
 }
 
 type setupTestHasher struct {
@@ -72,14 +73,14 @@ func TestSetupCreatesAdminWithHashedPasswordInsideTransaction(t *testing.T) {
 		return fn(txctx)
 	})
 	setup := NewSetupLogic(repo, hasher, store)
-	if err := setup.CreateInitialAdmin(context.Background(), "owner", "Owner", "initial-password"); err != nil {
+	if err := setup.CreateInitialAdmin(context.Background(), "owner", "Owner", "initial-password", "owner@example.com"); err != nil {
 		t.Fatal(err)
 	}
 	if !called || repo.createCtx != txctx {
 		t.Fatal("repository was called outside the setup transaction")
 	}
 	user := repo.created
-	if user.Username != "owner" || user.DisplayName != "Owner" || !user.Enabled || !user.IsSystemAdmin || user.MustChangePassword {
+	if user.Username != "owner" || user.Nickname != "Owner" || !user.Enabled || !user.IsSystemAdmin || user.MustChangePassword {
 		t.Fatalf("unexpected initial administrator: %+v", user)
 	}
 	match, _, err := hasher.Verify(user.PasswordHash, "initial-password")
@@ -98,7 +99,7 @@ func TestSetupStopsBeforeTransactionWhenHashFails(t *testing.T) {
 	})
 	setup := NewSetupLogic(repo, setupTestPasswordHasher(t), store)
 	setup.passwords = setupTestHasher{err: failure}
-	if err := setup.CreateInitialAdmin(context.Background(), "owner", "Owner", "initial-password"); !errors.Is(err, failure) {
+	if err := setup.CreateInitialAdmin(context.Background(), "owner", "Owner", "initial-password", "owner@example.com"); !errors.Is(err, failure) {
 		t.Fatalf("hash error = %v", err)
 	}
 	if called || repo.created != nil {
@@ -110,7 +111,7 @@ func TestSetupPropagatesTransactionAndAlreadyInitializedErrors(t *testing.T) {
 	failure := errors.New("transaction commit failed")
 	repo := &setupTestRepository{}
 	setup := NewSetupLogic(repo, setupTestPasswordHasher(t), transactionFunc(func(context.Context, func(context.Context) error) error { return failure }))
-	if err := setup.CreateInitialAdmin(context.Background(), "owner", "Owner", "initial-password"); !errors.Is(err, failure) {
+	if err := setup.CreateInitialAdmin(context.Background(), "owner", "Owner", "initial-password", "owner@example.com"); !errors.Is(err, failure) {
 		t.Fatalf("transaction error = %v", err)
 	}
 	if repo.created != nil {
@@ -118,7 +119,7 @@ func TestSetupPropagatesTransactionAndAlreadyInitializedErrors(t *testing.T) {
 	}
 	repo.createErr = repository.ErrAlreadyInitialized
 	setup.transactions = directTransactions{}
-	if err := setup.CreateInitialAdmin(context.Background(), "owner", "Owner", "initial-password"); !errors.Is(err, repository.ErrAlreadyInitialized) {
+	if err := setup.CreateInitialAdmin(context.Background(), "owner", "Owner", "initial-password", "owner@example.com"); !errors.Is(err, repository.ErrAlreadyInitialized) {
 		t.Fatalf("closed setup error = %v", err)
 	}
 }

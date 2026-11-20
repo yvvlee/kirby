@@ -12,7 +12,6 @@ import (
 	_ "google.golang.org/genproto/googleapis/api/annotations"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
-	emptypb "google.golang.org/protobuf/types/known/emptypb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -397,115 +396,11 @@ func (x *MyPermissionsReply) GetPermissions() []string {
 	return nil
 }
 
-type ListEnvironmentUsersReply struct {
-	state         protoimpl.MessageState      `protogen:"open.v1"`
-	List          []*common.EnvironmentMember `protobuf:"bytes,1,rep,name=list,proto3" json:"list,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ListEnvironmentUsersReply) Reset() {
-	*x = ListEnvironmentUsersReply{}
-	mi := &file_admin_environment_proto_msgTypes[7]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ListEnvironmentUsersReply) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ListEnvironmentUsersReply) ProtoMessage() {}
-
-func (x *ListEnvironmentUsersReply) ProtoReflect() protoreflect.Message {
-	mi := &file_admin_environment_proto_msgTypes[7]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ListEnvironmentUsersReply.ProtoReflect.Descriptor instead.
-func (*ListEnvironmentUsersReply) Descriptor() ([]byte, []int) {
-	return file_admin_environment_proto_rawDescGZIP(), []int{7}
-}
-
-func (x *ListEnvironmentUsersReply) GetList() []*common.EnvironmentMember {
-	if x != nil {
-		return x.List
-	}
-	return nil
-}
-
-type UpdateEnvironmentUserRolesRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	EnvironmentId int64                  `protobuf:"varint,1,opt,name=environment_id,json=environmentId,proto3" json:"environment_id,omitempty"`
-	UserId        int64                  `protobuf:"varint,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
-	RoleIds       []int64                `protobuf:"varint,3,rep,packed,name=role_ids,json=roleIds,proto3" json:"role_ids,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *UpdateEnvironmentUserRolesRequest) Reset() {
-	*x = UpdateEnvironmentUserRolesRequest{}
-	mi := &file_admin_environment_proto_msgTypes[8]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *UpdateEnvironmentUserRolesRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*UpdateEnvironmentUserRolesRequest) ProtoMessage() {}
-
-func (x *UpdateEnvironmentUserRolesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_admin_environment_proto_msgTypes[8]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use UpdateEnvironmentUserRolesRequest.ProtoReflect.Descriptor instead.
-func (*UpdateEnvironmentUserRolesRequest) Descriptor() ([]byte, []int) {
-	return file_admin_environment_proto_rawDescGZIP(), []int{8}
-}
-
-func (x *UpdateEnvironmentUserRolesRequest) GetEnvironmentId() int64 {
-	if x != nil {
-		return x.EnvironmentId
-	}
-	return 0
-}
-
-func (x *UpdateEnvironmentUserRolesRequest) GetUserId() int64 {
-	if x != nil {
-		return x.UserId
-	}
-	return 0
-}
-
-func (x *UpdateEnvironmentUserRolesRequest) GetRoleIds() []int64 {
-	if x != nil {
-		return x.RoleIds
-	}
-	return nil
-}
-
 var File_admin_environment_proto protoreflect.FileDescriptor
 
 const file_admin_environment_proto_rawDesc = "" +
 	"\n" +
-	"\x17admin/environment.proto\x12\x0ekirby.admin.v1\x1a\x1cgoogle/api/annotations.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a\x13common/entity.proto\x1a\x17validate/validate.proto\"F\n" +
+	"\x17admin/environment.proto\x12\x0ekirby.admin.v1\x1a\x1cgoogle/api/annotations.proto\x1a\x13common/entity.proto\x1a\x17validate/validate.proto\"F\n" +
 	"\x14EnvironmentIDRequest\x12.\n" +
 	"\x0eenvironment_id\x18\x01 \x01(\x03B\a\xfaB\x04\"\x02 \x00R\renvironmentId\"U\n" +
 	"\x17ListEnvironmentsRequest\x12+\n" +
@@ -531,20 +426,12 @@ const file_admin_environment_proto_rawDesc = "" +
 	"\x15ListEnvironmentsReply\x120\n" +
 	"\x04list\x18\x01 \x03(\v2\x1c.kirby.common.v1.EnvironmentR\x04list\"6\n" +
 	"\x12MyPermissionsReply\x12 \n" +
-	"\vpermissions\x18\x01 \x03(\tR\vpermissions\"S\n" +
-	"\x19ListEnvironmentUsersReply\x126\n" +
-	"\x04list\x18\x01 \x03(\v2\".kirby.common.v1.EnvironmentMemberR\x04list\"\xa0\x01\n" +
-	"!UpdateEnvironmentUserRolesRequest\x12.\n" +
-	"\x0eenvironment_id\x18\x01 \x01(\x03B\a\xfaB\x04\"\x02 \x00R\renvironmentId\x12 \n" +
-	"\auser_id\x18\x02 \x01(\x03B\a\xfaB\x04\"\x02 \x00R\x06userId\x12)\n" +
-	"\brole_ids\x18\x03 \x03(\x03B\x0e\xfaB\v\x92\x01\b\x18\x01\"\x04\"\x02 \x00R\aroleIds2\xbe\a\n" +
+	"\vpermissions\x18\x01 \x03(\tR\vpermissions2\xef\x04\n" +
 	"\x12EnvironmentService\x12\x7f\n" +
 	"\x10ListEnvironments\x12'.kirby.admin.v1.ListEnvironmentsRequest\x1a%.kirby.admin.v1.ListEnvironmentsReply\"\x1b\x82\xd3\xe4\x93\x02\x15\x12\x13/admin/environments\x12\x95\x01\n" +
 	"\x11CreateEnvironment\x12(.kirby.admin.v1.CreateEnvironmentRequest\x1a .kirby.admin.v1.EnvironmentReply\"4\x82\xd3\xe4\x93\x02.:\x01*\")/admin/projects/{project_id}/environments\x12\xa6\x01\n" +
 	"\x11UpdateEnvironment\x12(.kirby.admin.v1.UpdateEnvironmentRequest\x1a .kirby.admin.v1.EnvironmentReply\"E\x82\xd3\xe4\x93\x02?:\x01*\x1a:/admin/projects/{project_id}/environments/{environment_id}\x12\x96\x01\n" +
-	"\rMyPermissions\x12$.kirby.admin.v1.EnvironmentIDRequest\x1a\".kirby.admin.v1.MyPermissionsReply\";\x82\xd3\xe4\x93\x025\x123/admin/environments/{environment_id}/my-permissions\x12\x9b\x01\n" +
-	"\x14ListEnvironmentUsers\x12$.kirby.admin.v1.EnvironmentIDRequest\x1a).kirby.admin.v1.ListEnvironmentUsersReply\"2\x82\xd3\xe4\x93\x02,\x12*/admin/environments/{environment_id}/users\x12\xae\x01\n" +
-	"\x1aUpdateEnvironmentUserRoles\x121.kirby.admin.v1.UpdateEnvironmentUserRolesRequest\x1a\x16.google.protobuf.Empty\"E\x82\xd3\xe4\x93\x02?:\x01*\x1a:/admin/environments/{environment_id}/users/{user_id}/rolesB2Z0github.com/yvvlee/kirby/server/api/admin;adminv1b\x06proto3"
+	"\rMyPermissions\x12$.kirby.admin.v1.EnvironmentIDRequest\x1a\".kirby.admin.v1.MyPermissionsReply\";\x82\xd3\xe4\x93\x025\x123/admin/environments/{environment_id}/my-permissionsB2Z0github.com/yvvlee/kirby/server/api/admin;adminv1b\x06proto3"
 
 var (
 	file_admin_environment_proto_rawDescOnce sync.Once
@@ -558,42 +445,33 @@ func file_admin_environment_proto_rawDescGZIP() []byte {
 	return file_admin_environment_proto_rawDescData
 }
 
-var file_admin_environment_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_admin_environment_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_admin_environment_proto_goTypes = []any{
-	(*EnvironmentIDRequest)(nil),              // 0: kirby.admin.v1.EnvironmentIDRequest
-	(*ListEnvironmentsRequest)(nil),           // 1: kirby.admin.v1.ListEnvironmentsRequest
-	(*CreateEnvironmentRequest)(nil),          // 2: kirby.admin.v1.CreateEnvironmentRequest
-	(*UpdateEnvironmentRequest)(nil),          // 3: kirby.admin.v1.UpdateEnvironmentRequest
-	(*EnvironmentReply)(nil),                  // 4: kirby.admin.v1.EnvironmentReply
-	(*ListEnvironmentsReply)(nil),             // 5: kirby.admin.v1.ListEnvironmentsReply
-	(*MyPermissionsReply)(nil),                // 6: kirby.admin.v1.MyPermissionsReply
-	(*ListEnvironmentUsersReply)(nil),         // 7: kirby.admin.v1.ListEnvironmentUsersReply
-	(*UpdateEnvironmentUserRolesRequest)(nil), // 8: kirby.admin.v1.UpdateEnvironmentUserRolesRequest
-	(*common.Environment)(nil),                // 9: kirby.common.v1.Environment
-	(*common.EnvironmentMember)(nil),          // 10: kirby.common.v1.EnvironmentMember
-	(*emptypb.Empty)(nil),                     // 11: google.protobuf.Empty
+	(*EnvironmentIDRequest)(nil),     // 0: kirby.admin.v1.EnvironmentIDRequest
+	(*ListEnvironmentsRequest)(nil),  // 1: kirby.admin.v1.ListEnvironmentsRequest
+	(*CreateEnvironmentRequest)(nil), // 2: kirby.admin.v1.CreateEnvironmentRequest
+	(*UpdateEnvironmentRequest)(nil), // 3: kirby.admin.v1.UpdateEnvironmentRequest
+	(*EnvironmentReply)(nil),         // 4: kirby.admin.v1.EnvironmentReply
+	(*ListEnvironmentsReply)(nil),    // 5: kirby.admin.v1.ListEnvironmentsReply
+	(*MyPermissionsReply)(nil),       // 6: kirby.admin.v1.MyPermissionsReply
+	(*common.Environment)(nil),       // 7: kirby.common.v1.Environment
 }
 var file_admin_environment_proto_depIdxs = []int32{
-	9,  // 0: kirby.admin.v1.EnvironmentReply.environment:type_name -> kirby.common.v1.Environment
-	9,  // 1: kirby.admin.v1.ListEnvironmentsReply.list:type_name -> kirby.common.v1.Environment
-	10, // 2: kirby.admin.v1.ListEnvironmentUsersReply.list:type_name -> kirby.common.v1.EnvironmentMember
-	1,  // 3: kirby.admin.v1.EnvironmentService.ListEnvironments:input_type -> kirby.admin.v1.ListEnvironmentsRequest
-	2,  // 4: kirby.admin.v1.EnvironmentService.CreateEnvironment:input_type -> kirby.admin.v1.CreateEnvironmentRequest
-	3,  // 5: kirby.admin.v1.EnvironmentService.UpdateEnvironment:input_type -> kirby.admin.v1.UpdateEnvironmentRequest
-	0,  // 6: kirby.admin.v1.EnvironmentService.MyPermissions:input_type -> kirby.admin.v1.EnvironmentIDRequest
-	0,  // 7: kirby.admin.v1.EnvironmentService.ListEnvironmentUsers:input_type -> kirby.admin.v1.EnvironmentIDRequest
-	8,  // 8: kirby.admin.v1.EnvironmentService.UpdateEnvironmentUserRoles:input_type -> kirby.admin.v1.UpdateEnvironmentUserRolesRequest
-	5,  // 9: kirby.admin.v1.EnvironmentService.ListEnvironments:output_type -> kirby.admin.v1.ListEnvironmentsReply
-	4,  // 10: kirby.admin.v1.EnvironmentService.CreateEnvironment:output_type -> kirby.admin.v1.EnvironmentReply
-	4,  // 11: kirby.admin.v1.EnvironmentService.UpdateEnvironment:output_type -> kirby.admin.v1.EnvironmentReply
-	6,  // 12: kirby.admin.v1.EnvironmentService.MyPermissions:output_type -> kirby.admin.v1.MyPermissionsReply
-	7,  // 13: kirby.admin.v1.EnvironmentService.ListEnvironmentUsers:output_type -> kirby.admin.v1.ListEnvironmentUsersReply
-	11, // 14: kirby.admin.v1.EnvironmentService.UpdateEnvironmentUserRoles:output_type -> google.protobuf.Empty
-	9,  // [9:15] is the sub-list for method output_type
-	3,  // [3:9] is the sub-list for method input_type
-	3,  // [3:3] is the sub-list for extension type_name
-	3,  // [3:3] is the sub-list for extension extendee
-	0,  // [0:3] is the sub-list for field type_name
+	7, // 0: kirby.admin.v1.EnvironmentReply.environment:type_name -> kirby.common.v1.Environment
+	7, // 1: kirby.admin.v1.ListEnvironmentsReply.list:type_name -> kirby.common.v1.Environment
+	1, // 2: kirby.admin.v1.EnvironmentService.ListEnvironments:input_type -> kirby.admin.v1.ListEnvironmentsRequest
+	2, // 3: kirby.admin.v1.EnvironmentService.CreateEnvironment:input_type -> kirby.admin.v1.CreateEnvironmentRequest
+	3, // 4: kirby.admin.v1.EnvironmentService.UpdateEnvironment:input_type -> kirby.admin.v1.UpdateEnvironmentRequest
+	0, // 5: kirby.admin.v1.EnvironmentService.MyPermissions:input_type -> kirby.admin.v1.EnvironmentIDRequest
+	5, // 6: kirby.admin.v1.EnvironmentService.ListEnvironments:output_type -> kirby.admin.v1.ListEnvironmentsReply
+	4, // 7: kirby.admin.v1.EnvironmentService.CreateEnvironment:output_type -> kirby.admin.v1.EnvironmentReply
+	4, // 8: kirby.admin.v1.EnvironmentService.UpdateEnvironment:output_type -> kirby.admin.v1.EnvironmentReply
+	6, // 9: kirby.admin.v1.EnvironmentService.MyPermissions:output_type -> kirby.admin.v1.MyPermissionsReply
+	6, // [6:10] is the sub-list for method output_type
+	2, // [2:6] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_admin_environment_proto_init() }
@@ -608,7 +486,7 @@ func file_admin_environment_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_admin_environment_proto_rawDesc), len(file_admin_environment_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   9,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

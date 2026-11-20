@@ -19,9 +19,14 @@ import (
 
 var importErrAudit = errors.New("audit failed")
 
+type scopedTestProject struct {
+	model.Project
+	EnvironmentID int64
+}
+
 type importState struct {
 	mu              sync.Mutex
-	projects        map[int64]model.Project
+	projects        map[int64]scopedTestProject
 	configs         map[int64]model.Config
 	structures      map[int64][]model.Structure
 	enums           map[int64][]model.ConfigEnum
@@ -38,7 +43,7 @@ type importState struct {
 }
 
 type stateCopy struct {
-	projects        map[int64]model.Project
+	projects        map[int64]scopedTestProject
 	configs         map[int64]model.Config
 	structures      map[int64][]model.Structure
 	enums           map[int64][]model.ConfigEnum
@@ -56,7 +61,7 @@ type stateCopy struct {
 func newImportState(t *testing.T) *importState {
 	t.Helper()
 	return &importState{
-		projects: map[int64]model.Project{
+		projects: map[int64]scopedTestProject{
 			11: importProject(11, 1, "source"),
 			20: importProject(20, 2, "target"),
 		},
@@ -204,17 +209,18 @@ func (r stateImports) Claim(_ context.Context, record *model.ImportRecord) (*mod
 	return &clone, true, nil
 }
 
-func (r stateImports) Complete(_ context.Context, recordID, targetSnapshotID int64, resultJSON string) error {
+func (r stateImports) Complete(_ context.Context, recordID, targetSnapshotID int64, resultJSON string) (rowsAffected int64, err error) {
 	for key, record := range r.state.records {
 		if record.ID == recordID {
 			record.Status = model.ImportStatusSucceeded
 			record.TargetSnapshotID = &targetSnapshotID
 			record.ResultJSON = &resultJSON
 			r.state.records[key] = record
-			return nil
+			return
 		}
 	}
-	return repository.Missing("import record")
+	err = repository.Missing("import record")
+	return
 }
 
 type stateProjects struct {
@@ -227,7 +233,7 @@ func (r stateProjects) LockByID(_ context.Context, environmentID, projectID int6
 	if !ok || item.EnvironmentID != environmentID {
 		return nil, repository.Missing("project")
 	}
-	return &item, nil
+	return &item.Project, nil
 }
 
 type stateConfigs struct {
@@ -235,20 +241,22 @@ type stateConfigs struct {
 	state *importState
 }
 
-func (r stateConfigs) Create(_ context.Context, environmentID, projectID int64, item *model.Config) error {
+func (r stateConfigs) Create(_ context.Context, environmentID, projectID int64, item *model.Config) (rowsAffected int64, err error) {
 	if r.state.projects[projectID].EnvironmentID != environmentID {
-		return repository.Missing("project")
+		err = repository.Missing("project")
+		return
 	}
 	for _, existing := range r.state.configs {
-		if existing.ProjectID == projectID && existing.Key == item.Key && existing.DeletedAt == nil {
-			return repository.ErrKeyConflict
+		if existing.ProjectID == projectID && existing.Key == item.Key {
+			err = repository.ErrKeyConflict
+			return
 		}
 	}
 	item.ID = r.state.nextConfigID
 	r.state.nextConfigID++
 	item.ProjectID = projectID
 	r.state.configs[item.ID] = *item
-	return nil
+	return
 }
 
 func (r stateConfigs) LockByID(_ context.Context, environmentID, configID int64) (*model.Config, error) {
@@ -260,26 +268,28 @@ func (r stateConfigs) LockByID(_ context.Context, environmentID, configID int64)
 	return &item, nil
 }
 
-func (r stateConfigs) Update(_ context.Context, _ int64, configID int64, update repository.ConfigUpdate) error {
+func (r stateConfigs) Update(_ context.Context, _ int64, configID int64, update repository.ConfigUpdate) (rowsAffected int64, err error) {
 	item := r.state.configs[configID]
 	if item.Version != update.Version {
-		return repository.ErrNoRowsAffected
+		err = repository.ErrNoRowsAffected
+		return
 	}
 	item.Description, item.IsArray, item.TypeJSON, item.UpdatedBy = update.Description, update.IsArray, update.TypeJSON, update.UpdatedBy
 	item.Version++
 	r.state.configs[configID] = item
-	return nil
+	return
 }
 
-func (r stateConfigs) UpdateValue(_ context.Context, _ int64, configID int64, update repository.ConfigValueUpdate) error {
+func (r stateConfigs) UpdateValue(_ context.Context, _ int64, configID int64, update repository.ConfigValueUpdate) (rowsAffected int64, err error) {
 	item := r.state.configs[configID]
 	if item.Version != update.Version {
-		return repository.ErrNoRowsAffected
+		err = repository.ErrNoRowsAffected
+		return
 	}
 	item.Value, item.UpdatedBy = update.Value, update.UpdatedBy
 	item.Version++
 	r.state.configs[configID] = item
-	return nil
+	return
 }
 
 type stateStructures struct {
@@ -287,7 +297,7 @@ type stateStructures struct {
 	state *importState
 }
 
-func (r stateStructures) Reconcile(_ context.Context, _ int64, configID int64, items []*model.Structure, _ int64) error {
+func (r stateStructures) Reconcile(_ context.Context, _ int64, configID int64, items []*model.Structure, _ int64) (rowsAffected int64, err error) {
 	result := make([]model.Structure, 0, len(items))
 	for _, item := range items {
 		item.ID = r.state.nextStructureID
@@ -295,7 +305,7 @@ func (r stateStructures) Reconcile(_ context.Context, _ int64, configID int64, i
 		result = append(result, *item)
 	}
 	r.state.structures[configID] = result
-	return nil
+	return
 }
 
 type stateEnums struct {
@@ -303,7 +313,7 @@ type stateEnums struct {
 	state *importState
 }
 
-func (r stateEnums) Reconcile(_ context.Context, _ int64, configID int64, items []*model.ConfigEnum, _ int64) error {
+func (r stateEnums) Reconcile(_ context.Context, _ int64, configID int64, items []*model.ConfigEnum, _ int64) (rowsAffected int64, err error) {
 	result := make([]model.ConfigEnum, 0, len(items))
 	for _, item := range items {
 		item.ID = r.state.nextEnumID
@@ -311,7 +321,7 @@ func (r stateEnums) Reconcile(_ context.Context, _ int64, configID int64, items 
 		result = append(result, *item)
 	}
 	r.state.enums[configID] = result
-	return nil
+	return
 }
 
 type stateSnapshots struct {
@@ -337,23 +347,23 @@ func (r stateSnapshots) LockByID(_ context.Context, environmentID, snapshotID in
 	return &item, nil
 }
 
-func (r stateSnapshots) Create(_ context.Context, environmentID, projectID, configID int64, item *model.Snapshot) error {
+func (r stateSnapshots) Create(_ context.Context, environmentID, projectID, configID int64, item *model.Snapshot) (rowsAffected int64, err error) {
 	item.ID = r.state.nextSnapshotID
 	r.state.nextSnapshotID++
 	item.ProjectID, item.ConfigID, item.Status = projectID, configID, model.SnapshotStatusUnreleased
 	r.state.snapshots[item.ID] = *item
 	r.state.snapshotEnv[item.ID] = environmentID
-	return nil
+	return
 }
 
-func (r stateSnapshots) SetCurrent(_ context.Context, environmentID, configID, snapshotID, _ int64) error {
+func (r stateSnapshots) SetCurrent(_ context.Context, environmentID, configID, snapshotID, _ int64) (rowsAffected int64, err error) {
 	for id, item := range r.state.snapshots {
 		if r.state.snapshotEnv[id] == environmentID && item.ConfigID == configID {
 			item.IsUsing = id == snapshotID
 			r.state.snapshots[id] = item
 		}
 	}
-	return nil
+	return
 }
 
 type statePermissions struct {
@@ -379,12 +389,13 @@ type stateAudits struct {
 	state *importState
 }
 
-func (a stateAudits) RecordForEnvironment(_ context.Context, _ int64, item *model.AuditLog) error {
+func (a stateAudits) RecordForEnvironment(_ context.Context, _ int64, item *model.AuditLog) (rowsAffected int64, err error) {
 	if a.state.failAudit != nil {
-		return a.state.failAudit
+		err = a.state.failAudit
+		return
 	}
 	a.state.audits = append(a.state.audits, *item)
-	return nil
+	return
 }
 
 type importCleanupCall struct {
@@ -413,8 +424,9 @@ func newImporter(t *testing.T, state *importState, permissions *statePermissions
 	return NewImportLogic(stateImports{state: state}, stateProjects{state: state}, stateConfigs{state: state}, stateStructures{state: state}, stateEnums{state: state}, stateSnapshots{state: state}, permissions, stateAudits{state: state}, store, cache, newContentTestLogger(t))
 }
 
-func importRequest() ImportRequest {
-	return ImportRequest{
+func importRequest() *entity.ImportSnapshotParam {
+	return &entity.ImportSnapshotParam{
+		Actor:               permission.Actor{UserID: 9},
 		SourceEnvironmentID: 1,
 		SourceSnapshotID:    12,
 		TargetEnvironmentID: 2,
@@ -432,10 +444,12 @@ func TestImportCreatesMappedTargetAndReplaysOriginalResult(t *testing.T) {
 	cache := &stateCache{}
 	logicLayer := newImporter(t, state, permissions, cache)
 
-	first, err := logicLayer.Import(context.Background(), permission.Actor{
+	firstRequest := importRequest()
+	firstRequest.Actor = permission.Actor{
 		UserID:    9,
 		RequestID: "request",
-	}, importRequest())
+	}
+	first, err := logicLayer.Import(context.Background(), firstRequest)
 	require.NoError(t, err)
 	assert.False(t, first.Replayed)
 	decoded, err := entity.DecodeConfigSnapshot(first.Snapshot.Content)
@@ -449,13 +463,15 @@ func TestImportCreatesMappedTargetAndReplaysOriginalResult(t *testing.T) {
 	assert.NotEqual(t, int64(101), decoded.Structures[0].Id)
 	assert.Equal(t, "feature", decoded.Tree.Value.Key)
 
-	replayed, err := logicLayer.Import(context.Background(), permission.Actor{
+	replayRequest := importRequest()
+	replayRequest.Actor = permission.Actor{
 		UserID:    9,
 		RequestID: "retry",
-	}, importRequest())
+	}
+	replayed, err := logicLayer.Import(context.Background(), replayRequest)
 	require.NoError(t, err)
 	assert.True(t, replayed.Replayed)
-	assert.Equal(t, first.Snapshot.ID, replayed.Snapshot.ID)
+	assert.Equal(t, first.Snapshot.Id, replayed.Snapshot.Id)
 	state.mu.Lock()
 	assert.Len(t, state.configs, 1)
 	assert.Len(t, state.audits, 1)
@@ -476,7 +492,7 @@ func TestConcurrentImportReplayCreatesOneTarget(t *testing.T) {
 		group.Add(1)
 		go func() {
 			defer group.Done()
-			result, err := logicLayer.Import(context.Background(), permission.Actor{UserID: 9}, importRequest())
+			result, err := logicLayer.Import(context.Background(), importRequest())
 			results <- result
 			errorsChannel <- err
 		}()
@@ -503,11 +519,11 @@ func TestConcurrentImportReplayCreatesOneTarget(t *testing.T) {
 func TestIdempotencyKeyRejectsDifferentRequest(t *testing.T) {
 	state := newImportState(t)
 	logicLayer := newImporter(t, state, &statePermissions{denied: map[string]bool{}}, &stateCache{})
-	_, err := logicLayer.Import(context.Background(), permission.Actor{UserID: 9}, importRequest())
+	_, err := logicLayer.Import(context.Background(), importRequest())
 	require.NoError(t, err)
 	changed := importRequest()
 	changed.Description = "Different request"
-	_, err = logicLayer.Import(context.Background(), permission.Actor{UserID: 9}, changed)
+	_, err = logicLayer.Import(context.Background(), changed)
 	assert.ErrorIs(t, err, entity.ErrConflict)
 }
 
@@ -516,7 +532,7 @@ func TestImportPermissionChecksBothEnvironments(t *testing.T) {
 		state := newImportState(t)
 		permissions := &statePermissions{denied: map[string]bool{denied: true}}
 		logicLayer := newImporter(t, state, permissions, &stateCache{})
-		_, err := logicLayer.Import(context.Background(), permission.Actor{UserID: 9}, importRequest())
+		_, err := logicLayer.Import(context.Background(), importRequest())
 		assert.ErrorIs(t, err, permission.ErrForbidden)
 		state.mu.Lock()
 		assert.Empty(t, state.records)
@@ -531,7 +547,7 @@ func TestImportSupportsSameEnvironment(t *testing.T) {
 	state.projects[20] = project
 	request := importRequest()
 	request.TargetEnvironmentID = 1
-	result, err := newImporter(t, state, &statePermissions{denied: map[string]bool{}}, &stateCache{}).Import(context.Background(), permission.Actor{UserID: 9}, request)
+	result, err := newImporter(t, state, &statePermissions{denied: map[string]bool{}}, &stateCache{}).Import(context.Background(), request)
 	require.NoError(t, err)
 	assert.False(t, result.Replayed)
 }
@@ -552,7 +568,7 @@ func TestReplaceRequiresExplicitTargetAndPreservesTargetKey(t *testing.T) {
 	targetID := int64(50)
 	request.TargetConfigID = &targetID
 	cache := &stateCache{}
-	result, err := newImporter(t, state, &statePermissions{denied: map[string]bool{}}, cache).Import(context.Background(), permission.Actor{UserID: 9}, request)
+	result, err := newImporter(t, state, &statePermissions{denied: map[string]bool{}}, cache).Import(context.Background(), request)
 	require.NoError(t, err)
 	decoded, err := entity.DecodeConfigSnapshot(result.Snapshot.Content)
 	require.NoError(t, err)
@@ -563,7 +579,7 @@ func TestReplaceRequiresExplicitTargetAndPreservesTargetKey(t *testing.T) {
 	state.mu.Unlock()
 	cache.mu.Lock()
 	assert.Equal(t, []importCleanupCall{{
-		projectID: 20,
+		projectID: 50,
 		version:   7,
 		key:       "existingFeature",
 	}}, cache.calls)
@@ -571,14 +587,14 @@ func TestReplaceRequiresExplicitTargetAndPreservesTargetKey(t *testing.T) {
 
 	request.TargetConfigID = nil
 	request.IdempotencyKey = "request-00000002"
-	_, err = newImporter(t, state, &statePermissions{denied: map[string]bool{}}, &stateCache{}).Import(context.Background(), permission.Actor{UserID: 9}, request)
+	_, err = newImporter(t, state, &statePermissions{denied: map[string]bool{}}, &stateCache{}).Import(context.Background(), request)
 	assert.ErrorIs(t, err, entity.ErrInvalid)
 }
 
 func TestAuditFailureRollsBackBusinessAndIdempotencyRecord(t *testing.T) {
 	state := newImportState(t)
 	state.failAudit = importErrAudit
-	_, err := newImporter(t, state, &statePermissions{denied: map[string]bool{}}, &stateCache{}).Import(context.Background(), permission.Actor{UserID: 9}, importRequest())
+	_, err := newImporter(t, state, &statePermissions{denied: map[string]bool{}}, &stateCache{}).Import(context.Background(), importRequest())
 	assert.ErrorIs(t, err, importErrAudit)
 	state.mu.Lock()
 	assert.Empty(t, state.configs)
@@ -594,7 +610,7 @@ func TestFailStrategyReturnsConflictForExistingConfigKey(t *testing.T) {
 		ProjectID: 20,
 		Key:       "feature",
 	}
-	_, err := newImporter(t, state, &statePermissions{denied: map[string]bool{}}, &stateCache{}).Import(context.Background(), permission.Actor{UserID: 9}, importRequest())
+	_, err := newImporter(t, state, &statePermissions{denied: map[string]bool{}}, &stateCache{}).Import(context.Background(), importRequest())
 	assert.ErrorIs(t, err, repository.ErrKeyConflict)
 }
 
@@ -610,7 +626,7 @@ func TestReplaceRejectsConfigFromDifferentTargetProject(t *testing.T) {
 	request := importRequest()
 	request.ConflictStrategy = StrategyReplace
 	request.TargetConfigID = &targetID
-	_, err := newImporter(t, state, &statePermissions{denied: map[string]bool{}}, &stateCache{}).Import(context.Background(), permission.Actor{UserID: 9}, request)
+	_, err := newImporter(t, state, &statePermissions{denied: map[string]bool{}}, &stateCache{}).Import(context.Background(), request)
 	assert.ErrorIs(t, err, repository.ErrNotFound)
 }
 
@@ -623,7 +639,7 @@ func TestImportRejectsConflictingSourceSchemaBeforeTargetWrites(t *testing.T) {
 	source.Content, err = entity.EncodeConfigSnapshot(decoded)
 	require.NoError(t, err)
 	state.snapshots[12] = source
-	_, err = newImporter(t, state, &statePermissions{denied: map[string]bool{}}, &stateCache{}).Import(context.Background(), permission.Actor{UserID: 9}, importRequest())
+	_, err = newImporter(t, state, &statePermissions{denied: map[string]bool{}}, &stateCache{}).Import(context.Background(), importRequest())
 	assert.ErrorIs(t, err, entity.ErrConflict)
 	state.mu.Lock()
 	assert.Empty(t, state.configs)
@@ -631,10 +647,12 @@ func TestImportRejectsConflictingSourceSchemaBeforeTargetWrites(t *testing.T) {
 	state.mu.Unlock()
 }
 
-func importProject(id, environmentID int64, key string) model.Project {
-	project := model.Project{
-		Meta: model.Meta{ID: id},
-		Key:  key,
+func importProject(id, environmentID int64, key string) scopedTestProject {
+	project := scopedTestProject{
+		Project: model.Project{
+			Meta: model.Meta{ID: id},
+			Key:  key,
+		},
 	}
 	project.EnvironmentID = environmentID
 	return project

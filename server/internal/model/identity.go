@@ -16,50 +16,24 @@ type Environment struct {
 	Enabled     bool   `lorm:"enabled"`
 }
 
+// ApplicationSettings stores singleton system-level switches.
+type ApplicationSettings struct {
+	lorm.UnimplementedTable `lorm:"application_settings"`
+	Meta
+	AllowSelfRegistration bool `lorm:"allow_self_registration"`
+}
+
 type User struct {
 	lorm.UnimplementedTable `lorm:"users"`
 	Meta
 	Username           string     `lorm:"username"`
-	DisplayName        string     `lorm:"display_name"`
+	Email              string     `lorm:"email"`
+	Nickname           string     `lorm:"nickname"`
 	PasswordHash       string     `lorm:"password_hash"`
 	Enabled            bool       `lorm:"enabled"`
 	IsSystemAdmin      bool       `lorm:"is_system_admin"`
 	MustChangePassword bool       `lorm:"must_change_password"`
 	LastLoginAt        *time.Time `lorm:"last_login_at"`
-}
-
-type Role struct {
-	lorm.UnimplementedTable `lorm:"roles"`
-	Meta
-	Key         string `lorm:"key"`
-	Name        string `lorm:"name"`
-	Description string `lorm:"description"`
-	Builtin     bool   `lorm:"builtin"`
-}
-
-type Permission struct {
-	lorm.UnimplementedTable `lorm:"permissions"`
-	RecordMeta
-	Key         string `lorm:"key"`
-	Name        string `lorm:"name"`
-	Description string `lorm:"description"`
-}
-
-type UserEnvironmentRole struct {
-	lorm.UnimplementedTable `lorm:"user_environment_roles"`
-	RecordMeta
-	UserID        int64 `lorm:"user_id"`
-	EnvironmentID int64 `lorm:"environment_id"`
-	RoleID        int64 `lorm:"role_id"`
-	CreatedBy     int64 `lorm:"created_by"`
-}
-
-type RolePermission struct {
-	lorm.UnimplementedTable `lorm:"role_permissions"`
-	RecordMeta
-	RoleID       int64 `lorm:"role_id"`
-	PermissionID int64 `lorm:"permission_id"`
-	CreatedBy    int64 `lorm:"created_by"`
 }
 
 type RefreshToken struct {

@@ -1,9 +1,17 @@
 # Configuration
 
-Kirby reads one strict YAML file. Pass it with `--config` or set
-`KIRBY_CONFIG_FILE`. Environment variables are not expanded inside the YAML
-file. Unknown fields, missing required values, and extra YAML documents fail
-startup.
+Kirby loads its configuration through the Kratos config framework. Pass a
+local file with `--config` or set `KIRBY_CONFIG_FILE`; without either, the
+server reads its configuration from a Nacos config center controlled by the
+`NACOS_SERVER_HOST`, `NACOS_SERVER_PORT`, `NACOS_NAMESPACE_ID`,
+`NACOS_DATA_ID`, and `NACOS_GROUP` environment variables. Duration fields
+(`*.timeout`, `conn_max_lifetime`, `jwt.*_ttl`) are plain integers in
+milliseconds. Missing required values fail startup during validation.
+
+Timestamps are written in the process local time zone. Deployments that need
+a specific zone set the `TZ`/`TIMEZONE` environment variable and keep the
+MySQL DSN `loc` parameter (or the PostgreSQL session time zone) consistent
+with it so MySQL and PostgreSQL store the same wall clock.
 
 Start from `deploy/config.example.yaml` for production or
 `deploy/config.compose.yaml` for the included Compose stack.
@@ -16,19 +24,19 @@ Compose maps these to host ports `8000` and `9000` by default.
 |---|---|
 | `mode` | `single` allows process-local dependencies; `multi` requires Redis and S3 |
 | `http.address` | Management and runtime HTTP listener |
-| `http.timeout` | Whole HTTP request timeout; must cover S3 completion copies |
+| `http.timeout` | Whole HTTP request timeout in milliseconds; must cover S3 completion copies |
 | `grpc.address` | Runtime gRPC listener |
-| `grpc.timeout` | Runtime gRPC request timeout |
+| `grpc.timeout` | Runtime gRPC request timeout in milliseconds |
 | `database.driver` | `mysql` or `pgsql` |
 | `database.dsn` | DSN for the selected database driver |
 | `database.max_open_conns` | Maximum database connections per backend process |
 | `database.max_idle_conns` | Idle connections per backend process |
-| `database.conn_max_lifetime` | Maximum connection lifetime |
+| `database.conn_max_lifetime` | Maximum connection lifetime in milliseconds |
 | `cache.driver` | `memory` for single-process development or `redis` |
 | `cache.redis.*` | Redis endpoint, credentials, database, and deployment-specific key prefix |
 | `jwt.issuer` | Expected JWT issuer |
-| `jwt.access_ttl` | Access-token lifetime |
-| `jwt.refresh_ttl` | Must be `168h` in the current server |
+| `jwt.access_ttl` | Access-token lifetime in milliseconds; must be `900000` (15 minutes) |
+| `jwt.refresh_ttl` | Must be `604800000` milliseconds (7 days) in the current server |
 | `security.trusted_proxies` | Optional canonical proxy CIDRs; omitted/null trusts all, `[]` ignores forwarding headers |
 | `object_storage.driver` | `local` or `s3` |
 | `object_storage.local.directory` | Root used only by single-process development |

@@ -20,8 +20,7 @@ import (
 )
 
 func TestLocalDirectUploadAndComplete(t *testing.T) {
-	now := time.Date(2026, 8, 17, 10, 0, 0, 0, time.UTC)
-	storage, err := newLocal(t.TempDir(), bytes.Repeat([]byte{7}, 32), func() time.Time { return now })
+	storage, err := newLocal(t.TempDir(), bytes.Repeat([]byte{7}, 32))
 	require.NoError(t, err)
 	key, err := BuildObjectKey(1, 2, testObjectID, ".png")
 	require.NoError(t, err)
@@ -58,8 +57,7 @@ func TestLocalDirectUploadAndComplete(t *testing.T) {
 }
 
 func TestLocalUploadRejectsCredentialForwardingAndMismatches(t *testing.T) {
-	now := time.Date(2026, 8, 17, 10, 0, 0, 0, time.UTC)
-	storage, err := newLocal(t.TempDir(), bytes.Repeat([]byte{8}, 32), func() time.Time { return now })
+	storage, err := newLocal(t.TempDir(), bytes.Repeat([]byte{8}, 32))
 	require.NoError(t, err)
 	key, err := BuildObjectKey(1, 2, testObjectID, ".png")
 	require.NoError(t, err)
@@ -117,14 +115,157 @@ func TestLocalUploadRejectsCredentialForwardingAndMismatches(t *testing.T) {
 	}
 }
 
-func TestLocalUploadTicketExpiresAndCannotBeTampered(t *testing.T) {
-	now := time.Date(2026, 8, 17, 10, 0, 0, 0, time.UTC)
-	storage, err := newLocal(t.TempDir(), bytes.Repeat([]byte{9}, 32), func() time.Time { return now })
+func TestLocalStorageHTTPErrorMessagesFollowAcceptLanguage(t *testing.T) {
+	storage, err := newLocal(t.TempDir(), bytes.Repeat([]byte{10}, 32))
 	require.NoError(t, err)
 	key, err := BuildObjectKey(1, 2, testObjectID, ".png")
 	require.NoError(t, err)
 	ticket, err := storage.PresignUpload(context.Background(), PresignUploadInput{
-		Key: key, ContentType: "image/png", Size: 4, ExpiresIn: time.Minute,
+		Key:         key,
+		ContentType: "image/png",
+		Size:        4,
+		ExpiresIn:   time.Minute,
+	})
+	require.NoError(t, err)
+	tests := []struct {
+		name        string
+		method      string
+		path        string
+		body        string
+		contentType string
+		credential  bool
+		status      int
+		english     string
+		chinese     string
+	}{
+		{
+			name:    "unknown route",
+			method:  http.MethodGet,
+			path:    "/missing",
+			status:  http.StatusNotFound,
+			english: "resource not found",
+			chinese: "请求的资源不存在",
+		},
+		{
+			name:    "unsupported upload method",
+			method:  http.MethodGet,
+			path:    ticket.URL,
+			status:  http.StatusMethodNotAllowed,
+			english: "method not allowed",
+			chinese: "不支持此请求方法",
+		},
+		{
+			name:       "management credential",
+			method:     http.MethodPut,
+			path:       ticket.URL,
+			credential: true,
+			status:     http.StatusBadRequest,
+			english:    "management credentials are not accepted by object storage",
+			chinese:    "对象存储请求不接受管理凭据",
+		},
+		{
+			name:    "invalid upload ticket",
+			method:  http.MethodPut,
+			path:    LocalUploadPath + "?token=invalid",
+			status:  http.StatusUnauthorized,
+			english: "invalid or expired upload ticket",
+			chinese: "上传凭证无效或已过期",
+		},
+		{
+			name:        "content type mismatch",
+			method:      http.MethodPut,
+			path:        ticket.URL,
+			body:        "data",
+			contentType: "image/jpeg",
+			status:      http.StatusBadRequest,
+			english:     "content type does not match upload ticket",
+			chinese:     "请求内容类型与上传凭证不匹配",
+		},
+		{
+			name:        "content length mismatch",
+			method:      http.MethodPut,
+			path:        ticket.URL,
+			body:        "bad",
+			contentType: "image/png",
+			status:      http.StatusBadRequest,
+			english:     "content length does not match upload ticket",
+			chinese:     "请求内容长度与上传凭证不匹配",
+		},
+		{
+			name:    "missing object",
+			method:  http.MethodGet,
+			path:    LocalObjectPathPrefix + "missing.png",
+			status:  http.StatusNotFound,
+			english: "resource not found",
+			chinese: "请求的资源不存在",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			for _, language := range []struct {
+				header string
+				want   string
+			}{
+				{
+					header: "en-US",
+					want:   test.english,
+				},
+				{
+					header: "zh-CN",
+					want:   test.chinese,
+				},
+			} {
+				request := httptest.NewRequest(test.method, test.path, strings.NewReader(test.body))
+				request.Header.Set("Accept-Language", language.header)
+				if test.contentType != "" {
+					request.Header.Set("Content-Type", test.contentType)
+				}
+				if test.credential {
+					request.Header.Set("Authorization", "Bearer ignored")
+				}
+				response := httptest.NewRecorder()
+				storage.ServeHTTP(response, request)
+				assert.Equal(t, test.status, response.Code)
+				assert.Contains(t, response.Body.String(), language.want)
+			}
+		})
+	}
+}
+
+func TestLocalStorageRangeErrorUsesAcceptLanguage(t *testing.T) {
+	storage, err := newLocal(t.TempDir(), bytes.Repeat([]byte{11}, 32))
+	require.NoError(t, err)
+	key, err := BuildObjectKey(1, 2, testObjectID, ".png")
+	require.NoError(t, err)
+	ticket, err := storage.PresignUpload(context.Background(), PresignUploadInput{
+		Key:         key,
+		ContentType: "image/png",
+		Size:        4,
+		ExpiresIn:   time.Minute,
+	})
+	require.NoError(t, err)
+	upload := httptest.NewRequest(http.MethodPut, ticket.URL, strings.NewReader("data"))
+	upload.Header.Set("Content-Type", "image/png")
+	uploadResponse := httptest.NewRecorder()
+	storage.ServeHTTP(uploadResponse, upload)
+	require.Equal(t, http.StatusNoContent, uploadResponse.Code)
+
+	request := httptest.NewRequest(http.MethodGet, LocalObjectPathPrefix+key, nil)
+	request.Header.Set("Range", "bytes=8-12")
+	request.Header.Set("Accept-Language", "zh-CN")
+	response := httptest.NewRecorder()
+	storage.ServeHTTP(response, request)
+	assert.Equal(t, http.StatusRequestedRangeNotSatisfiable, response.Code)
+	assert.Contains(t, response.Body.String(), "请求范围无效或无法满足")
+}
+
+func TestLocalUploadTicketExpiresAndCannotBeTampered(t *testing.T) {
+	storage, err := newLocal(t.TempDir(), bytes.Repeat([]byte{9}, 32))
+	require.NoError(t, err)
+	key, err := BuildObjectKey(1, 2, testObjectID, ".png")
+	require.NoError(t, err)
+	ticket, err := storage.PresignUpload(context.Background(), PresignUploadInput{
+		Key: key, ContentType: "image/png", Size: 4, ExpiresIn: 50 * time.Millisecond,
 	})
 	require.NoError(t, err)
 
@@ -135,7 +276,7 @@ func TestLocalUploadTicketExpiresAndCannotBeTampered(t *testing.T) {
 	tampered.RawQuery = query.Encode()
 	for _, target := range []string{tampered.String(), ticket.URL} {
 		if target == ticket.URL {
-			now = now.Add(time.Minute)
+			time.Sleep(60 * time.Millisecond)
 		}
 		request := httptest.NewRequest(http.MethodPut, target, strings.NewReader("data"))
 		request.Header.Set("Content-Type", "image/png")
@@ -147,7 +288,7 @@ func TestLocalUploadTicketExpiresAndCannotBeTampered(t *testing.T) {
 
 func TestLocalStorageRejectsSymlinkAndTraversal(t *testing.T) {
 	root := t.TempDir()
-	storage, err := newLocal(root, bytes.Repeat([]byte{5}, 32), time.Now)
+	storage, err := newLocal(root, bytes.Repeat([]byte{5}, 32))
 	require.NoError(t, err)
 	_, err = storage.ReadMetadata(context.Background(), "../../outside.png")
 	require.Error(t, err)

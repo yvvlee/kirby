@@ -7,11 +7,13 @@ import (
 	"strings"
 	"time"
 
-	authsession "github.com/yvvlee/kirby/server/internal/auth/session"
-	"github.com/yvvlee/kirby/server/internal/infra"
-
 	kratoshttp "github.com/go-kratos/kratos/v2/transport/http"
 	"github.com/google/uuid"
+
+	errorsv1 "github.com/yvvlee/kirby/server/api/errors"
+	authsession "github.com/yvvlee/kirby/server/internal/auth/session"
+	"github.com/yvvlee/kirby/server/internal/i18n"
+	"github.com/yvvlee/kirby/server/internal/infra"
 )
 
 const requestIDHeader = "X-Request-ID"
@@ -29,7 +31,7 @@ func APIPrefix() kratoshttp.FilterFunc {
 		return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 			if request.URL.Path != "/api" && !strings.HasPrefix(request.URL.Path, "/api/") {
 				if reservedManagementPath(request.URL.Path) {
-					http.NotFound(writer, request)
+					localizedErrorEncoder(writer, request, errorsv1.ErrorNotFound("resource not found"))
 					return
 				}
 				next.ServeHTTP(writer, request)
@@ -91,12 +93,12 @@ func HTTPBoundary(logger *infra.Logger) kratoshttp.FilterFunc {
 			started := time.Now()
 			defer func() {
 				if recovered := recover(); recovered != nil {
-					logger.Errorw("msg", "HTTP handler panic", "request_id", requestID, "method", request.Method, "path", request.URL.Path, "stack", string(debug.Stack()))
+					logger.Errorw("msg", "HTTP handler panic", "request_id", requestID, "method", request.Method, "path", logRequestPath(request.URL.Path), "stack", string(debug.Stack()))
 					if !statusWriter.wroteHeader {
-						http.Error(statusWriter, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+						localizedErrorEncoder(statusWriter, request, errorsv1.ErrorInternal("operation failed"))
 					}
 				}
-				logger.Infow("msg", "HTTP request", "request_id", requestID, "method", request.Method, "path", request.URL.Path, "status", statusWriter.status, "duration", time.Since(started))
+				logger.Infow("msg", "HTTP request", "request_id", requestID, "method", request.Method, "path", logRequestPath(request.URL.Path), "status", statusWriter.status, "duration", time.Since(started))
 			}()
 			next.ServeHTTP(statusWriter, request)
 		})
@@ -115,7 +117,7 @@ func SameOrigin(origins *authsession.OriginValidator) kratoshttp.FilterFunc {
 				return
 			}
 			if err := origins.Validate(request); err != nil {
-				http.Error(writer, "request origin is not allowed", http.StatusForbidden)
+				localizedErrorEncoder(writer, request, errorsv1.ErrorForbidden("request origin is not allowed"))
 				return
 			}
 			next.ServeHTTP(writer, request)
@@ -170,4 +172,68 @@ func (w *responseStatusWriter) Write(body []byte) (int, error) {
 		w.WriteHeader(http.StatusOK)
 	}
 	return w.ResponseWriter.Write(body)
+}
+
+// Browser invitation URLs share their path with the generated API routes. Route
+// only unprefixed browser reads to the SPA before the API router sees them.
+func browserInvitations(web http.Handler) kratoshttp.FilterFunc {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			if !strings.HasPrefix(request.URL.Path, "/invitations/") {
+				next.ServeHTTP(writer, request)
+				return
+			}
+			if web == nil || (request.Method != http.MethodGet && request.Method != http.MethodHead) {
+				writeLocalizedHTTPError(writer, request, http.StatusNotFound, "resource not found")
+				return
+			}
+			web.ServeHTTP(writer, request)
+		})
+	}
+}
+
+func writeLocalizedHTTPError(writer http.ResponseWriter, request *http.Request, status int, message string) {
+	locale := i18n.Negotiate(request.Header.Get("Accept-Language"))
+	writer.Header().Del("Content-Length")
+	writer.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	http.Error(writer, i18n.Translate(locale, message), status)
+}
+
+type localizedHTTPResponseWriter struct {
+	http.ResponseWriter
+	request *http.Request
+	failed  bool
+}
+
+// WriteHeader localizes errors emitted by the standard library file handlers.
+// Parameters: status is the response status from the wrapped handler.
+// Returns: none.
+// Throws: none; the response is written to the underlying writer.
+func (w *localizedHTTPResponseWriter) WriteHeader(status int) {
+	if status >= http.StatusBadRequest {
+		w.failed = true
+		writeLocalizedHTTPError(w.ResponseWriter, w.request, status, http.StatusText(status))
+		return
+	}
+	w.ResponseWriter.WriteHeader(status)
+}
+
+// Write forwards file bytes and discards the standard library's English error body.
+// Parameters: value contains response bytes.
+// Returns: the number of bytes handled and any underlying write error.
+// Throws: none; write failures are returned.
+func (w *localizedHTTPResponseWriter) Write(value []byte) (int, error) {
+	if w.failed {
+		return len(value), nil
+	}
+	return w.ResponseWriter.Write(value)
+}
+
+func logRequestPath(path string) string {
+	for _, prefix := range []string{"/api/invitations/", "/invitations/"} {
+		if strings.HasPrefix(path, prefix) {
+			return prefix + "[redacted]"
+		}
+	}
+	return path
 }

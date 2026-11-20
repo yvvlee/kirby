@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"sort"
 
 	"github.com/yvvlee/lorm"
 	"github.com/yvvlee/lorm/builder"
@@ -11,6 +12,7 @@ import (
 )
 
 type PermissionIdentity struct {
+	ProjectRole        string
 	SystemAdmin        bool
 	EnvironmentID      int64
 	EnvironmentVersion int64
@@ -27,11 +29,10 @@ type PermissionRepository interface {
 	Identity(ctx context.Context, userID, environmentID int64) (PermissionIdentity, error)
 	SystemAdmin(ctx context.Context, userID int64) (bool, error)
 	KeysForUserEnvironment(ctx context.Context, userID, environmentID int64) ([]string, error)
-	List(ctx context.Context) ([]model.Permission, error)
 }
 
 type PermissionRepositoryImpl struct {
-	*lorm.Repository[*model.Permission]
+	*lorm.Repository[*model.ProjectMember]
 }
 
 // NewPermissionRepository binds the PermissionRepository to the application database.
@@ -41,7 +42,7 @@ type PermissionRepositoryImpl struct {
 // Throws: none.
 func NewPermissionRepository(storage *infra.Storage) *PermissionRepositoryImpl {
 	return &PermissionRepositoryImpl{
-		Repository: storage.CoreDB.Repository[*model.Permission](),
+		Repository: storage.CoreDB.Repository[*model.ProjectMember](),
 	}
 }
 
@@ -59,8 +60,7 @@ func (r *PermissionRepositoryImpl) Identity(ctx context.Context, userID, environ
 	if environmentID <= 0 {
 		return identity, nil
 	}
-	environment, found, err := r.Engine.Query[*model.Environment]().ID(environmentID).
-		Where(builder.IsNull(new(model.Environment).LormCols().DeletedAt())).Get(ctx)
+	environment, found, err := r.Engine.Query[*model.Environment]().ID(environmentID).Get(ctx)
 	if err != nil {
 		return PermissionIdentity{}, WrapDatabaseError(err)
 	}
@@ -69,14 +69,18 @@ func (r *PermissionRepositoryImpl) Identity(ctx context.Context, userID, environ
 		identity.EnvironmentVersion = environment.Version
 		identity.EnvironmentEnabled = environment.Enabled
 	}
-	fields := new(model.UserEnvironmentRole).LormCols()
-	identity.EnvironmentMember, err = r.Engine.Query[*model.UserEnvironmentRole]().
+	member, memberFound, err := r.Engine.Query[*model.ProjectMember]().From("project_members pm").Select("pm.*").
+		InnerJoin("environments e ON e.project_id = pm.project_id").
 		Where(builder.Eq{
-			fields.UserID():        userID,
-			fields.EnvironmentID(): environmentID,
-		}).Exist(ctx)
+			"pm.user_id": userID,
+			"e.id":       environmentID,
+		}).Get(ctx)
 	if err != nil {
 		return PermissionIdentity{}, WrapDatabaseError(err)
+	}
+	identity.EnvironmentMember = memberFound
+	if memberFound {
+		identity.ProjectRole = member.Role
 	}
 	return identity, nil
 }
@@ -97,11 +101,8 @@ func (r *PermissionRepositoryImpl) SystemAdmin(ctx context.Context, userID int64
 func (r *PermissionRepositoryImpl) enabledUser(ctx context.Context, userID int64) (*model.User, error) {
 	fields := new(model.User).LormCols()
 	user, found, err := r.Engine.Query[*model.User]().ID(userID).
-		Where(builder.And{
-			builder.Eq{
-				fields.Enabled(): true,
-			},
-			builder.IsNull(fields.DeletedAt()),
+		Where(builder.Eq{
+			fields.Enabled(): true,
 		}).Get(ctx)
 	if err != nil {
 		return nil, WrapDatabaseError(err)
@@ -112,37 +113,49 @@ func (r *PermissionRepositoryImpl) enabledUser(ctx context.Context, userID int64
 	return user, nil
 }
 
-// KeysForUserEnvironment excludes deleted roles and duplicate grants from environment authorization.
+// KeysForUserEnvironment excludes duplicate grants from environment authorization.
 //
 // Parameters: ctx controls the read; userID and environmentID select the role assignments.
 // Returns: sorted unique permission keys, or a database error.
 // Throws: none; failures are returned as errors.
 func (r *PermissionRepositoryImpl) KeysForUserEnvironment(ctx context.Context, userID, environmentID int64) ([]string, error) {
-	keys, err := r.Engine.Query[*model.Permission]().From("permissions p").Select("p.key").
-		InnerJoin("role_permissions rp ON rp.permission_id = p.id").
-		InnerJoin("user_environment_roles uer ON uer.role_id = rp.role_id").
-		InnerJoin("roles r ON r.id = rp.role_id AND r.deleted_at IS NULL").
+	grants, err := r.Engine.Query[*model.EnvironmentPermissionGrant]().From("environment_permission_grants epg").Select("epg.*").
+		InnerJoin("environments e ON e.id = epg.environment_id").
+		InnerJoin("project_members pm ON pm.project_id = e.project_id AND pm.role = epg.role").
 		Where(builder.Eq{
-			"uer.user_id":        userID,
-			"uer.environment_id": environmentID,
-		}).Distinct().Asc("p.key").FindCols[string](ctx)
+			"pm.user_id": userID,
+			"e.id":       environmentID,
+		}).Find(ctx)
 	if err != nil {
 		return nil, WrapDatabaseError(err)
 	}
+	permissions := make(map[string]struct{})
+	for _, grant := range grants {
+		for _, key := range permissionKeysForPoint(grant.Permission) {
+			permissions[key] = struct{}{}
+		}
+	}
+	keys := make([]string, 0, len(permissions))
+	for key := range permissions {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
 	return keys, nil
 }
 
-// List returns the complete permission catalog in stable ID order.
-//
-// Parameters: ctx controls the database read.
-// Returns: catalog entries ordered by ID, or a database error.
-// Throws: none; failures are returned as errors.
-func (r *PermissionRepositoryImpl) List(ctx context.Context) ([]model.Permission, error) {
-	permissions, err := r.Engine.Query[*model.Permission]().Asc(new(model.Permission).LormCols().ID()).Find(ctx)
-	if err != nil {
-		return nil, WrapDatabaseError(err)
+func permissionKeysForPoint(point string) []string {
+	switch point {
+	case "READ":
+		return []string{"project:read", "project:api_key:read", "config:read", "structure:read", "enum:read", "snapshot:read", "snapshot:export"}
+	case "WRITE":
+		return []string{"project:write", "config:write", "structure:write", "enum:write", "snapshot:write", "asset:write", "snapshot:import"}
+	case "PUBLISH":
+		return []string{"snapshot:publish"}
+	case "API_KEY_MANAGE":
+		return []string{"project:api_key:read", "project:api_key:manage"}
+	default:
+		return nil
 	}
-	return modelValues(permissions), nil
 }
 
 var _ PermissionRepository = (*PermissionRepositoryImpl)(nil)

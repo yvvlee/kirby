@@ -12,14 +12,21 @@ server/bin/
 server/coverage.out
 server/vendor/
 
+# Python test-script caches
+__pycache__/
+*.py[cod]
+
 # Web
 web/node_modules/
 web/dist/
 web/coverage/
 web/playwright-report/
 web/test-results/
+*.tsbuildinfo
 
 # Generated test and release output
+/test-results/
+/playwright-report/
 tmp/
 dist/*
 !dist/sbom/

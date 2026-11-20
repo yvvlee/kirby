@@ -7,16 +7,15 @@ import (
 
 	adminv1 "github.com/yvvlee/kirby/server/api/admin"
 	commonv1 "github.com/yvvlee/kirby/server/api/common"
-	"github.com/yvvlee/kirby/server/internal/converter"
+	"github.com/yvvlee/kirby/server/internal/entity"
 	"github.com/yvvlee/kirby/server/internal/logic"
-	"github.com/yvvlee/kirby/server/internal/model"
 	"github.com/yvvlee/kirby/server/internal/permission"
 )
 
 type structureLogic interface {
-	Create(ctx context.Context, actor permission.Actor, environmentID int64, input logic.StructureCreateInput) (*model.Structure, error)
-	Update(ctx context.Context, actor permission.Actor, environmentID int64, input logic.StructureUpdateInput) (*model.Structure, error)
-	List(ctx context.Context, actor permission.Actor, environmentID int64, input logic.StructureListInput) ([]*commonv1.Structure, error)
+	Create(ctx context.Context, param *entity.CreateStructureParam) (*commonv1.Structure, error)
+	Update(ctx context.Context, param *entity.UpdateStructureParam) (*commonv1.Structure, error)
+	List(ctx context.Context, param *entity.ListStructureParam) ([]*commonv1.Structure, error)
 	Delete(ctx context.Context, actor permission.Actor, environmentID, structureID int64) error
 }
 type StructureService struct{ structureLogic structureLogic }
@@ -42,13 +41,18 @@ func (s *StructureService) CreateStructure(ctx context.Context, request *adminv1
 	if err != nil {
 		return nil, apiError(err)
 	}
-	item, err := s.structureLogic.Create(ctx, actor, request.EnvironmentId, logic.StructureCreateInput{
-		ConfigID:    request.ConfigId,
-		Key:         request.Key,
-		Name:        request.Name,
-		Description: request.Description,
+	item, err := s.structureLogic.Create(ctx, &entity.CreateStructureParam{
+		Actor:         actor,
+		EnvironmentID: request.EnvironmentId,
+		ConfigID:      request.ConfigId,
+		Key:           request.Key,
+		Name:          request.Name,
+		Description:   request.Description,
 	})
-	return structureReply(item, err)
+	if err != nil {
+		return nil, apiError(err)
+	}
+	return &adminv1.StructureReply{Structure: item}, nil
 }
 
 // UpdateStructure maps the authenticated API request to the application operation.
@@ -61,15 +65,20 @@ func (s *StructureService) UpdateStructure(ctx context.Context, request *adminv1
 	if err != nil {
 		return nil, apiError(err)
 	}
-	item, err := s.structureLogic.Update(ctx, actor, request.EnvironmentId, logic.StructureUpdateInput{
-		StructureID: request.Id,
-		Key:         request.Key,
-		Name:        request.Name,
-		Description: request.Description,
-		Fields:      request.Fields,
-		Version:     int64(request.Version),
+	item, err := s.structureLogic.Update(ctx, &entity.UpdateStructureParam{
+		Actor:         actor,
+		EnvironmentID: request.EnvironmentId,
+		StructureID:   request.Id,
+		Key:           request.Key,
+		Name:          request.Name,
+		Description:   request.Description,
+		Fields:        request.Fields,
+		Version:       int64(request.Version),
 	})
-	return structureReply(item, err)
+	if err != nil {
+		return nil, apiError(err)
+	}
+	return &adminv1.StructureReply{Structure: item}, nil
 }
 
 // ListStructure maps the authenticated API request to the application operation.
@@ -82,10 +91,12 @@ func (s *StructureService) ListStructure(ctx context.Context, request *adminv1.L
 	if err != nil {
 		return nil, apiError(err)
 	}
-	items, err := s.structureLogic.List(ctx, actor, request.EnvironmentId, logic.StructureListInput{
-		ProjectID: request.ProjectId,
-		ConfigID:  request.ConfigId,
-		IgnoreID:  request.IgnoreDependencyId,
+	items, err := s.structureLogic.List(ctx, &entity.ListStructureParam{
+		Actor:         actor,
+		EnvironmentID: request.EnvironmentId,
+		ProjectID:     request.ProjectId,
+		ConfigID:      request.ConfigId,
+		IgnoreID:      request.IgnoreDependencyId,
 	})
 	if err != nil {
 		return nil, apiError(err)
@@ -107,15 +118,4 @@ func (s *StructureService) DeleteStructure(ctx context.Context, request *adminv1
 		return nil, apiError(err)
 	}
 	return &emptypb.Empty{}, nil
-}
-
-func structureReply(item *model.Structure, err error) (*adminv1.StructureReply, error) {
-	if err != nil {
-		return nil, apiError(err)
-	}
-	converted, err := converter.StructureToProto(item)
-	if err != nil {
-		return nil, apiError(err)
-	}
-	return &adminv1.StructureReply{Structure: converted}, nil
 }

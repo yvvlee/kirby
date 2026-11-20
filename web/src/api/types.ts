@@ -18,7 +18,7 @@ export type ApiListReply<T extends ApiObject = ApiEntity> = ApiObject & {
 
 export type User = ApiEntity & {
   username: string
-  display_name?: string
+  nickname?: string
   is_system_admin: boolean
   enabled?: boolean
   version: number

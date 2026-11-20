@@ -49,14 +49,15 @@ func runInitialAdministratorLifecycle(t *testing.T, driver, dsnEnv string) {
 	assertSetupState(t, ctx, first, false, 0)
 	verifySetupRollback(t, ctx, first)
 	verifyConcurrentSetup(t, ctx, first, second)
-	require.NoError(t, first.Close())
+	require.NoError(t, first.CoreDB.Close())
 	restarted := openSetupEngine(t, driver, dsn)
 	assertSetupState(t, ctx, restarted, true, 1)
 	_, err := restarted.CoreDB.Exec(ctx, "DELETE FROM users")
 	require.NoError(t, err)
 	assertSetupState(t, ctx, restarted, true, 0)
 	err = restarted.CoreDB.TX(ctx, func(txctx context.Context) error {
-		return NewSetupRepository(restarted).CreateInitialAdmin(txctx, initialTestUser("replacement"))
+		_, err := NewSetupRepository(restarted).CreateInitialAdmin(txctx, initialTestUser("replacement"))
+		return err
 	})
 	require.ErrorIs(t, err, ErrAlreadyInitialized)
 }
@@ -83,7 +84,7 @@ func verifySetupRollback(t *testing.T, ctx context.Context, engine *infra.Storag
 	t.Helper()
 	sentinel := errors.New("operation failed after writing administrator")
 	err := engine.CoreDB.TX(ctx, func(txctx context.Context) error {
-		if err := NewSetupRepository(engine).CreateInitialAdmin(txctx, initialTestUser("rolled-back")); err != nil {
+		if _, err := NewSetupRepository(engine).CreateInitialAdmin(txctx, initialTestUser("rolled-back")); err != nil {
 			return err
 		}
 		return sentinel
@@ -91,7 +92,7 @@ func verifySetupRollback(t *testing.T, ctx context.Context, engine *infra.Storag
 	require.ErrorIs(t, err, sentinel)
 	assertSetupState(t, ctx, engine, false, 0)
 	err = engine.CoreDB.TX(ctx, func(txctx context.Context) error {
-		if err := NewSetupRepository(engine).MarkInitialized(txctx); err != nil {
+		if _, err := NewSetupRepository(engine).MarkInitialized(txctx); err != nil {
 			return err
 		}
 		return sentinel
@@ -109,7 +110,8 @@ func verifyConcurrentSetup(t *testing.T, ctx context.Context, engines ...*infra.
 		group.Go(func() {
 			<-start
 			results <- engine.CoreDB.TX(ctx, func(txctx context.Context) error {
-				return NewSetupRepository(engine).CreateInitialAdmin(txctx, initialTestUser("first-admin"))
+				_, err := NewSetupRepository(engine).CreateInitialAdmin(txctx, initialTestUser("first-admin"))
+				return err
 			})
 		})
 	}
@@ -133,7 +135,7 @@ func verifyConcurrentSetup(t *testing.T, ctx context.Context, engines ...*infra.
 func initialTestUser(username string) *model.User {
 	return &model.User{
 		Username:      username,
-		DisplayName:   username,
+		Nickname:      username,
 		PasswordHash:  "integration-test-hash",
 		Enabled:       true,
 		IsSystemAdmin: true,

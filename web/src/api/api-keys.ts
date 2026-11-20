@@ -4,7 +4,6 @@ import { isIdentifier, type ApiListReply, type ApiObject, type Identifier } from
 
 export type ProjectApiKey = ApiObject & {
   id: Identifier
-  publicId?: string
   secretSuffix?: string
   createdBy?: Identifier
   createdAt?: string
@@ -53,7 +52,6 @@ function normalizeProjectApiKey(value: unknown): ProjectApiKey | undefined {
     ...source,
     id: source.id,
   }
-  if (typeof source.public_id === 'string') normalized.publicId = source.public_id
   if (typeof source.secret_suffix === 'string') normalized.secretSuffix = source.secret_suffix
   if (isIdentifier(source.created_by)) normalized.createdBy = source.created_by
   if (typeof source.created_at === 'string') normalized.createdAt = source.created_at

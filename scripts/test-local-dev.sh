@@ -10,6 +10,7 @@ redis_port=${KIRBY_TEST_REDIS_PORT:-6379}
 http_port=${KIRBY_TEST_HTTP_PORT:-18080}
 grpc_port=${KIRBY_TEST_GRPC_PORT:-19090}
 web_port=${KIRBY_TEST_WEB_PORT:-15173}
+unset KIRBY_TEST_MYSQL_CONTAINER KIRBY_TEST_REDIS_CONTAINER KIRBY_TEST_MYSQL_PORT KIRBY_TEST_REDIS_PORT KIRBY_TEST_HTTP_PORT KIRBY_TEST_GRPC_PORT KIRBY_TEST_WEB_PORT
 test_id="${PPID}$$"
 database="kirby_local_${test_id}"
 database_user="kirby_${test_id}"
@@ -58,8 +59,8 @@ SQL
 trap cleanup EXIT INT TERM
 
 node_version=$(node -p 'process.versions.node' 2>/dev/null || true)
-if [ "$node_version" != "24.19.0" ]; then
-  echo "Node.js 24.19.0 is required; found ${node_version:-unavailable}" >&2
+if ! node -e 'const [major, minor] = process.versions.node.split(".").map(Number); process.exit(major === 24 && minor >= 19 ? 0 : 1)'; then
+  echo "Node.js >=24.19.0 <25 is required; found ${node_version:-unavailable}" >&2
   exit 1
 fi
 
@@ -80,16 +81,16 @@ cat >"$config_file" <<EOF
 mode: single
 http:
   address: "127.0.0.1:$http_port"
-  timeout: 2m
+  timeout: 120000
 grpc:
   address: "127.0.0.1:$grpc_port"
-  timeout: 10s
+  timeout: 10000
 database:
   driver: mysql
   dsn: "$database_user:$database_password@tcp(127.0.0.1:$mysql_port)/$database?charset=utf8mb4&parseTime=true&loc=UTC"
   max_open_conns: 20
   max_idle_conns: 5
-  conn_max_lifetime: 5m
+  conn_max_lifetime: 300000
 cache:
   driver: redis
   redis:
@@ -100,8 +101,8 @@ cache:
     key_prefix: "kirby-local-$test_id:"
 jwt:
   issuer: kirby-e2e
-  access_ttl: 15m
-  refresh_ttl: 168h
+  access_ttl: 900000
+  refresh_ttl: 604800000
 object_storage:
   driver: local
   local:
@@ -121,7 +122,7 @@ chmod 600 "$password_file"
 
 (cd "$repo_dir/server" && go build -o "$binary_file" .)
 "$binary_file" create-admin --config "$config_file" --username admin \
-  --display-name "Local Admin" --password-file "$password_file"
+  --nickname "Local Admin" --email "local-admin@example.test" --password-file "$password_file"
 "$binary_file" serve --config "$config_file" >"$backend_log" 2>&1 &
 backend_pid=$!
 

@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package kirby.admin.v1;
+
+import "google/api/annotations.proto";
+import "validate/validate.proto";
+
+option go_package = "github.com/yvvlee/kirby/server/api/admin;adminv1";
+
+service EnvironmentPermissionService {
+  rpc GetEnvironmentPermissionMatrix(EnvironmentPermissionScopeRequest) returns (EnvironmentPermissionMatrixReply) {
+    option (google.api.http) = {get: "/admin/environments/{environment_id}/permissions"};
+  }
+  rpc UpdateEnvironmentPermissionMatrix(UpdateEnvironmentPermissionMatrixRequest) returns (EnvironmentPermissionMatrixReply) {
+    option (google.api.http) = {put: "/admin/environments/{environment_id}/permissions", body: "*"};
+  }
+}
+
+message EnvironmentPermissionScopeRequest {
+  int64 environment_id = 1 [(validate.rules).int64 = {gt: 0}];
+}
+
+message EnvironmentPermissionRole {
+  string role = 1;
+  repeated string permissions = 2;
+}
+
+message EnvironmentPermissionMatrixReply {
+  repeated EnvironmentPermissionRole roles = 1;
+}
+
+message UpdateEnvironmentPermissionMatrixRequest {
+  int64 environment_id = 1 [(validate.rules).int64 = {gt: 0}];
+  repeated EnvironmentPermissionRole roles = 2;
+}

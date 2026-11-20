@@ -5,9 +5,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const requests = vi.hoisted(() => ({
   getSetupStatus: vi.fn(),
+  getRegistrationStatus: vi.fn(),
   createInitialAdministrator: vi.fn(),
 }))
 vi.mock('@/api/setup', () => requests)
+vi.mock('@/api/auth', () => ({
+  getRegistrationStatus: requests.getRegistrationStatus,
+}))
 
 import { AuthContext, type AuthContextValue } from '@/auth/auth-state'
 import LoginPage from '@/routes/LoginPage'
@@ -47,7 +51,8 @@ async function fillAdministrator(password = 'initial-password-123', confirmation
   const user = userEvent.setup()
   await screen.findByRole('heading', { name: '创建初始管理员' })
   await user.type(screen.getByRole('textbox', { name: '用户名' }), 'owner')
-  await user.type(screen.getByRole('textbox', { name: '显示名' }), '管理员')
+  await user.type(screen.getByRole('textbox', { name: '昵称' }), '管理员')
+  await user.type(screen.getByRole('textbox', { name: '邮箱' }), 'owner@example.com')
   await user.click(screen.getByLabelText('密码', { exact: true }))
   await user.paste(password)
   await user.click(screen.getByLabelText('确认密码'))
@@ -57,6 +62,7 @@ async function fillAdministrator(password = 'initial-password-123', confirmation
 
 beforeEach(() => {
   vi.resetAllMocks()
+  requests.getRegistrationStatus.mockResolvedValue(false)
   requests.getSetupStatus.mockResolvedValue({ initialized: false })
   requests.createInitialAdministrator.mockResolvedValue(undefined)
 })
@@ -107,7 +113,8 @@ describe('initial administrator form', () => {
     expect(screen.getByRole('heading', { name: '登录配置管理平台' })).toBeVisible()
     expect(requests.createInitialAdministrator).toHaveBeenCalledWith({
       username: 'owner',
-      display_name: '管理员',
+      nickname: '管理员',
+      email: 'owner@example.com',
       password: 'initial-password-123',
     })
     expect(requests.getSetupStatus).toHaveBeenCalledTimes(2)
@@ -120,23 +127,24 @@ describe('initial administrator form', () => {
     expect(requests.createInitialAdministrator).not.toHaveBeenCalled()
   })
 
-  it.each(['short', '密'.repeat(342)])('rejects passwords outside the UTF-8 byte limits', async (password) => {
+  it.each(['short', '密'.repeat(342)])('rejects passwords outside the character limits', async (password) => {
     renderInstallation('/setup')
     await fillAdministrator(password)
-    expect(await screen.findByText('密码长度须为 12 至 1024 字节')).toBeVisible()
+    expect(await screen.findByText('密码长度须为 8 至 32 个字符')).toBeVisible()
     expect(requests.createInitialAdministrator).not.toHaveBeenCalled()
   })
 
-  it('accepts a multibyte password containing twelve UTF-8 bytes', async () => {
+  it('accepts an eight-character password with two categories', async () => {
     requests.getSetupStatus.mockResolvedValueOnce({ initialized: false })
     requests.getSetupStatus.mockResolvedValueOnce({ initialized: true })
     renderInstallation('/setup')
-    await fillAdministrator('管理密码')
+    await fillAdministrator('abcd1234')
     expect(await screen.findByText('管理员已创建，请登录')).toBeVisible()
     expect(requests.createInitialAdministrator).toHaveBeenCalledWith({
       username: 'owner',
-      display_name: '管理员',
-      password: '管理密码',
+      nickname: '管理员',
+      email: 'owner@example.com',
+      password: 'abcd1234',
     })
   })
 

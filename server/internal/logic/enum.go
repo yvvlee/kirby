@@ -10,25 +10,7 @@ import (
 	"github.com/yvvlee/kirby/server/internal/model"
 	"github.com/yvvlee/kirby/server/internal/permission"
 	"github.com/yvvlee/kirby/server/internal/repository"
-	"github.com/yvvlee/kirby/server/internal/util/safeint"
 )
-
-type EnumCreateInput struct {
-	ConfigID    int64
-	Key         string
-	Name        string
-	Description string
-	Values      []*commonv1.SelectOption
-}
-
-type EnumUpdateInput struct {
-	EnumID      int64
-	Key         string
-	Name        string
-	Description string
-	Values      []*commonv1.SelectOption
-	Version     int64
-}
 
 type EnumLogic struct {
 	enums        repository.ConfigEnumRepository
@@ -64,22 +46,23 @@ func NewEnumLogic(
 
 // Create creates the resource within the authorized scope.
 //
-// Parameters: ctx carries cancellation and transaction state; actor identifies the authenticated caller; environmentID selects the authorized environment; input contains the parent configuration, enum key, labels, and options.
+// Parameters: ctx carries cancellation and transaction state; param carries the caller identity, scope, and the parent configuration, enum key, labels, and options.
 // Returns: the created resource; returns permission, schema-validation, or transactional write failures.
 // Throws: none.
-func (l *EnumLogic) Create(ctx context.Context, actor permission.Actor, environmentID int64, input EnumCreateInput) (*model.ConfigEnum, error) {
+func (l *EnumLogic) Create(ctx context.Context, param *entity.CreateEnumParam) (*commonv1.ConfigEnum, error) {
+	actor, environmentID := param.Actor, param.EnvironmentID
 	if err := l.permissions.Require(ctx, actor.UserID, environmentID, permission.EnumWrite); err != nil {
 		return nil, err
 	}
-	valuesJSON, err := converter.EncodeOptions(input.Values)
+	valuesJSON, err := converter.EncodeOptions(param.Values)
 	if err != nil {
 		return nil, entity.Invalid("invalid enum values")
 	}
 	item := &model.ConfigEnum{
-		ConfigID:    input.ConfigID,
-		Key:         input.Key,
-		Name:        input.Name,
-		Description: input.Description,
+		ConfigID:    param.ConfigID,
+		Key:         param.Key,
+		Name:        param.Name,
+		Description: param.Description,
 		ValuesJSON:  valuesJSON,
 		Meta: model.Meta{
 			CreatedBy: actor.UserID,
@@ -87,63 +70,73 @@ func (l *EnumLogic) Create(ctx context.Context, actor permission.Actor, environm
 		},
 	}
 	err = l.transactions.TX(ctx, func(txctx context.Context) error {
-		_, structures, enums, err := l.lockedResources(txctx, environmentID, input.ConfigID)
+		_, structures, enums, err := l.lockedResources(txctx, environmentID, param.ConfigID)
 		if err != nil {
 			return err
 		}
 		enums = append(enums, &commonv1.ConfigEnum{
-			Key:         input.Key,
-			Name:        input.Name,
-			Description: input.Description,
-			Values:      input.Values,
+			Key:         param.Key,
+			Name:        param.Name,
+			Description: param.Description,
+			Values:      param.Values,
 		})
 		if _, err := entity.NewSchema(structures, enums); err != nil {
 			return err
 		}
-		if err := l.enums.Create(txctx, environmentID, input.ConfigID, item); err != nil {
+		if _, err := l.enums.Create(txctx, environmentID, param.ConfigID, item); err != nil {
 			return err
 		}
-		return l.audits.RecordForEnvironment(txctx, environmentID, enumAudit(actor, "enum.create", item.ID))
+		_, err = l.audits.RecordForEnvironment(txctx, environmentID, enumAudit(actor, "enum.create", item.ID))
+		return err
 	})
 	if err != nil {
 		return nil, err
 	}
-	return l.enums.FindByID(ctx, environmentID, item.ID)
+	created, err := l.enums.FindByID(ctx, environmentID, item.ID)
+	if err != nil {
+		return nil, err
+	}
+	return converter.EnumToProto(created)
 }
 
 // Update applies changes using the expected version to reject stale writes.
 //
-// Parameters: ctx carries cancellation and transaction state; actor identifies the authenticated caller; environmentID selects the authorized environment; input contains the enum ID, replacement key and options, and expected version.
+// Parameters: ctx carries cancellation and transaction state; param carries the caller identity, scope, the enum ID, replacement key and options, and expected version.
 // Returns: the reloaded resource after commit; returns permission, schema, dependency-conflict, or stale-version errors.
 // Throws: none.
-func (l *EnumLogic) Update(ctx context.Context, actor permission.Actor, environmentID int64, input EnumUpdateInput) (*model.ConfigEnum, error) {
-	operation, err := l.prepareUpdate(ctx, actor, environmentID, input)
+func (l *EnumLogic) Update(ctx context.Context, param *entity.UpdateEnumParam) (*commonv1.ConfigEnum, error) {
+	actor := param.Actor
+	operation, err := l.prepareUpdate(ctx, actor, param)
 	if err != nil {
 		return nil, err
 	}
 	err = l.transactions.TX(ctx, func(txctx context.Context) error {
-		if err := l.validateUpdate(txctx, environmentID, operation); err != nil {
+		if err := l.validateUpdate(txctx, param.EnvironmentID, operation); err != nil {
 			return err
 		}
-		return l.saveUpdate(txctx, actor, environmentID, operation)
+		return l.saveUpdate(txctx, actor, param.EnvironmentID, operation)
 	})
 	if err != nil {
 		return nil, err
 	}
-	return l.enums.FindByID(ctx, environmentID, input.EnumID)
+	updated, err := l.enums.FindByID(ctx, param.EnvironmentID, param.EnumID)
+	if err != nil {
+		return nil, err
+	}
+	return converter.EnumToProto(updated)
 }
 
 type enumUpdateOperation struct {
 	configID    int64
-	input       EnumUpdateInput
+	input       *entity.UpdateEnumParam
 	contentJSON string
 }
 
-func (l *EnumLogic) prepareUpdate(ctx context.Context, actor permission.Actor, environmentID int64, input EnumUpdateInput) (enumUpdateOperation, error) {
-	if err := l.permissions.Require(ctx, actor.UserID, environmentID, permission.EnumWrite); err != nil {
+func (l *EnumLogic) prepareUpdate(ctx context.Context, actor permission.Actor, input *entity.UpdateEnumParam) (enumUpdateOperation, error) {
+	if err := l.permissions.Require(ctx, actor.UserID, input.EnvironmentID, permission.EnumWrite); err != nil {
 		return enumUpdateOperation{}, err
 	}
-	current, err := l.enums.FindByID(ctx, environmentID, input.EnumID)
+	current, err := l.enums.FindByID(ctx, input.EnvironmentID, input.EnumID)
 	if err != nil {
 		return enumUpdateOperation{}, err
 	}
@@ -170,7 +163,7 @@ func (l *EnumLogic) validateUpdate(ctx context.Context, environmentID int64, ope
 	return validateEnumReplacement(structures, enums, locked, operation.input)
 }
 
-func enumForUpdate(config *model.Config, structures []*commonv1.Structure, enums []*commonv1.ConfigEnum, input EnumUpdateInput) (*commonv1.ConfigEnum, error) {
+func enumForUpdate(config *model.Config, structures []*commonv1.Structure, enums []*commonv1.ConfigEnum, input *entity.UpdateEnumParam) (*commonv1.ConfigEnum, error) {
 	locked, err := findEnum(enums, input.EnumID)
 	if err != nil {
 		return nil, err
@@ -185,7 +178,7 @@ func enumForUpdate(config *model.Config, structures []*commonv1.Structure, enums
 	return locked, nil
 }
 
-func validateEnumReplacement(structures []*commonv1.Structure, enums []*commonv1.ConfigEnum, locked *commonv1.ConfigEnum, input EnumUpdateInput) error {
+func validateEnumReplacement(structures []*commonv1.Structure, enums []*commonv1.ConfigEnum, locked *commonv1.ConfigEnum, input *entity.UpdateEnumParam) error {
 	candidate, err := enumUpdateCandidate(locked, input)
 	if err != nil {
 		return err
@@ -200,11 +193,7 @@ func validateEnumReplacement(structures []*commonv1.Structure, enums []*commonv1
 	return err
 }
 
-func enumUpdateCandidate(locked *commonv1.ConfigEnum, input EnumUpdateInput) (*commonv1.ConfigEnum, error) {
-	version, err := safeint.Uint32FromInt64(input.Version)
-	if err != nil {
-		return nil, entity.Invalid("invalid enum version")
-	}
+func enumUpdateCandidate(locked *commonv1.ConfigEnum, input *entity.UpdateEnumParam) (*commonv1.ConfigEnum, error) {
 	return &commonv1.ConfigEnum{
 		Id:          locked.Id,
 		ConfigId:    locked.ConfigId,
@@ -212,13 +201,13 @@ func enumUpdateCandidate(locked *commonv1.ConfigEnum, input EnumUpdateInput) (*c
 		Name:        input.Name,
 		Description: input.Description,
 		Values:      input.Values,
-		Version:     version,
+		Version:     uint32(input.Version),
 	}, nil
 }
 
 func (l *EnumLogic) saveUpdate(ctx context.Context, actor permission.Actor, environmentID int64, operation enumUpdateOperation) error {
 	input := operation.input
-	if err := l.enums.Update(ctx, environmentID, input.EnumID, repository.ConfigEnumUpdate{
+	if _, err := l.enums.Update(ctx, environmentID, input.EnumID, repository.ConfigEnumUpdate{
 		Key:         input.Key,
 		Name:        input.Name,
 		Description: input.Description,
@@ -228,15 +217,16 @@ func (l *EnumLogic) saveUpdate(ctx context.Context, actor permission.Actor, envi
 	}); err != nil {
 		return err
 	}
-	return l.audits.RecordForEnvironment(ctx, environmentID, enumAudit(actor, "enum.update", input.EnumID))
+	_, err := l.audits.RecordForEnvironment(ctx, environmentID, enumAudit(actor, "enum.update", input.EnumID))
+	return err
 }
 
 // List returns the resources visible in the selected scope.
 //
 // Parameters: ctx carries cancellation and transaction state; actor identifies the authenticated caller; environmentID selects the authorized environment; projectID selects the project; configID selects the configuration.
-// Returns: the authorized records, or a permission or repository error.
+// Returns: the authorized records, or a permission, repository, or conversion error.
 // Throws: none.
-func (l *EnumLogic) List(ctx context.Context, actor permission.Actor, environmentID, projectID, configID int64) ([]model.ConfigEnum, error) {
+func (l *EnumLogic) List(ctx context.Context, actor permission.Actor, environmentID, projectID, configID int64) ([]*commonv1.ConfigEnum, error) {
 	if err := l.permissions.Require(ctx, actor.UserID, environmentID, permission.EnumRead); err != nil {
 		return nil, err
 	}
@@ -261,7 +251,7 @@ func (l *EnumLogic) List(ctx context.Context, actor permission.Actor, environmen
 		}
 		items = append(items, page.Items...)
 		if len(items) >= int(page.Total) || len(page.Items) == 0 {
-			return items, nil
+			return converter.EnumsToProto(items)
 		}
 	}
 }
@@ -304,10 +294,11 @@ func (l *EnumLogic) Delete(ctx context.Context, actor permission.Actor, environm
 		if _, err := entity.NewSchema(structures, candidate); err != nil {
 			return err
 		}
-		if err := l.enums.Delete(txctx, environmentID, enumID, actor.UserID); err != nil {
+		if _, err := l.enums.Delete(txctx, environmentID, enumID); err != nil {
 			return err
 		}
-		return l.audits.RecordForEnvironment(txctx, environmentID, enumAudit(actor, "enum.delete", enumID))
+		_, err = l.audits.RecordForEnvironment(txctx, environmentID, enumAudit(actor, "enum.delete", enumID))
+		return err
 	})
 }
 

@@ -28,8 +28,6 @@ func (m *Project) LormFieldPtr(name string) any {
 		return &m.Meta.UpdatedAt
 	case "version":
 		return &m.Meta.Version
-	case "deleted_at":
-		return &m.Meta.DeletedAt
 	case "key":
 		return &m.Key
 	case "name":
@@ -49,7 +47,6 @@ func (m *Project) LormScan(row lorm.RowScanner) error {
 		&m.Meta.CreatedAt,
 		&m.Meta.UpdatedAt,
 		&m.Meta.Version,
-		&m.Meta.DeletedAt,
 		&m.Key,
 		&m.Name,
 		&m.Description,
@@ -70,11 +67,6 @@ func (m *Project) LormFieldValue(name string) any {
 		return m.Meta.UpdatedAt
 	case "version":
 		return m.Meta.Version
-	case "deleted_at":
-		if m.Meta.DeletedAt == nil {
-			return nil
-		}
-		return m.Meta.DeletedAt
 	case "key":
 		return m.Key
 	case "name":
@@ -93,7 +85,6 @@ var _lorm_file_configuration_bbc90acc_Project_insert_columns = []string{
 	"created_at",
 	"updated_at",
 	"version",
-	"deleted_at",
 	"key",
 	"name",
 	"description",
@@ -105,7 +96,6 @@ var _lorm_file_configuration_bbc90acc_Project_insert_columns_without_auto_increm
 	"created_at",
 	"updated_at",
 	"version",
-	"deleted_at",
 	"key",
 	"name",
 	"description",
@@ -136,7 +126,6 @@ func (m *Project) LormBeforeInsert(now lorm.HookTime) lorm.InsertPlan {
 	plan.Values = append(plan.Values, m.Meta.CreatedAt)
 	plan.Values = append(plan.Values, m.Meta.UpdatedAt)
 	plan.Values = append(plan.Values, m.Meta.Version)
-	plan.Values = append(plan.Values, m.Meta.DeletedAt)
 	plan.Values = append(plan.Values, m.Key)
 	plan.Values = append(plan.Values, m.Name)
 	plan.Values = append(plan.Values, m.Description)
@@ -157,7 +146,7 @@ func (m *Project) LormAfterInsert(result lorm.InsertResult) error {
 
 func (m *Project) LormBeforeUpdate(now lorm.HookTime) (lorm.UpdatePlan, error) {
 	plan := lorm.UpdatePlan{
-		Set:       make([]lorm.ColumnValue, 0, 10),
+		Set:       make([]lorm.ColumnValue, 0, 9),
 		Where:     make([]lorm.ColumnValue, 0),
 		Increment: make([]string, 0, 1),
 	}
@@ -168,7 +157,6 @@ func (m *Project) LormBeforeUpdate(now lorm.HookTime) (lorm.UpdatePlan, error) {
 	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "updated_at", Value: now})
 	plan.Where = append(plan.Where, lorm.ColumnValue{Column: "version", Value: m.Meta.Version})
 	plan.Increment = append(plan.Increment, "version")
-	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "deleted_at", Value: m.Meta.DeletedAt})
 	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "key", Value: m.Key})
 	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "name", Value: m.Name})
 	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "description", Value: m.Description})
@@ -242,12 +230,6 @@ func (f *Project_Fields) Version() string {
 	}
 	return f.alias + ".version"
 }
-func (f *Project_Fields) DeletedAt() string {
-	if f.alias == "" {
-		return "deleted_at"
-	}
-	return f.alias + ".deleted_at"
-}
 func (f *Project_Fields) Key() string {
 	if f.alias == "" {
 		return "key"
@@ -275,7 +257,6 @@ func (f *Project_Fields) All() []string {
 		f.CreatedAt(),
 		f.UpdatedAt(),
 		f.Version(),
-		f.DeletedAt(),
 		f.Key(),
 		f.Name(),
 		f.Description(),
@@ -292,6 +273,8 @@ func (m *ProjectAPIKey) New() lorm.Model {
 
 func (m *ProjectAPIKey) LormFieldPtr(name string) any {
 	switch name {
+	case "environment_id":
+		return &m.EnvironmentID
 	case "id":
 		return &m.RecordMeta.ID
 	case "created_at":
@@ -300,8 +283,6 @@ func (m *ProjectAPIKey) LormFieldPtr(name string) any {
 		return &m.RecordMeta.UpdatedAt
 	case "project_id":
 		return &m.ProjectID
-	case "public_id":
-		return &m.PublicID
 	case "name":
 		return &m.Name
 	case "secret_hash":
@@ -321,11 +302,11 @@ func (m *ProjectAPIKey) LormFieldPtr(name string) any {
 
 func (m *ProjectAPIKey) LormScan(row lorm.RowScanner) error {
 	return row.Scan(
+		&m.EnvironmentID,
 		&m.RecordMeta.ID,
 		&m.RecordMeta.CreatedAt,
 		&m.RecordMeta.UpdatedAt,
 		&m.ProjectID,
-		&m.PublicID,
 		&m.Name,
 		&m.SecretHash,
 		&m.SecretSuffix,
@@ -337,6 +318,8 @@ func (m *ProjectAPIKey) LormScan(row lorm.RowScanner) error {
 
 func (m *ProjectAPIKey) LormFieldValue(name string) any {
 	switch name {
+	case "environment_id":
+		return m.EnvironmentID
 	case "id":
 		return m.RecordMeta.ID
 	case "created_at":
@@ -345,8 +328,6 @@ func (m *ProjectAPIKey) LormFieldValue(name string) any {
 		return m.RecordMeta.UpdatedAt
 	case "project_id":
 		return m.ProjectID
-	case "public_id":
-		return m.PublicID
 	case "name":
 		return m.Name
 	case "secret_hash":
@@ -371,11 +352,11 @@ func (m *ProjectAPIKey) LormFieldValue(name string) any {
 }
 
 var _lorm_file_configuration_bbc90acc_ProjectAPIKey_insert_columns = []string{
+	"environment_id",
 	"id",
 	"created_at",
 	"updated_at",
 	"project_id",
-	"public_id",
 	"name",
 	"secret_hash",
 	"secret_suffix",
@@ -385,10 +366,10 @@ var _lorm_file_configuration_bbc90acc_ProjectAPIKey_insert_columns = []string{
 }
 
 var _lorm_file_configuration_bbc90acc_ProjectAPIKey_insert_columns_without_auto_increment = []string{
+	"environment_id",
 	"created_at",
 	"updated_at",
 	"project_id",
-	"public_id",
 	"name",
 	"secret_hash",
 	"secret_suffix",
@@ -414,13 +395,13 @@ func (m *ProjectAPIKey) LormBeforeInsert(now lorm.HookTime) lorm.InsertPlan {
 		plan.Columns = _lorm_file_configuration_bbc90acc_ProjectAPIKey_insert_columns
 	}
 	plan.Values = make([]any, 0, len(plan.Columns))
+	plan.Values = append(plan.Values, m.EnvironmentID)
 	if !plan.AutoIncrementZero {
 		plan.Values = append(plan.Values, m.RecordMeta.ID)
 	}
 	plan.Values = append(plan.Values, m.RecordMeta.CreatedAt)
 	plan.Values = append(plan.Values, m.RecordMeta.UpdatedAt)
 	plan.Values = append(plan.Values, m.ProjectID)
-	plan.Values = append(plan.Values, m.PublicID)
 	plan.Values = append(plan.Values, m.Name)
 	plan.Values = append(plan.Values, m.SecretHash)
 	plan.Values = append(plan.Values, m.SecretSuffix)
@@ -448,11 +429,11 @@ func (m *ProjectAPIKey) LormBeforeUpdate(now lorm.HookTime) (lorm.UpdatePlan, er
 		Where:     make([]lorm.ColumnValue, 0),
 		Increment: make([]string, 0, 1),
 	}
+	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "environment_id", Value: m.EnvironmentID})
 	plan.PrimaryKeyCount++
 	plan.Where = append(plan.Where, lorm.ColumnValue{Column: "id", Value: m.RecordMeta.ID})
 	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "updated_at", Value: now})
 	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "project_id", Value: m.ProjectID})
-	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "public_id", Value: m.PublicID})
 	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "name", Value: m.Name})
 	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "secret_hash", Value: m.SecretHash})
 	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "secret_suffix", Value: m.SecretSuffix})
@@ -492,6 +473,12 @@ func (f *ProjectAPIKey_Fields) WithAlias(alias string) *ProjectAPIKey_Fields {
 	o.alias = alias
 	return o
 }
+func (f *ProjectAPIKey_Fields) EnvironmentID() string {
+	if f.alias == "" {
+		return "environment_id"
+	}
+	return f.alias + ".environment_id"
+}
 func (f *ProjectAPIKey_Fields) ID() string {
 	if f.alias == "" {
 		return "id"
@@ -515,12 +502,6 @@ func (f *ProjectAPIKey_Fields) ProjectID() string {
 		return "project_id"
 	}
 	return f.alias + ".project_id"
-}
-func (f *ProjectAPIKey_Fields) PublicID() string {
-	if f.alias == "" {
-		return "public_id"
-	}
-	return f.alias + ".public_id"
 }
 func (f *ProjectAPIKey_Fields) Name() string {
 	if f.alias == "" {
@@ -561,11 +542,11 @@ func (f *ProjectAPIKey_Fields) RevokedAt() string {
 
 func (f *ProjectAPIKey_Fields) All() []string {
 	return []string{
+		f.EnvironmentID(),
 		f.ID(),
 		f.CreatedAt(),
 		f.UpdatedAt(),
 		f.ProjectID(),
-		f.PublicID(),
 		f.Name(),
 		f.SecretHash(),
 		f.SecretSuffix(),
@@ -585,6 +566,8 @@ func (m *Config) New() lorm.Model {
 
 func (m *Config) LormFieldPtr(name string) any {
 	switch name {
+	case "environment_id":
+		return &m.EnvironmentID
 	case "id":
 		return &m.Meta.ID
 	case "created_by":
@@ -597,8 +580,6 @@ func (m *Config) LormFieldPtr(name string) any {
 		return &m.Meta.UpdatedAt
 	case "version":
 		return &m.Meta.Version
-	case "deleted_at":
-		return &m.Meta.DeletedAt
 	case "project_id":
 		return &m.ProjectID
 	case "key":
@@ -620,13 +601,13 @@ func (m *Config) LormFieldPtr(name string) any {
 
 func (m *Config) LormScan(row lorm.RowScanner) error {
 	return row.Scan(
+		&m.EnvironmentID,
 		&m.Meta.ID,
 		&m.Meta.CreatedBy,
 		&m.Meta.UpdatedBy,
 		&m.Meta.CreatedAt,
 		&m.Meta.UpdatedAt,
 		&m.Meta.Version,
-		&m.Meta.DeletedAt,
 		&m.ProjectID,
 		&m.Key,
 		&m.Description,
@@ -639,6 +620,8 @@ func (m *Config) LormScan(row lorm.RowScanner) error {
 
 func (m *Config) LormFieldValue(name string) any {
 	switch name {
+	case "environment_id":
+		return m.EnvironmentID
 	case "id":
 		return m.Meta.ID
 	case "created_by":
@@ -651,11 +634,6 @@ func (m *Config) LormFieldValue(name string) any {
 		return m.Meta.UpdatedAt
 	case "version":
 		return m.Meta.Version
-	case "deleted_at":
-		if m.Meta.DeletedAt == nil {
-			return nil
-		}
-		return m.Meta.DeletedAt
 	case "project_id":
 		return m.ProjectID
 	case "key":
@@ -676,13 +654,13 @@ func (m *Config) LormFieldValue(name string) any {
 }
 
 var _lorm_file_configuration_bbc90acc_Config_insert_columns = []string{
+	"environment_id",
 	"id",
 	"created_by",
 	"updated_by",
 	"created_at",
 	"updated_at",
 	"version",
-	"deleted_at",
 	"project_id",
 	"key",
 	"description",
@@ -693,12 +671,12 @@ var _lorm_file_configuration_bbc90acc_Config_insert_columns = []string{
 }
 
 var _lorm_file_configuration_bbc90acc_Config_insert_columns_without_auto_increment = []string{
+	"environment_id",
 	"created_by",
 	"updated_by",
 	"created_at",
 	"updated_at",
 	"version",
-	"deleted_at",
 	"project_id",
 	"key",
 	"description",
@@ -725,6 +703,7 @@ func (m *Config) LormBeforeInsert(now lorm.HookTime) lorm.InsertPlan {
 		plan.Columns = _lorm_file_configuration_bbc90acc_Config_insert_columns
 	}
 	plan.Values = make([]any, 0, len(plan.Columns))
+	plan.Values = append(plan.Values, m.EnvironmentID)
 	if !plan.AutoIncrementZero {
 		plan.Values = append(plan.Values, m.Meta.ID)
 	}
@@ -733,7 +712,6 @@ func (m *Config) LormBeforeInsert(now lorm.HookTime) lorm.InsertPlan {
 	plan.Values = append(plan.Values, m.Meta.CreatedAt)
 	plan.Values = append(plan.Values, m.Meta.UpdatedAt)
 	plan.Values = append(plan.Values, m.Meta.Version)
-	plan.Values = append(plan.Values, m.Meta.DeletedAt)
 	plan.Values = append(plan.Values, m.ProjectID)
 	plan.Values = append(plan.Values, m.Key)
 	plan.Values = append(plan.Values, m.Description)
@@ -762,6 +740,7 @@ func (m *Config) LormBeforeUpdate(now lorm.HookTime) (lorm.UpdatePlan, error) {
 		Where:     make([]lorm.ColumnValue, 0),
 		Increment: make([]string, 0, 1),
 	}
+	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "environment_id", Value: m.EnvironmentID})
 	plan.PrimaryKeyCount++
 	plan.Where = append(plan.Where, lorm.ColumnValue{Column: "id", Value: m.Meta.ID})
 	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "created_by", Value: m.Meta.CreatedBy})
@@ -769,7 +748,6 @@ func (m *Config) LormBeforeUpdate(now lorm.HookTime) (lorm.UpdatePlan, error) {
 	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "updated_at", Value: now})
 	plan.Where = append(plan.Where, lorm.ColumnValue{Column: "version", Value: m.Meta.Version})
 	plan.Increment = append(plan.Increment, "version")
-	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "deleted_at", Value: m.Meta.DeletedAt})
 	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "project_id", Value: m.ProjectID})
 	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "key", Value: m.Key})
 	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "description", Value: m.Description})
@@ -811,6 +789,12 @@ func (f *Config_Fields) WithAlias(alias string) *Config_Fields {
 	o.alias = alias
 	return o
 }
+func (f *Config_Fields) EnvironmentID() string {
+	if f.alias == "" {
+		return "environment_id"
+	}
+	return f.alias + ".environment_id"
+}
 func (f *Config_Fields) ID() string {
 	if f.alias == "" {
 		return "id"
@@ -846,12 +830,6 @@ func (f *Config_Fields) Version() string {
 		return "version"
 	}
 	return f.alias + ".version"
-}
-func (f *Config_Fields) DeletedAt() string {
-	if f.alias == "" {
-		return "deleted_at"
-	}
-	return f.alias + ".deleted_at"
 }
 func (f *Config_Fields) ProjectID() string {
 	if f.alias == "" {
@@ -898,13 +876,13 @@ func (f *Config_Fields) RuntimeVersion() string {
 
 func (f *Config_Fields) All() []string {
 	return []string{
+		f.EnvironmentID(),
 		f.ID(),
 		f.CreatedBy(),
 		f.UpdatedBy(),
 		f.CreatedAt(),
 		f.UpdatedAt(),
 		f.Version(),
-		f.DeletedAt(),
 		f.ProjectID(),
 		f.Key(),
 		f.Description(),
@@ -937,8 +915,6 @@ func (m *Structure) LormFieldPtr(name string) any {
 		return &m.Meta.UpdatedAt
 	case "version":
 		return &m.Meta.Version
-	case "deleted_at":
-		return &m.Meta.DeletedAt
 	case "config_id":
 		return &m.ConfigID
 	case "key":
@@ -962,7 +938,6 @@ func (m *Structure) LormScan(row lorm.RowScanner) error {
 		&m.Meta.CreatedAt,
 		&m.Meta.UpdatedAt,
 		&m.Meta.Version,
-		&m.Meta.DeletedAt,
 		&m.ConfigID,
 		&m.Key,
 		&m.Name,
@@ -985,11 +960,6 @@ func (m *Structure) LormFieldValue(name string) any {
 		return m.Meta.UpdatedAt
 	case "version":
 		return m.Meta.Version
-	case "deleted_at":
-		if m.Meta.DeletedAt == nil {
-			return nil
-		}
-		return m.Meta.DeletedAt
 	case "config_id":
 		return m.ConfigID
 	case "key":
@@ -1012,7 +982,6 @@ var _lorm_file_configuration_bbc90acc_Structure_insert_columns = []string{
 	"created_at",
 	"updated_at",
 	"version",
-	"deleted_at",
 	"config_id",
 	"key",
 	"name",
@@ -1026,7 +995,6 @@ var _lorm_file_configuration_bbc90acc_Structure_insert_columns_without_auto_incr
 	"created_at",
 	"updated_at",
 	"version",
-	"deleted_at",
 	"config_id",
 	"key",
 	"name",
@@ -1059,7 +1027,6 @@ func (m *Structure) LormBeforeInsert(now lorm.HookTime) lorm.InsertPlan {
 	plan.Values = append(plan.Values, m.Meta.CreatedAt)
 	plan.Values = append(plan.Values, m.Meta.UpdatedAt)
 	plan.Values = append(plan.Values, m.Meta.Version)
-	plan.Values = append(plan.Values, m.Meta.DeletedAt)
 	plan.Values = append(plan.Values, m.ConfigID)
 	plan.Values = append(plan.Values, m.Key)
 	plan.Values = append(plan.Values, m.Name)
@@ -1082,7 +1049,7 @@ func (m *Structure) LormAfterInsert(result lorm.InsertResult) error {
 
 func (m *Structure) LormBeforeUpdate(now lorm.HookTime) (lorm.UpdatePlan, error) {
 	plan := lorm.UpdatePlan{
-		Set:       make([]lorm.ColumnValue, 0, 12),
+		Set:       make([]lorm.ColumnValue, 0, 11),
 		Where:     make([]lorm.ColumnValue, 0),
 		Increment: make([]string, 0, 1),
 	}
@@ -1093,7 +1060,6 @@ func (m *Structure) LormBeforeUpdate(now lorm.HookTime) (lorm.UpdatePlan, error)
 	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "updated_at", Value: now})
 	plan.Where = append(plan.Where, lorm.ColumnValue{Column: "version", Value: m.Meta.Version})
 	plan.Increment = append(plan.Increment, "version")
-	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "deleted_at", Value: m.Meta.DeletedAt})
 	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "config_id", Value: m.ConfigID})
 	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "key", Value: m.Key})
 	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "name", Value: m.Name})
@@ -1169,12 +1135,6 @@ func (f *Structure_Fields) Version() string {
 	}
 	return f.alias + ".version"
 }
-func (f *Structure_Fields) DeletedAt() string {
-	if f.alias == "" {
-		return "deleted_at"
-	}
-	return f.alias + ".deleted_at"
-}
 func (f *Structure_Fields) ConfigID() string {
 	if f.alias == "" {
 		return "config_id"
@@ -1214,7 +1174,6 @@ func (f *Structure_Fields) All() []string {
 		f.CreatedAt(),
 		f.UpdatedAt(),
 		f.Version(),
-		f.DeletedAt(),
 		f.ConfigID(),
 		f.Key(),
 		f.Name(),
@@ -1245,8 +1204,6 @@ func (m *ConfigEnum) LormFieldPtr(name string) any {
 		return &m.Meta.UpdatedAt
 	case "version":
 		return &m.Meta.Version
-	case "deleted_at":
-		return &m.Meta.DeletedAt
 	case "config_id":
 		return &m.ConfigID
 	case "key":
@@ -1270,7 +1227,6 @@ func (m *ConfigEnum) LormScan(row lorm.RowScanner) error {
 		&m.Meta.CreatedAt,
 		&m.Meta.UpdatedAt,
 		&m.Meta.Version,
-		&m.Meta.DeletedAt,
 		&m.ConfigID,
 		&m.Key,
 		&m.Name,
@@ -1293,11 +1249,6 @@ func (m *ConfigEnum) LormFieldValue(name string) any {
 		return m.Meta.UpdatedAt
 	case "version":
 		return m.Meta.Version
-	case "deleted_at":
-		if m.Meta.DeletedAt == nil {
-			return nil
-		}
-		return m.Meta.DeletedAt
 	case "config_id":
 		return m.ConfigID
 	case "key":
@@ -1320,7 +1271,6 @@ var _lorm_file_configuration_bbc90acc_ConfigEnum_insert_columns = []string{
 	"created_at",
 	"updated_at",
 	"version",
-	"deleted_at",
 	"config_id",
 	"key",
 	"name",
@@ -1334,7 +1284,6 @@ var _lorm_file_configuration_bbc90acc_ConfigEnum_insert_columns_without_auto_inc
 	"created_at",
 	"updated_at",
 	"version",
-	"deleted_at",
 	"config_id",
 	"key",
 	"name",
@@ -1367,7 +1316,6 @@ func (m *ConfigEnum) LormBeforeInsert(now lorm.HookTime) lorm.InsertPlan {
 	plan.Values = append(plan.Values, m.Meta.CreatedAt)
 	plan.Values = append(plan.Values, m.Meta.UpdatedAt)
 	plan.Values = append(plan.Values, m.Meta.Version)
-	plan.Values = append(plan.Values, m.Meta.DeletedAt)
 	plan.Values = append(plan.Values, m.ConfigID)
 	plan.Values = append(plan.Values, m.Key)
 	plan.Values = append(plan.Values, m.Name)
@@ -1390,7 +1338,7 @@ func (m *ConfigEnum) LormAfterInsert(result lorm.InsertResult) error {
 
 func (m *ConfigEnum) LormBeforeUpdate(now lorm.HookTime) (lorm.UpdatePlan, error) {
 	plan := lorm.UpdatePlan{
-		Set:       make([]lorm.ColumnValue, 0, 12),
+		Set:       make([]lorm.ColumnValue, 0, 11),
 		Where:     make([]lorm.ColumnValue, 0),
 		Increment: make([]string, 0, 1),
 	}
@@ -1401,7 +1349,6 @@ func (m *ConfigEnum) LormBeforeUpdate(now lorm.HookTime) (lorm.UpdatePlan, error
 	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "updated_at", Value: now})
 	plan.Where = append(plan.Where, lorm.ColumnValue{Column: "version", Value: m.Meta.Version})
 	plan.Increment = append(plan.Increment, "version")
-	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "deleted_at", Value: m.Meta.DeletedAt})
 	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "config_id", Value: m.ConfigID})
 	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "key", Value: m.Key})
 	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "name", Value: m.Name})
@@ -1477,12 +1424,6 @@ func (f *ConfigEnum_Fields) Version() string {
 	}
 	return f.alias + ".version"
 }
-func (f *ConfigEnum_Fields) DeletedAt() string {
-	if f.alias == "" {
-		return "deleted_at"
-	}
-	return f.alias + ".deleted_at"
-}
 func (f *ConfigEnum_Fields) ConfigID() string {
 	if f.alias == "" {
 		return "config_id"
@@ -1522,7 +1463,6 @@ func (f *ConfigEnum_Fields) All() []string {
 		f.CreatedAt(),
 		f.UpdatedAt(),
 		f.Version(),
-		f.DeletedAt(),
 		f.ConfigID(),
 		f.Key(),
 		f.Name(),
@@ -1553,8 +1493,6 @@ func (m *Snapshot) LormFieldPtr(name string) any {
 		return &m.Meta.UpdatedAt
 	case "version":
 		return &m.Meta.Version
-	case "deleted_at":
-		return &m.Meta.DeletedAt
 	case "project_id":
 		return &m.ProjectID
 	case "config_id":
@@ -1588,7 +1526,6 @@ func (m *Snapshot) LormScan(row lorm.RowScanner) error {
 		&m.Meta.CreatedAt,
 		&m.Meta.UpdatedAt,
 		&m.Meta.Version,
-		&m.Meta.DeletedAt,
 		&m.ProjectID,
 		&m.ConfigID,
 		&m.ConfigKey,
@@ -1616,11 +1553,6 @@ func (m *Snapshot) LormFieldValue(name string) any {
 		return m.Meta.UpdatedAt
 	case "version":
 		return m.Meta.Version
-	case "deleted_at":
-		if m.Meta.DeletedAt == nil {
-			return nil
-		}
-		return m.Meta.DeletedAt
 	case "project_id":
 		return m.ProjectID
 	case "config_id":
@@ -1659,7 +1591,6 @@ var _lorm_file_configuration_bbc90acc_Snapshot_insert_columns = []string{
 	"created_at",
 	"updated_at",
 	"version",
-	"deleted_at",
 	"project_id",
 	"config_id",
 	"config_key",
@@ -1678,7 +1609,6 @@ var _lorm_file_configuration_bbc90acc_Snapshot_insert_columns_without_auto_incre
 	"created_at",
 	"updated_at",
 	"version",
-	"deleted_at",
 	"project_id",
 	"config_id",
 	"config_key",
@@ -1716,7 +1646,6 @@ func (m *Snapshot) LormBeforeInsert(now lorm.HookTime) lorm.InsertPlan {
 	plan.Values = append(plan.Values, m.Meta.CreatedAt)
 	plan.Values = append(plan.Values, m.Meta.UpdatedAt)
 	plan.Values = append(plan.Values, m.Meta.Version)
-	plan.Values = append(plan.Values, m.Meta.DeletedAt)
 	plan.Values = append(plan.Values, m.ProjectID)
 	plan.Values = append(plan.Values, m.ConfigID)
 	plan.Values = append(plan.Values, m.ConfigKey)
@@ -1744,7 +1673,7 @@ func (m *Snapshot) LormAfterInsert(result lorm.InsertResult) error {
 
 func (m *Snapshot) LormBeforeUpdate(now lorm.HookTime) (lorm.UpdatePlan, error) {
 	plan := lorm.UpdatePlan{
-		Set:       make([]lorm.ColumnValue, 0, 17),
+		Set:       make([]lorm.ColumnValue, 0, 16),
 		Where:     make([]lorm.ColumnValue, 0),
 		Increment: make([]string, 0, 1),
 	}
@@ -1755,7 +1684,6 @@ func (m *Snapshot) LormBeforeUpdate(now lorm.HookTime) (lorm.UpdatePlan, error) 
 	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "updated_at", Value: now})
 	plan.Where = append(plan.Where, lorm.ColumnValue{Column: "version", Value: m.Meta.Version})
 	plan.Increment = append(plan.Increment, "version")
-	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "deleted_at", Value: m.Meta.DeletedAt})
 	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "project_id", Value: m.ProjectID})
 	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "config_id", Value: m.ConfigID})
 	plan.Set = append(plan.Set, lorm.ColumnValue{Column: "config_key", Value: m.ConfigKey})
@@ -1836,12 +1764,6 @@ func (f *Snapshot_Fields) Version() string {
 	}
 	return f.alias + ".version"
 }
-func (f *Snapshot_Fields) DeletedAt() string {
-	if f.alias == "" {
-		return "deleted_at"
-	}
-	return f.alias + ".deleted_at"
-}
 func (f *Snapshot_Fields) ProjectID() string {
 	if f.alias == "" {
 		return "project_id"
@@ -1911,7 +1833,6 @@ func (f *Snapshot_Fields) All() []string {
 		f.CreatedAt(),
 		f.UpdatedAt(),
 		f.Version(),
-		f.DeletedAt(),
 		f.ProjectID(),
 		f.ConfigID(),
 		f.ConfigKey(),
@@ -1925,7 +1846,7 @@ func (f *Snapshot_Fields) All() []string {
 	}
 }
 
-const _lorm_file_configuration_bbc90acc_raw = `{"Path":"configuration.go","LormImportAlias":"lorm","Package":"model","Imports":[{"Path":"\"time\"","Alias":""},{"Path":"\"github.com/yvvlee/lorm\"","Alias":""}],"Structs":[{"Name":"Project","TableName":"projects","Fields":[{"Name":"ID","FullName":"Meta.ID","DBField":"id","Type":"int64","Flag":3},{"Name":"CreatedBy","FullName":"Meta.CreatedBy","DBField":"created_by","Type":"int64","Flag":0},{"Name":"UpdatedBy","FullName":"Meta.UpdatedBy","DBField":"updated_by","Type":"int64","Flag":0},{"Name":"CreatedAt","FullName":"Meta.CreatedAt","DBField":"created_at","Type":"time.Time","Flag":8},{"Name":"UpdatedAt","FullName":"Meta.UpdatedAt","DBField":"updated_at","Type":"time.Time","Flag":16},{"Name":"Version","FullName":"Meta.Version","DBField":"version","Type":"int64","Flag":32},{"Name":"DeletedAt","FullName":"Meta.DeletedAt","DBField":"deleted_at","Type":"*time.Time","Flag":0},{"Name":"Key","FullName":"Key","DBField":"key","Type":"string","Flag":0},{"Name":"Name","FullName":"Name","DBField":"name","Type":"string","Flag":0},{"Name":"Description","FullName":"Description","DBField":"description","Type":"string","Flag":0}],"PrimaryKeys":["id"]},{"Name":"ProjectAPIKey","TableName":"project_api_keys","Fields":[{"Name":"ID","FullName":"RecordMeta.ID","DBField":"id","Type":"int64","Flag":3},{"Name":"CreatedAt","FullName":"RecordMeta.CreatedAt","DBField":"created_at","Type":"time.Time","Flag":8},{"Name":"UpdatedAt","FullName":"RecordMeta.UpdatedAt","DBField":"updated_at","Type":"time.Time","Flag":16},{"Name":"ProjectID","FullName":"ProjectID","DBField":"project_id","Type":"int64","Flag":0},{"Name":"PublicID","FullName":"PublicID","DBField":"public_id","Type":"string","Flag":0},{"Name":"Name","FullName":"Name","DBField":"name","Type":"string","Flag":0},{"Name":"SecretHash","FullName":"SecretHash","DBField":"secret_hash","Type":"[]byte","Flag":0},{"Name":"SecretSuffix","FullName":"SecretSuffix","DBField":"secret_suffix","Type":"string","Flag":0},{"Name":"CreatedBy","FullName":"CreatedBy","DBField":"created_by","Type":"int64","Flag":0},{"Name":"LastUsedAt","FullName":"LastUsedAt","DBField":"last_used_at","Type":"*time.Time","Flag":0},{"Name":"RevokedAt","FullName":"RevokedAt","DBField":"revoked_at","Type":"*time.Time","Flag":0}],"PrimaryKeys":["id"]},{"Name":"Config","TableName":"configs","Fields":[{"Name":"ID","FullName":"Meta.ID","DBField":"id","Type":"int64","Flag":3},{"Name":"CreatedBy","FullName":"Meta.CreatedBy","DBField":"created_by","Type":"int64","Flag":0},{"Name":"UpdatedBy","FullName":"Meta.UpdatedBy","DBField":"updated_by","Type":"int64","Flag":0},{"Name":"CreatedAt","FullName":"Meta.CreatedAt","DBField":"created_at","Type":"time.Time","Flag":8},{"Name":"UpdatedAt","FullName":"Meta.UpdatedAt","DBField":"updated_at","Type":"time.Time","Flag":16},{"Name":"Version","FullName":"Meta.Version","DBField":"version","Type":"int64","Flag":32},{"Name":"DeletedAt","FullName":"Meta.DeletedAt","DBField":"deleted_at","Type":"*time.Time","Flag":0},{"Name":"ProjectID","FullName":"ProjectID","DBField":"project_id","Type":"int64","Flag":0},{"Name":"Key","FullName":"Key","DBField":"key","Type":"string","Flag":0},{"Name":"Description","FullName":"Description","DBField":"description","Type":"string","Flag":0},{"Name":"IsArray","FullName":"IsArray","DBField":"is_array","Type":"bool","Flag":0},{"Name":"TypeJSON","FullName":"TypeJSON","DBField":"type_json","Type":"string","Flag":0},{"Name":"Value","FullName":"Value","DBField":"value","Type":"string","Flag":0},{"Name":"RuntimeVersion","FullName":"RuntimeVersion","DBField":"runtime_version","Type":"int64","Flag":0}],"PrimaryKeys":["id"]},{"Name":"Structure","TableName":"structures","Fields":[{"Name":"ID","FullName":"Meta.ID","DBField":"id","Type":"int64","Flag":3},{"Name":"CreatedBy","FullName":"Meta.CreatedBy","DBField":"created_by","Type":"int64","Flag":0},{"Name":"UpdatedBy","FullName":"Meta.UpdatedBy","DBField":"updated_by","Type":"int64","Flag":0},{"Name":"CreatedAt","FullName":"Meta.CreatedAt","DBField":"created_at","Type":"time.Time","Flag":8},{"Name":"UpdatedAt","FullName":"Meta.UpdatedAt","DBField":"updated_at","Type":"time.Time","Flag":16},{"Name":"Version","FullName":"Meta.Version","DBField":"version","Type":"int64","Flag":32},{"Name":"DeletedAt","FullName":"Meta.DeletedAt","DBField":"deleted_at","Type":"*time.Time","Flag":0},{"Name":"ConfigID","FullName":"ConfigID","DBField":"config_id","Type":"int64","Flag":0},{"Name":"Key","FullName":"Key","DBField":"key","Type":"string","Flag":0},{"Name":"Name","FullName":"Name","DBField":"name","Type":"string","Flag":0},{"Name":"Description","FullName":"Description","DBField":"description","Type":"string","Flag":0},{"Name":"FieldsJSON","FullName":"FieldsJSON","DBField":"fields_json","Type":"string","Flag":0}],"PrimaryKeys":["id"]},{"Name":"ConfigEnum","TableName":"config_enums","Fields":[{"Name":"ID","FullName":"Meta.ID","DBField":"id","Type":"int64","Flag":3},{"Name":"CreatedBy","FullName":"Meta.CreatedBy","DBField":"created_by","Type":"int64","Flag":0},{"Name":"UpdatedBy","FullName":"Meta.UpdatedBy","DBField":"updated_by","Type":"int64","Flag":0},{"Name":"CreatedAt","FullName":"Meta.CreatedAt","DBField":"created_at","Type":"time.Time","Flag":8},{"Name":"UpdatedAt","FullName":"Meta.UpdatedAt","DBField":"updated_at","Type":"time.Time","Flag":16},{"Name":"Version","FullName":"Meta.Version","DBField":"version","Type":"int64","Flag":32},{"Name":"DeletedAt","FullName":"Meta.DeletedAt","DBField":"deleted_at","Type":"*time.Time","Flag":0},{"Name":"ConfigID","FullName":"ConfigID","DBField":"config_id","Type":"int64","Flag":0},{"Name":"Key","FullName":"Key","DBField":"key","Type":"string","Flag":0},{"Name":"Name","FullName":"Name","DBField":"name","Type":"string","Flag":0},{"Name":"Description","FullName":"Description","DBField":"description","Type":"string","Flag":0},{"Name":"ValuesJSON","FullName":"ValuesJSON","DBField":"values_json","Type":"string","Flag":0}],"PrimaryKeys":["id"]},{"Name":"Snapshot","TableName":"snapshots","Fields":[{"Name":"ID","FullName":"Meta.ID","DBField":"id","Type":"int64","Flag":3},{"Name":"CreatedBy","FullName":"Meta.CreatedBy","DBField":"created_by","Type":"int64","Flag":0},{"Name":"UpdatedBy","FullName":"Meta.UpdatedBy","DBField":"updated_by","Type":"int64","Flag":0},{"Name":"CreatedAt","FullName":"Meta.CreatedAt","DBField":"created_at","Type":"time.Time","Flag":8},{"Name":"UpdatedAt","FullName":"Meta.UpdatedAt","DBField":"updated_at","Type":"time.Time","Flag":16},{"Name":"Version","FullName":"Meta.Version","DBField":"version","Type":"int64","Flag":32},{"Name":"DeletedAt","FullName":"Meta.DeletedAt","DBField":"deleted_at","Type":"*time.Time","Flag":0},{"Name":"ProjectID","FullName":"ProjectID","DBField":"project_id","Type":"int64","Flag":0},{"Name":"ConfigID","FullName":"ConfigID","DBField":"config_id","Type":"int64","Flag":0},{"Name":"ConfigKey","FullName":"ConfigKey","DBField":"config_key","Type":"string","Flag":0},{"Name":"Description","FullName":"Description","DBField":"description","Type":"string","Flag":0},{"Name":"Content","FullName":"Content","DBField":"content","Type":"string","Flag":0},{"Name":"Status","FullName":"Status","DBField":"status","Type":"SnapshotStatus","Flag":0},{"Name":"TagsJSON","FullName":"TagsJSON","DBField":"tags_json","Type":"string","Flag":0},{"Name":"IsUsing","FullName":"IsUsing","DBField":"is_using","Type":"bool","Flag":0},{"Name":"PublishedAt","FullName":"PublishedAt","DBField":"published_at","Type":"*time.Time","Flag":0},{"Name":"PublishedBy","FullName":"PublishedBy","DBField":"published_by","Type":"*int64","Flag":0}],"PrimaryKeys":["id"]}]}`
+const _lorm_file_configuration_bbc90acc_raw = `{"Path":"configuration.go","LormImportAlias":"lorm","Package":"model","Imports":[{"Path":"\"time\"","Alias":""},{"Path":"\"github.com/yvvlee/lorm\"","Alias":""}],"Structs":[{"Name":"Project","TableName":"projects","Fields":[{"Name":"ID","FullName":"Meta.ID","DBField":"id","Type":"int64","Flag":3},{"Name":"CreatedBy","FullName":"Meta.CreatedBy","DBField":"created_by","Type":"int64","Flag":0},{"Name":"UpdatedBy","FullName":"Meta.UpdatedBy","DBField":"updated_by","Type":"int64","Flag":0},{"Name":"CreatedAt","FullName":"Meta.CreatedAt","DBField":"created_at","Type":"time.Time","Flag":8},{"Name":"UpdatedAt","FullName":"Meta.UpdatedAt","DBField":"updated_at","Type":"time.Time","Flag":16},{"Name":"Version","FullName":"Meta.Version","DBField":"version","Type":"int64","Flag":32},{"Name":"Key","FullName":"Key","DBField":"key","Type":"string","Flag":0},{"Name":"Name","FullName":"Name","DBField":"name","Type":"string","Flag":0},{"Name":"Description","FullName":"Description","DBField":"description","Type":"string","Flag":0}],"PrimaryKeys":["id"]},{"Name":"ProjectAPIKey","TableName":"project_api_keys","Fields":[{"Name":"EnvironmentID","FullName":"EnvironmentID","DBField":"environment_id","Type":"int64","Flag":0},{"Name":"ID","FullName":"RecordMeta.ID","DBField":"id","Type":"int64","Flag":3},{"Name":"CreatedAt","FullName":"RecordMeta.CreatedAt","DBField":"created_at","Type":"time.Time","Flag":8},{"Name":"UpdatedAt","FullName":"RecordMeta.UpdatedAt","DBField":"updated_at","Type":"time.Time","Flag":16},{"Name":"ProjectID","FullName":"ProjectID","DBField":"project_id","Type":"int64","Flag":0},{"Name":"Name","FullName":"Name","DBField":"name","Type":"string","Flag":0},{"Name":"SecretHash","FullName":"SecretHash","DBField":"secret_hash","Type":"[]byte","Flag":0},{"Name":"SecretSuffix","FullName":"SecretSuffix","DBField":"secret_suffix","Type":"string","Flag":0},{"Name":"CreatedBy","FullName":"CreatedBy","DBField":"created_by","Type":"int64","Flag":0},{"Name":"LastUsedAt","FullName":"LastUsedAt","DBField":"last_used_at","Type":"*time.Time","Flag":0},{"Name":"RevokedAt","FullName":"RevokedAt","DBField":"revoked_at","Type":"*time.Time","Flag":0}],"PrimaryKeys":["id"]},{"Name":"Config","TableName":"configs","Fields":[{"Name":"EnvironmentID","FullName":"EnvironmentID","DBField":"environment_id","Type":"int64","Flag":0},{"Name":"ID","FullName":"Meta.ID","DBField":"id","Type":"int64","Flag":3},{"Name":"CreatedBy","FullName":"Meta.CreatedBy","DBField":"created_by","Type":"int64","Flag":0},{"Name":"UpdatedBy","FullName":"Meta.UpdatedBy","DBField":"updated_by","Type":"int64","Flag":0},{"Name":"CreatedAt","FullName":"Meta.CreatedAt","DBField":"created_at","Type":"time.Time","Flag":8},{"Name":"UpdatedAt","FullName":"Meta.UpdatedAt","DBField":"updated_at","Type":"time.Time","Flag":16},{"Name":"Version","FullName":"Meta.Version","DBField":"version","Type":"int64","Flag":32},{"Name":"ProjectID","FullName":"ProjectID","DBField":"project_id","Type":"int64","Flag":0},{"Name":"Key","FullName":"Key","DBField":"key","Type":"string","Flag":0},{"Name":"Description","FullName":"Description","DBField":"description","Type":"string","Flag":0},{"Name":"IsArray","FullName":"IsArray","DBField":"is_array","Type":"bool","Flag":0},{"Name":"TypeJSON","FullName":"TypeJSON","DBField":"type_json","Type":"string","Flag":0},{"Name":"Value","FullName":"Value","DBField":"value","Type":"string","Flag":0},{"Name":"RuntimeVersion","FullName":"RuntimeVersion","DBField":"runtime_version","Type":"int64","Flag":0}],"PrimaryKeys":["id"]},{"Name":"Structure","TableName":"structures","Fields":[{"Name":"ID","FullName":"Meta.ID","DBField":"id","Type":"int64","Flag":3},{"Name":"CreatedBy","FullName":"Meta.CreatedBy","DBField":"created_by","Type":"int64","Flag":0},{"Name":"UpdatedBy","FullName":"Meta.UpdatedBy","DBField":"updated_by","Type":"int64","Flag":0},{"Name":"CreatedAt","FullName":"Meta.CreatedAt","DBField":"created_at","Type":"time.Time","Flag":8},{"Name":"UpdatedAt","FullName":"Meta.UpdatedAt","DBField":"updated_at","Type":"time.Time","Flag":16},{"Name":"Version","FullName":"Meta.Version","DBField":"version","Type":"int64","Flag":32},{"Name":"ConfigID","FullName":"ConfigID","DBField":"config_id","Type":"int64","Flag":0},{"Name":"Key","FullName":"Key","DBField":"key","Type":"string","Flag":0},{"Name":"Name","FullName":"Name","DBField":"name","Type":"string","Flag":0},{"Name":"Description","FullName":"Description","DBField":"description","Type":"string","Flag":0},{"Name":"FieldsJSON","FullName":"FieldsJSON","DBField":"fields_json","Type":"string","Flag":0}],"PrimaryKeys":["id"]},{"Name":"ConfigEnum","TableName":"config_enums","Fields":[{"Name":"ID","FullName":"Meta.ID","DBField":"id","Type":"int64","Flag":3},{"Name":"CreatedBy","FullName":"Meta.CreatedBy","DBField":"created_by","Type":"int64","Flag":0},{"Name":"UpdatedBy","FullName":"Meta.UpdatedBy","DBField":"updated_by","Type":"int64","Flag":0},{"Name":"CreatedAt","FullName":"Meta.CreatedAt","DBField":"created_at","Type":"time.Time","Flag":8},{"Name":"UpdatedAt","FullName":"Meta.UpdatedAt","DBField":"updated_at","Type":"time.Time","Flag":16},{"Name":"Version","FullName":"Meta.Version","DBField":"version","Type":"int64","Flag":32},{"Name":"ConfigID","FullName":"ConfigID","DBField":"config_id","Type":"int64","Flag":0},{"Name":"Key","FullName":"Key","DBField":"key","Type":"string","Flag":0},{"Name":"Name","FullName":"Name","DBField":"name","Type":"string","Flag":0},{"Name":"Description","FullName":"Description","DBField":"description","Type":"string","Flag":0},{"Name":"ValuesJSON","FullName":"ValuesJSON","DBField":"values_json","Type":"string","Flag":0}],"PrimaryKeys":["id"]},{"Name":"Snapshot","TableName":"snapshots","Fields":[{"Name":"ID","FullName":"Meta.ID","DBField":"id","Type":"int64","Flag":3},{"Name":"CreatedBy","FullName":"Meta.CreatedBy","DBField":"created_by","Type":"int64","Flag":0},{"Name":"UpdatedBy","FullName":"Meta.UpdatedBy","DBField":"updated_by","Type":"int64","Flag":0},{"Name":"CreatedAt","FullName":"Meta.CreatedAt","DBField":"created_at","Type":"time.Time","Flag":8},{"Name":"UpdatedAt","FullName":"Meta.UpdatedAt","DBField":"updated_at","Type":"time.Time","Flag":16},{"Name":"Version","FullName":"Meta.Version","DBField":"version","Type":"int64","Flag":32},{"Name":"ProjectID","FullName":"ProjectID","DBField":"project_id","Type":"int64","Flag":0},{"Name":"ConfigID","FullName":"ConfigID","DBField":"config_id","Type":"int64","Flag":0},{"Name":"ConfigKey","FullName":"ConfigKey","DBField":"config_key","Type":"string","Flag":0},{"Name":"Description","FullName":"Description","DBField":"description","Type":"string","Flag":0},{"Name":"Content","FullName":"Content","DBField":"content","Type":"string","Flag":0},{"Name":"Status","FullName":"Status","DBField":"status","Type":"SnapshotStatus","Flag":0},{"Name":"TagsJSON","FullName":"TagsJSON","DBField":"tags_json","Type":"string","Flag":0},{"Name":"IsUsing","FullName":"IsUsing","DBField":"is_using","Type":"bool","Flag":0},{"Name":"PublishedAt","FullName":"PublishedAt","DBField":"published_at","Type":"*time.Time","Flag":0},{"Name":"PublishedBy","FullName":"PublishedBy","DBField":"published_by","Type":"*int64","Flag":0}],"PrimaryKeys":["id"]}]}`
 
 var _lorm_file_configuration_bbc90acc_model_descriptor_map = func() map[string]*lorm.ModelDescriptor {
 	var file lorm.FileDescriptor

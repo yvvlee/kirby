@@ -2,14 +2,12 @@ package jwt
 
 import (
 	"encoding/base64"
-	"encoding/json"
+	stdjson "encoding/json"
 	"strings"
 	"testing"
 	"time"
 
 	jwtlib "github.com/golang-jwt/jwt/v5"
-
-	"github.com/yvvlee/kirby/server/internal/conf"
 )
 
 func jwtConfig(active string) Config {
@@ -17,16 +15,15 @@ func jwtConfig(active string) Config {
 		Issuer:    "kirby-test",
 		ActiveKID: active,
 		AccessTTL: 15 * time.Minute,
-		Keys: map[string]conf.Secret{
-			"old": conf.NewSecret("old-012345678901234567890123456789"),
-			"new": conf.NewSecret("new-012345678901234567890123456789"),
+		Keys: map[string]string{
+			"old": "old-012345678901234567890123456789",
+			"new": "new-012345678901234567890123456789",
 		},
 	}
 }
 
 func TestIssueHasOnlyIdentityAndRegisteredClaims(t *testing.T) {
-	now := time.Date(2026, 8, 17, 1, 2, 3, 0, time.UTC)
-	manager, err := newManager(jwtConfig("new"), Audience, func() time.Time { return now })
+	manager, err := newManager(jwtConfig("new"), Audience)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,8 +36,8 @@ func TestIssueHasOnlyIdentityAndRegisteredClaims(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var values map[string]json.RawMessage
-	if err := json.Unmarshal(payload, &values); err != nil {
+	var values map[string]stdjson.RawMessage
+	if err := stdjson.Unmarshal(payload, &values); err != nil {
 		t.Fatal(err)
 	}
 	want := map[string]bool{
@@ -67,9 +64,33 @@ func TestIssueHasOnlyIdentityAndRegisteredClaims(t *testing.T) {
 	}
 }
 
+// expiredToken 手工签发一个已过期的合法签名 token，用于验证过期拒绝路径。
+func expiredToken(t *testing.T) string {
+	t.Helper()
+	past := time.Now().Add(-16 * time.Minute)
+	claims := Claims{
+		SessionID: "session",
+		RegisteredClaims: jwtlib.RegisteredClaims{
+			Issuer:    "kirby-test",
+			Subject:   "7",
+			Audience:  jwtlib.ClaimStrings{Audience},
+			ExpiresAt: jwtlib.NewNumericDate(past.Add(15 * time.Minute)),
+			NotBefore: jwtlib.NewNumericDate(past),
+			IssuedAt:  jwtlib.NewNumericDate(past),
+			ID:        "expired",
+		},
+	}
+	token := jwtlib.NewWithClaims(jwtlib.SigningMethodHS256, claims)
+	token.Header["kid"] = "new"
+	encoded, err := token.SignedString([]byte("new-012345678901234567890123456789"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return encoded
+}
+
 func TestVerifyRejectsExpiryIssuerAudienceAndUnknownKey(t *testing.T) {
-	issuedAt := time.Date(2026, 8, 17, 1, 2, 3, 0, time.UTC)
-	issuer, err := newManager(jwtConfig("new"), Audience, func() time.Time { return issuedAt })
+	issuer, err := newManager(jwtConfig("new"), Audience)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,18 +98,19 @@ func TestVerifyRejectsExpiryIssuerAudienceAndUnknownKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	expired := expiredToken(t)
 
 	tests := []struct {
 		name     string
 		config   Config
 		audience string
-		now      time.Time
+		token    string
 	}{
 		{
 			name:     "expired",
 			config:   jwtConfig("new"),
 			audience: Audience,
-			now:      issuedAt.Add(16 * time.Minute),
+			token:    expired,
 		},
 		{
 			name: "wrong issuer",
@@ -98,13 +120,13 @@ func TestVerifyRejectsExpiryIssuerAudienceAndUnknownKey(t *testing.T) {
 				return cfg
 			}(),
 			audience: Audience,
-			now:      issuedAt,
+			token:    encoded,
 		},
 		{
 			name:     "wrong audience",
 			config:   jwtConfig("new"),
 			audience: "other",
-			now:      issuedAt,
+			token:    encoded,
 		},
 		{
 			name: "unknown kid",
@@ -114,16 +136,16 @@ func TestVerifyRejectsExpiryIssuerAudienceAndUnknownKey(t *testing.T) {
 				return cfg
 			}(),
 			audience: Audience,
-			now:      issuedAt,
+			token:    encoded,
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			verifier, err := newManager(test.config, test.audience, func() time.Time { return test.now })
+			verifier, err := newManager(test.config, test.audience)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := verifier.Verify(encoded); err != ErrInvalidToken {
+			if _, err := verifier.Verify(test.token); err != ErrInvalidToken {
 				t.Fatalf("Verify() error = %v", err)
 			}
 		})
@@ -131,8 +153,7 @@ func TestVerifyRejectsExpiryIssuerAudienceAndUnknownKey(t *testing.T) {
 }
 
 func TestKeyRotationKeepsOldVerificationKey(t *testing.T) {
-	now := time.Date(2026, 8, 17, 1, 2, 3, 0, time.UTC)
-	oldManager, err := newManager(jwtConfig("old"), Audience, func() time.Time { return now })
+	oldManager, err := newManager(jwtConfig("old"), Audience)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +161,7 @@ func TestKeyRotationKeepsOldVerificationKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rotated, err := newManager(jwtConfig("new"), Audience, func() time.Time { return now })
+	rotated, err := newManager(jwtConfig("new"), Audience)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -15,7 +15,7 @@ PROTOC_GEN_GO_ERRORS_VERSION := v2.0.0-20251205160234-b9fab9a5a5ab
 
 PGV_DIR := $(shell $(GO) mod download -json github.com/envoyproxy/protoc-gen-validate@$(PROTOC_GEN_VALIDATE_VERSION) | sed -n 's/^[[:space:]]*"Dir": "\([^"]*\)",*$$/\1/p')
 KRATOS_DIR := $(shell $(GO) mod download -json github.com/go-kratos/kratos/v2@$(KRATOS_VERSION) | sed -n 's/^[[:space:]]*"Dir": "\([^"]*\)",*$$/\1/p')
-PROTO_INCLUDES := -Iapi -I$(PGV_DIR) -I$(KRATOS_DIR)/third_party
+PROTO_INCLUDES := -Iapi -I$(TOOLS_BIN)/include -I$(PGV_DIR) -I$(KRATOS_DIR)/third_party
 MANAGEMENT_PROTO_FILES := $(shell find api/admin api/common -name '*.proto' -type f | LC_ALL=C sort)
 RUNTIME_PROTO_FILES := $(shell find api/runtime -name '*.proto' -type f | LC_ALL=C sort)
 ERROR_PROTO_DIR := api/errors
