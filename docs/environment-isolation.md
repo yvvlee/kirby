@@ -1,22 +1,52 @@
-# 项目与环境的数据归属
+# Project and Environment Isolation
 
-一个项目包含多个环境。环境通过 `environments.project_id` 归属项目；项目模型不包含环境 ID。
+Kirby enforces hierarchical data ownership and isolation across projects and environments. A single deployment manages multiple projects, each containing independent environments.
 
-- 配置通过 `configs.environment_id` 归属环境。同一环境内配置 key 唯一，不同环境可以有同名配置。
-- 结构、枚举、快照通过配置 ID 继承环境归属。发布状态与运行时版本属于该环境的配置。
-- API Key 同时绑定项目和环境。运行时从凭据确定环境，客户端不能通过请求切换环境。禁用该环境会阻止其凭据读取。
-- 运行时缓存使用配置 ID、配置 key 和发布版本标识，避免不同环境的同名配置发生缓存冲突。
-- 文件上传和完成确认校验环境及项目，资源路径含环境 ID。公开发布资源仍可匿名读取，不应视为私密文件。
-- 项目查询参数中的 environment_id 仅表示权限检查范围，不表示项目归属于环境。
+The durable hierarchy is:
 
-## 成员与权限
+```text
+Project
+└── Environment
+    ├── Configurations (Key-Value)
+    │   ├── Structures (JSON Schemas)
+    │   ├── Enums
+    │   └── Snapshots (Drafts & Published Versions)
+    ├── Environment API Keys (HTTP & gRPC runtime credentials)
+    └── Uploaded Assets (Environment-scoped object storage paths)
+```
 
-项目成员只有一个项目角色：Owner、Maintainer、Member 或 Guest。环境没有独立成员。每个环境分别保存读、写、发布/下线、API Key 管理四个权限点与项目角色的关联。
+## Data Ownership Model
 
-Owner 始终拥有全部权限。其余角色按环境授权执行。系统管理员没有项目权限绕过能力，必须加入项目才能查看项目内容。项目列表仅展示当前用户所属项目。
+- **Environments belong to Projects**: Environments link to projects via `environments.project_id`. The project model does not store an environment ID.
+- **Configurations belong to Environments**: Configurations link to environments via `configs.environment_id`. Configuration keys are unique within an environment; different environments can define identical configuration keys without collision.
+- **Structures, Enums, and Snapshots**: These resources inherit environment ownership from their parent configuration (`config_id`). Publishing state and active runtime versions belong to the environment's configuration.
+- **Environment API Keys**: API keys are bound to both a project and a specific environment (`project_id` and `environment_id`). Runtime requests authenticate via the API key; the server derives the target environment directly from the key. Clients cannot switch environments in API requests. Disabling an environment immediately revokes runtime access for all its keys.
+- **Runtime Caching**: Published configuration cache keys combine the environment ID, configuration key, and publication version. This guarantees that configurations with identical keys in different environments never collide in Redis.
+- **Object Storage Isolation**: File uploads and completion checks validate project and environment boundaries. The immutable storage path includes the environment ID (`environments/<env-id>/...`). Note that published assets are anonymously accessible by design and should not store confidential secrets.
+- **API Query Scoping**: An `environment_id` parameter in administrative queries specifies the permission evaluation scope; it does not indicate that a project belongs to an environment.
 
-快照导出属于读权限。导入需要源环境读权限和目标环境写权限，只创建目标草稿与快照，不会发布。发布/下线权限独立控制运行时版本切换。API Key 管理权限包含凭据列表与变更，但不自动授予配置读权限。
+## Membership and Permissions
 
-## 新部署
+Users maintain a single identity across the entire system, with a fixed role in each project: **Owner**, **Maintainer**, **Member**, or **Guest**. Environments do not have independent member rosters.
 
-本项目不提供旧数据库迁移。使用空数据库启动应用，由应用初始化表、默认关闭自行注册的系统设置和签名密钥。项目创建者成为 Owner，之后在项目内部创建环境、管理成员及环境权限。
+Instead, each environment manages a permission matrix that maps project roles to four granular permission points:
+1. **Read**: View configurations, metadata, snapshots, and exports.
+2. **Write**: Create and edit configurations, structures, enums, snapshots, imports, and uploads.
+3. **Publish / Unpublish**: Publish snapshots to the runtime plane or unpublish existing versions.
+4. **Manage API Keys**: Create, list, rotate, and revoke runtime API keys for that environment.
+
+- Project Owners always retain all permissions across all environments.
+- Maintainers, Members, and Guests are restricted according to the environment's permission matrix.
+- System administrators have no implicit project access and must be explicitly added to a project to access its resources.
+- Snapshot exports require Read permission. Snapshot imports require Read permission on the source environment and Write permission on the target environment; imports only create draft snapshots and do not publish automatically.
+
+## Database Schema Requirements
+
+Kirby requires explicit environment scoping on core tables. Specifically:
+- `configs` must include an `environment_id` column with a unique index on `(environment_id, key)`.
+- `project_api_keys` must include an `environment_id` column.
+
+If Kirby detects missing `environment_id` columns during startup validation, it halts with:
+`database requires environment isolation migration; see docs/environment-isolation.md`.
+
+For new deployments, starting Kirby against an empty database automatically creates all required tables and constraints from embedded DDL. Existing databases without environment isolation must be updated to include `environment_id` before upgrading to this version.

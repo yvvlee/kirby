@@ -1,6 +1,10 @@
 # Deployment
 
-Example configuration, the SQL schema reference, and local multi-instance deployment files live here.
+Example configuration files, SQL schema references, and deployment scripts live here:
+- `config.example.yaml`: Production multi-instance configuration template (S3 object storage, multi mode).
+- `config.compose.yaml`: Docker Compose deployment template.
+- `config.local.example.yaml`: Single-process local development template (local filesystem storage).
+- `docker-compose.yml`: Local full-stack Compose definition (Kirby, MySQL, Redis, MinIO).
 
 ## Before starting the image
 

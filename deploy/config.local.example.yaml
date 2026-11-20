@@ -1,0 +1,46 @@
+# Local development configuration (single-node, local file storage)
+mode: single
+
+http:
+  address: "127.0.0.1:8080"
+  timeout: 120000
+
+grpc:
+  address: "127.0.0.1:9090"
+  timeout: 10000
+
+database:
+  driver: mysql
+  dsn: "kirby:kirby-local-password@tcp(127.0.0.1:3306)/kirby?charset=utf8mb4&parseTime=true&loc=UTC"
+  max_open_conns: 20
+  max_idle_conns: 5
+  conn_max_lifetime: 300000
+
+cache:
+  driver: redis
+  redis:
+    address: "127.0.0.1:6379"
+    username: ""
+    password: ""
+    db: 0
+    key_prefix: "kirby-local:"
+
+jwt:
+  issuer: kirby-local
+  access_ttl: 900000
+  refresh_ttl: 604800000
+
+object_storage:
+  driver: local
+  local:
+    directory: "../.local/objects"
+  s3:
+    endpoint: ""
+    region: ""
+    bucket: ""
+    access_key: ""
+    secret_key: ""
+    use_ssl: false
+
+log:
+  level: info

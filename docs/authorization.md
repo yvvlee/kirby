@@ -26,6 +26,20 @@ environments. Owners and Maintainers can add members, change roles, or remove
 members whose current role is no higher than their own. They cannot assign a
 role higher than their own. Maintainers cannot manage Owners.
 
+## Project deletion
+
+Only the project Owner can delete a project. Deletion removes the project's
+environments, configurations, structures, enums, snapshots, API keys, invitations,
+members, environment permission grants, and related import records in a single
+database transaction, while preserving audit records. Once deleted, runtime
+credentials can no longer authenticate.
+
+Uploaded files in object storage are retained. Files may be referenced across
+configurations or projects via URL without a central cross-project registry;
+deleting these objects immediately could break other projects. To reclaim
+storage, verify existing configuration references before purging objects through
+storage maintenance routines.
+
 ## Environment permission grants
 
 Each environment has four fixed permission points. Its creation initializes the

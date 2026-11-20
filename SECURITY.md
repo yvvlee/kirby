@@ -34,5 +34,5 @@ scripts/license-check.sh
 ```
 
 High and critical reachable vulnerabilities or container findings block a
-release. Known residual dependency risks are recorded in
-`docs/security-report.md`.
+release. Run `scripts/security-check.sh` and `scripts/license-check.sh` to verify
+security and license policies before creating a release.
