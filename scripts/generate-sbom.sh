@@ -256,7 +256,7 @@ normalize "$work_dir/web.raw.json" "$work_dir/normalized/web.cdx.json" \
   kirby-web-source "" "$source_mode snapshot, web/package-lock.json"
 normalize "$work_dir/server-image.raw.json" "$work_dir/normalized/server-image.cdx.json" \
   kirby-image "$server_digest" \
-  "node:24-bookworm-slim; golang:1.27.2-bookworm; scratch runtime"
+  "node:24-bookworm-slim; golang:1.27.4-bookworm; scratch runtime"
 
 for sbom in "$work_dir"/normalized/*.cdx.json; do
   test -s "$sbom"

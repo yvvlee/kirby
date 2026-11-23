@@ -1,10 +1,9 @@
 # Configuration
 
 Kirby loads its configuration through the Kratos config framework. Pass a
-local file with `--config` or set `KIRBY_CONFIG_FILE`; without either, the
-server reads its configuration from a Nacos config center controlled by the
-`NACOS_SERVER_HOST`, `NACOS_SERVER_PORT`, `NACOS_NAMESPACE_ID`,
-`NACOS_DATA_ID`, and `NACOS_GROUP` environment variables. Duration fields
+local file with `--config` or set `KIRBY_CONFIG_FILE`. The explicit flag takes
+precedence. Without either, startup fails with a configuration-file error.
+Duration fields
 (`*.timeout`, `conn_max_lifetime`, `jwt.*_ttl`) are plain integers in
 milliseconds. Missing required values fail startup during validation.
 

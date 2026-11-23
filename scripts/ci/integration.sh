@@ -33,16 +33,16 @@ cat > "$config_file" <<EOF
 mode: single
 http:
   address: "127.0.0.1:$http_port"
-  timeout: 2m
+  timeout: 120000
 grpc:
   address: "127.0.0.1:$grpc_port"
-  timeout: 10s
+  timeout: 10000
 database:
   driver: mysql
   dsn: "$mysql_dsn"
   max_open_conns: 20
   max_idle_conns: 5
-  conn_max_lifetime: 5m
+  conn_max_lifetime: 300000
 cache:
   driver: redis
   redis:
@@ -53,8 +53,8 @@ cache:
     key_prefix: "kirby-ci:"
 jwt:
   issuer: kirby-e2e
-  access_ttl: 15m
-  refresh_ttl: 168h
+  access_ttl: 900000
+  refresh_ttl: 604800000
 object_storage:
   driver: s3
   local:
@@ -98,7 +98,7 @@ wait_for_url "http://127.0.0.1:$http_port/login" "Kirby web application"
   KIRBY_LOCAL_WEB_URL="http://127.0.0.1:$http_port" \
   npx playwright test --config tests/e2e/playwright.local.config.mjs)
 "$work_dir/kirby" create-admin --config "$config_file" --username admin \
-  --display-name "CI Admin" --password-file "$password_file"
+  --nickname "CI Admin" --email "admin@ci.kirby.test" --password-file "$password_file"
 (cd "$repo_dir/web" && KIRBY_LOCAL_WEB_URL="http://127.0.0.1:$http_port" \
   npx playwright test --config tests/e2e/playwright.local.config.mjs)
 echo "Single-process Kirby image topology and browser integration passed."

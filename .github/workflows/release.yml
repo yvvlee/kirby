@@ -21,7 +21,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  GO_VERSION: 1.27.2
+  GO_VERSION: 1.27.4
   NODE_VERSION: 24.19.0
   GOTOOLCHAIN: local
   KIRBY_IMAGE: docker.io/mshadow/kirby

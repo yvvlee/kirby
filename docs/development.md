@@ -2,7 +2,7 @@
 
 ## Toolchain
 
-CI uses Go 1.27.2, Node.js 24.19.0, npm's committed lock file, and protoc
+CI uses Go 1.27.4, Node.js 24.19.0, npm's committed lock file, and protoc
 35.1. Generator versions are fixed in `server/Makefile`.
 
 Install dependencies from the repository root:

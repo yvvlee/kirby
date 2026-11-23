@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GO_VERSION: 1.27.2
+  GO_VERSION: 1.27.4
   NODE_VERSION: 24.19.0
   GOTOOLCHAIN: local
 
@@ -175,10 +175,10 @@ jobs:
         working-directory: web
       - run: npx playwright install --with-deps chromium
         working-directory: web
-      - name: Start and initialize MinIO
+      - name: Start and initialize Silo
         run: scripts/ci/start-minio.sh
       - name: Run browser journey
         run: scripts/ci/integration.sh
-      - name: Stop MinIO
+      - name: Stop Silo
         if: always()
         run: docker rm --force kirby-ci-minio >/dev/null 2>&1 || true

@@ -67,7 +67,7 @@ Services       │  - Environment API Key Authentication                 │
 
 ### Option 1: Docker Compose (Recommended)
 
-The fastest way to run a complete Kirby stack (Kirby, MySQL, Redis, and MinIO) locally:
+The fastest way to run a complete Kirby stack (Kirby, MySQL, Redis, and Silo / MinIO-compatible storage) locally:
 
 ```sh
 # 1. Clone repository

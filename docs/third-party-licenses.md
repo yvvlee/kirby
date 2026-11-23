@@ -8,8 +8,15 @@ reviewed set. GPL, AGPL, LGPL, SSPL, and missing license results fail the gate.
 The current dependency graph passes.
 
 The policy applies to code and assets distributed in the Kirby release image.
-MySQL, Redis, MinIO, and the external ingress are independently operated
+MySQL, Redis, Silo (the MinIO-compatible object store), and the external ingress are independently operated
 infrastructure and are not copied into the image.
+
+The deployment and CI object-store image is `docker.io/pgsty/silo`, release
+`RELEASE.2026-11-12T00-00-00Z`, pinned by digest in Compose and the CI startup
+script. Silo and its bundled `mcli` client are AGPL-3.0 software maintained by
+[PGSTY](https://github.com/pgsty/silo). They run as a separate service and are
+not linked into or bundled with Kirby. The Go S3 client remains a separate
+application dependency checked by the license gate.
 
 ## Reproducible inputs
 
@@ -63,7 +70,7 @@ package metadata and license files after `npm ci`.
 
 | Input | Fixed version or digest | License |
 |---|---|---|
-| Go toolchain image | `golang:1.27.2-bookworm` tag, resolved at build time | Go BSD-3-Clause; build stage only |
+| Go toolchain image | `golang:1.27.4-bookworm` tag, resolved at build time | Go BSD-3-Clause; build stage only |
 | Node.js toolchain image | `node:24-bookworm-slim` tag, resolved at build time | Node.js MIT; build stage only |
 | Kirby runtime | `scratch` | one Go process, React assets, no operating-system packages |
 | protoc | 35.1 | BSD-3-Clause |

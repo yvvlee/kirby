@@ -75,9 +75,7 @@ services:
 
   minio:
     <<: *default-security
-    image: kirby-minio:local
-    build:
-      context: ./minio
+    image: docker.io/pgsty/silo:RELEASE.2026-11-12T00-00-00Z@sha256:c20d112390b9a9ce8c11b8af95ad35bcaa62f4759663c09c936cd8d2b511f329
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-CHANGE_ME_MINIO_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-CHANGE_ME_MINIO_PASSWORD}
@@ -106,9 +104,7 @@ services:
   minio-init:
     <<: *default-security
     profiles: ["init"]
-    image: kirby-minio:local
-    build:
-      context: ./minio
+    image: docker.io/pgsty/silo:RELEASE.2026-11-12T00-00-00Z@sha256:c20d112390b9a9ce8c11b8af95ad35bcaa62f4759663c09c936cd8d2b511f329
     environment:
       MC_CONFIG_DIR: /tmp/mc
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-CHANGE_ME_MINIO_USER}
@@ -119,10 +115,10 @@ services:
       - -ec
     command:
       - |
-        mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
-        mc mb --ignore-existing "local/$$MINIO_BUCKET"
-        mc anonymous set-json /policies/public-read.json "local/$$MINIO_BUCKET"
-        mc ilm import "local/$$MINIO_BUCKET" < /policies/upload-lifecycle.json
+        mcli alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
+        mcli mb --ignore-existing "local/$$MINIO_BUCKET"
+        mcli anonymous set-json /policies/public-read.json "local/$$MINIO_BUCKET"
+        mcli ilm import "local/$$MINIO_BUCKET" < /policies/upload-lifecycle.json
     volumes:
       - type: bind
         source: ./s3-public-read-policy.json

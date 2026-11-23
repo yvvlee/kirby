@@ -8,8 +8,9 @@ const administrator = {
 
 async function fillSetup(page, username = administrator.username) {
   await page.getByRole('textbox', { name: '用户名' }).fill(username)
-  await page.getByRole('textbox', { name: '显示名' }).fill(administrator.nickname)
+  await page.getByRole('textbox', { name: '昵称' }).fill(administrator.nickname)
   await page.getByLabel('密码', { exact: true }).fill(administrator.password)
+  await page.getByRole('textbox', { name: '邮箱' }).fill(`${username}@ci.kirby.test`)
   await page.getByLabel('确认密码', { exact: true }).fill(administrator.password)
   await page.getByRole('button', { name: '创建管理员' }).click()
 }
@@ -52,16 +53,16 @@ test('creates the first administrator in an empty installation and logs in', asy
     response.url().endsWith('/api/auth/login') && response.request().method() === 'POST')
   await page.getByRole('button', { name: /登\s*录/ }).click()
   expect((await loginResponse).status()).toBe(200)
-  await expect(page).toHaveURL(/\/$/)
+  await expect(page).toHaveURL(/\/projects$/)
   await expect(page.getByRole('heading', {
-    name: '配置管理平台',
+    name: '项目',
     exact: true,
   })).toBeVisible()
 
   await page.goto('/setup')
-  await expect(page).toHaveURL(/\/$/)
+  await expect(page).toHaveURL(/\/projects$/)
   await expect(page.getByRole('heading', {
-    name: '配置管理平台',
+    name: '项目',
     exact: true,
   })).toBeVisible()
 
