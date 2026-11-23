@@ -2,6 +2,8 @@ package repository
 
 import (
 	"context"
+	"fmt"
+	"math"
 
 	"github.com/yvvlee/lorm"
 	"github.com/yvvlee/lorm/builder"
@@ -110,6 +112,9 @@ func (r *ProjectMemberRepositoryImpl) CountOwners(ctx context.Context, projectID
 	}).Count(ctx)
 	if err != nil {
 		return 0, WrapDatabaseError(err)
+	}
+	if count > math.MaxInt64 {
+		return 0, fmt.Errorf("database count exceeds supported range")
 	}
 	return int64(count), nil
 }

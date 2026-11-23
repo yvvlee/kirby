@@ -1,8 +1,6 @@
 package converter
 
 import (
-	"fmt"
-
 	commonv1 "github.com/yvvlee/kirby/server/api/common"
 	"github.com/yvvlee/kirby/server/internal/model"
 )
@@ -13,8 +11,9 @@ import (
 // Returns: the public environment with project ID, or an error when its ID or version is invalid.
 // Throws: none; failures are returned as errors.
 func EnvironmentToProto(item *model.Environment) (*commonv1.Environment, error) {
-	if item.ID <= 0 {
-		return nil, fmt.Errorf("invalid environment record")
+	version, err := validMeta(item.ID, item.Version)
+	if err != nil {
+		return nil, err
 	}
 	return &commonv1.Environment{
 		Id:          item.ID,
@@ -25,6 +24,6 @@ func EnvironmentToProto(item *model.Environment) (*commonv1.Environment, error) 
 		Enabled:     item.Enabled,
 		CreatedAt:   timestamp(item.CreatedAt),
 		UpdatedAt:   timestamp(item.UpdatedAt),
-		Version:     uint32(item.Version),
+		Version:     version,
 	}, nil
 }

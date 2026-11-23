@@ -2,6 +2,8 @@ package repository
 
 import (
 	"context"
+	"fmt"
+	"math"
 
 	"github.com/yvvlee/lorm"
 	"github.com/yvvlee/lorm/builder"
@@ -97,6 +99,9 @@ func paginate[M any, P lorm.ModelPointer[M]](ctx context.Context, query *lorm.Se
 	if err != nil {
 		return PageResult[M]{}, WrapDatabaseError(err)
 	}
+	if total > math.MaxInt64 {
+		return PageResult[M]{}, fmt.Errorf("database count exceeds supported range")
+	}
 	result := PageResult[M]{
 		Items:  make([]M, 0),
 		Total:  int64(total),
@@ -106,6 +111,7 @@ func paginate[M any, P lorm.ModelPointer[M]](ctx context.Context, query *lorm.Se
 	if total == 0 {
 		return result, nil
 	}
+	// #nosec G115 -- NormalizePage guarantees a positive limit and nonnegative offset.
 	rows, err := query.Limit(uint64(page.Limit)).Offset(uint64(page.Offset)).Find(ctx)
 	if err != nil {
 		return PageResult[M]{}, WrapDatabaseError(err)

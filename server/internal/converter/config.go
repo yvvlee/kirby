@@ -1,6 +1,8 @@
 package converter
 
 import (
+	"fmt"
+
 	commonv1 "github.com/yvvlee/kirby/server/api/common"
 	"github.com/yvvlee/kirby/server/internal/model"
 )
@@ -18,6 +20,9 @@ func ConfigToProto(item *model.Config) (*commonv1.Config, error) {
 	fieldType, err := DecodeFieldType(item.TypeJSON)
 	if err != nil {
 		return nil, err
+	}
+	if item.RuntimeVersion < 0 {
+		return nil, fmt.Errorf("invalid runtime version")
 	}
 	return &commonv1.Config{
 		Id:             item.ID,

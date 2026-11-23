@@ -196,7 +196,7 @@ func structureUpdateCandidate(locked *commonv1.Structure, input *entity.UpdateSt
 		Name:        input.Name,
 		Description: input.Description,
 		Fields:      input.Fields,
-		Version:     uint32(input.Version),
+		Version:     locked.Version,
 	}, nil
 }
 

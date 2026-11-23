@@ -5,7 +5,7 @@ repo_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 work_dir=$(mktemp -d "${TMPDIR:-/tmp}/kirby-security.XXXXXX")
 server_image="kirby-security:$PPID-$$"
 govuln_version=v1.9.0
-gosec_version=v2.29.0
+gosec_version=v2.30.0
 trivy_image="aquasec/trivy@sha256:e2b22eac59c02003d8749f5b8d9bd073b62e30fefaef5b7c8371204e0a4b0c08"
 trivy_db_repository="${KIRBY_TRIVY_DB_REPOSITORY:-${KIRBY_TRIVY_DB_IMAGE:-}}"
 

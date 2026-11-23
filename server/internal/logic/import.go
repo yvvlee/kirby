@@ -418,6 +418,9 @@ func resourceModels(content *entity.ConfigSnapshot, configID, actorID int64) ([]
 func canonicalTargetContent(source *entity.ConfigSnapshot, config *model.Config, structures []*model.Structure, enums []*model.ConfigEnum) (*entity.ConfigSnapshot, error) {
 	result := &entity.ConfigSnapshot{Config: proto.Clone(source.Config).(*commonv1.Config)}
 	result.Config.Id, result.Config.ProjectId, result.Config.Key = config.ID, config.ProjectID, config.Key
+	if config.RuntimeVersion < 0 {
+		return nil, fmt.Errorf("invalid runtime version")
+	}
 	result.Config.RuntimeVersion = uint64(config.RuntimeVersion)
 	result.Config.CreatedBy, result.Config.UpdatedBy, result.Config.CreatedAt, result.Config.UpdatedAt, result.Config.Version = "", "", nil, nil, 0
 	result.Structures = make([]*commonv1.Structure, 0, len(source.Structures))

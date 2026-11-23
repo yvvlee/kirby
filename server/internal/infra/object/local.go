@@ -177,10 +177,11 @@ func (s *LocalStorage) ReadMetadata(ctx context.Context, key string) (*Metadata,
 	if decoderErr != nil {
 		return nil, fmt.Errorf("%w: local metadata cannot be decoded", ErrObjectIntegrity)
 	}
-	if info.Size() < 0 {
+	fileSize := info.Size()
+	if fileSize < 0 {
 		return nil, fmt.Errorf("%w: local object size is invalid", ErrObjectIntegrity)
 	}
-	size := uint64(info.Size())
+	size := uint64(fileSize)
 	return &Metadata{
 		Key:                 key,
 		URL:                 LocalObjectPathPrefix + key,
@@ -377,17 +378,17 @@ func (s *LocalStorage) writeUpload(ctx context.Context, claims localUploadClaims
 		_ = temporary.Close()
 		return fmt.Errorf("secure local upload: %w", ErrStorageUnavailable)
 	}
-	limit := int64(claims.Size)
-	if limit < 0 || limit == math.MaxInt64 {
+	if claims.Size >= math.MaxInt64 {
 		_ = temporary.Close()
 		return fmt.Errorf("%w: upload size is invalid", ErrInvalidInput)
 	}
+	limit := int64(claims.Size)
 	written, copyErr := io.Copy(temporary, io.LimitReader(source, limit+1))
 	closeErr := temporary.Close()
 	if copyErr != nil || closeErr != nil {
 		return fmt.Errorf("write local upload: %w", ErrStorageUnavailable)
 	}
-	if uint64(written) != claims.Size {
+	if written != limit {
 		return fmt.Errorf("%w: uploaded size does not match declaration", ErrObjectIntegrity)
 	}
 	if err := os.Link(temporaryPath, objectPath); err != nil {

@@ -2,11 +2,13 @@ package service
 
 import (
 	"context"
+	"math"
 
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	adminv1 "github.com/yvvlee/kirby/server/api/admin"
 	commonv1 "github.com/yvvlee/kirby/server/api/common"
+	errorsv1 "github.com/yvvlee/kirby/server/api/errors"
 	"github.com/yvvlee/kirby/server/internal/entity"
 	"github.com/yvvlee/kirby/server/internal/logic"
 	"github.com/yvvlee/kirby/server/internal/permission"
@@ -185,7 +187,14 @@ func (s *SnapshotService) ListSnapshot(ctx context.Context, request *adminv1.Lis
 			limit = *request.Page.Limit
 		}
 	}
-	offset := int((uint64(pageNumber) - 1) * uint64(limit))
+	if pageNumber == 0 || limit == 0 || limit > repository.MaxPageSize {
+		return nil, errorsv1.ErrorBadRequest("invalid pagination")
+	}
+	requestedOffset := (uint64(pageNumber) - 1) * uint64(limit)
+	if requestedOffset > math.MaxInt {
+		return nil, errorsv1.ErrorBadRequest("pagination offset exceeds supported range")
+	}
+	offset := int(requestedOffset)
 	pageLimit := int(limit)
 	page, err := s.snapshotLogic.List(ctx, &entity.ListSnapshotParam{
 		Actor:         actor,
@@ -199,6 +208,9 @@ func (s *SnapshotService) ListSnapshot(ctx context.Context, request *adminv1.Lis
 	})
 	if err != nil {
 		return nil, apiError(err)
+	}
+	if page.Limit < 0 || uint64(page.Limit) > math.MaxUint32 || page.Total < 0 {
+		return nil, errorsv1.ErrorInternal("invalid pagination result")
 	}
 	responseLimit := uint32(page.Limit)
 	total := uint64(page.Total)

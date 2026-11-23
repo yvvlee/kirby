@@ -201,7 +201,7 @@ func enumUpdateCandidate(locked *commonv1.ConfigEnum, input *entity.UpdateEnumPa
 		Name:        input.Name,
 		Description: input.Description,
 		Values:      input.Values,
-		Version:     uint32(input.Version),
+		Version:     locked.Version,
 	}, nil
 }
 

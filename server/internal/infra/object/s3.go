@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"path"
@@ -222,6 +223,9 @@ func (s *S3Storage) CompleteUpload(ctx context.Context, key string) (*Metadata, 
 		return nil, safeS3Error("open validated S3 upload", err)
 	}
 	defer source.Close()
+	if metadata.Size > math.MaxInt64 {
+		return nil, fmt.Errorf("%w: object size exceeds supported range", ErrObjectIntegrity)
+	}
 	publishSize := int64(metadata.Size)
 	publishInfo, err := s.internalClient.PutObjectIfAbsent(ctx, objectWriteInput{
 		Bucket:      s.bucket,

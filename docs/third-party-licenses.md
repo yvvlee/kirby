@@ -83,7 +83,7 @@ package metadata and license files after `npm ci`.
 | lorm / lormgen | v1.1.5 | MIT |
 | golangci-lint | v2.14.0 | GPL-3.0; development tool, not distributed in the release image |
 | govulncheck | v1.9.0 | BSD-3-Clause |
-| gosec | v2.29.0 | Apache-2.0 |
+| gosec | v2.30.0 | Apache-2.0 |
 | go-licenses | v1.6.0 | Apache-2.0 |
 | license-checker | v25.0.1 | BSD-3-Clause |
 | Trivy | 0.67.2, `sha256:e2b22eac59c02003d8749f5b8d9bd073b62e30fefaef5b7c8371204e0a4b0c08` | Apache-2.0 |

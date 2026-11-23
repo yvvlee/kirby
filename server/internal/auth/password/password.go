@@ -132,7 +132,7 @@ func (h *Hasher) Verify(encoded, plain string) (match bool, needsRehash bool, er
 	if err != nil {
 		return false, false, err
 	}
-	keyLength := uint32(len(expected))
+	keyLength := params.KeyLength
 	actual := argon2.IDKey([]byte(plain), salt, params.Iterations, params.MemoryKiB, params.Parallelism, keyLength)
 	match = subtle.ConstantTimeCompare(actual, expected) == 1
 	return match, params != h.params, nil
@@ -160,7 +160,9 @@ func parse(encoded string) (Params, []byte, []byte, error) {
 	if err != nil {
 		return Params{}, nil, nil, ErrInvalidHash
 	}
+	// #nosec G115 -- decodePart rejects decoded values longer than maxDecodedPart (128 bytes).
 	params.SaltLength = uint32(len(salt))
+	// #nosec G115 -- decodePart rejects decoded values longer than maxDecodedPart (128 bytes).
 	params.KeyLength = uint32(len(expected))
 	if err := validateParams(params); err != nil {
 		return Params{}, nil, nil, errors.Join(ErrInvalidHash, err)

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -48,7 +49,7 @@ func (s *AuthService) Register(ctx context.Context, request *adminv1.RegisterReq
 		return nil, authAPIError(ctx, err)
 	}
 	setCookie(ctx, authsession.Cookie(result.RefreshToken, result.RefreshExpiresAt, authsession.SecureForOrigin(origin)))
-	return loginReply(result.AccessToken, result.AccessTTL, result.User), nil
+	return loginReply(result.AccessToken, result.AccessTTL, result.User)
 }
 
 type AuthService struct {
@@ -101,7 +102,7 @@ func (s *AuthService) Login(ctx context.Context, request *adminv1.LoginRequest) 
 		return nil, authAPIError(ctx, err)
 	}
 	setCookie(ctx, authsession.Cookie(result.RefreshToken, result.RefreshExpiresAt, authsession.SecureForOrigin(origin)))
-	return loginReply(result.AccessToken, result.AccessTTL, result.User), nil
+	return loginReply(result.AccessToken, result.AccessTTL, result.User)
 }
 
 // Refresh rotates the refresh cookie after confirming the browser origin.
@@ -125,7 +126,7 @@ func (s *AuthService) Refresh(ctx context.Context, _ *emptypb.Empty) (*adminv1.L
 		return nil, authAPIError(ctx, err)
 	}
 	setCookie(ctx, authsession.Cookie(result.RefreshToken, result.RefreshExpiresAt, authsession.SecureForOrigin(origin)))
-	return loginReply(result.AccessToken, result.AccessTTL, result.User), nil
+	return loginReply(result.AccessToken, result.AccessTTL, result.User)
 }
 
 // Logout revokes a same-origin browser session and clears its cookie.
@@ -181,12 +182,16 @@ func authenticationFailed() error {
 	return errorsv1.ErrorUnauthorized("authentication failed")
 }
 
-func loginReply(accessToken string, ttl time.Duration, user *commonv1.User) *adminv1.LoginReply {
+func loginReply(accessToken string, ttl time.Duration, user *commonv1.User) (*adminv1.LoginReply, error) {
+	seconds := ttl / time.Second
+	if seconds < 0 || seconds > math.MaxUint32 {
+		return nil, errorsv1.ErrorInternal("token lifetime exceeds supported range")
+	}
 	return &adminv1.LoginReply{
 		AccessToken: accessToken,
-		ExpiresIn:   uint32(ttl / time.Second),
+		ExpiresIn:   uint32(seconds),
 		User:        user,
-	}
+	}, nil
 }
 
 func setCookie(ctx context.Context, cookie *http.Cookie) {

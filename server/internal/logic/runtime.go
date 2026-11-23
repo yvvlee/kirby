@@ -136,6 +136,9 @@ func (l *RuntimeLogic) readConfig(ctx context.Context, environmentID, projectID 
 	if err != nil {
 		return nil, err
 	}
+	if config.RuntimeVersion < 0 {
+		return nil, fmt.Errorf("invalid runtime version")
+	}
 	version := uint64(config.RuntimeVersion)
 	key := contentCacheKey(config.ID, config.Key, config.RuntimeVersion)
 	content, err := l.cache.store.Get(ctx, key)
